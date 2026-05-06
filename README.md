@@ -3,7 +3,8 @@
 	<img width="150px" height="150px" alt="LiteDesktopStudio" src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/icon.png"></a>
 </div>
 <div>ArtifacterやLiteDesktopStudioを作っていますが開発に余裕がありません。<br>
-私は寄付を募っています。開発の励みになりますので寄付をお願いします<a href="https://www.buymeacoffee.com/crossdarkrix"><img src="https://img.buymeacoffee.com/button-api/?text=BuyMeCoffie&emoji=%E2%98%95&slug=crossdarkrix&button_colour=FFDD00&font_colour=000000&font_family=Bree&outline_colour=000000&coffee_colour=ffffff"></a></div>
+私は寄付を募っています。開発の励みになりますので寄付をお願いします。
+<br><a href="https://www.buymeacoffee.com/crossdarkrix"><img src="https://img.buymeacoffee.com/button-api/?text=BuyMeCoffie&emoji=%E2%98%95&slug=crossdarkrix&button_colour=FFDD00&font_colour=000000&font_family=Bree&outline_colour=000000&coffee_colour=ffffff"></a></div>
 
 <h2 align="center">Lite Desktop Studio</h2>
 <p>A Simple Desktop Gadet.</p>
