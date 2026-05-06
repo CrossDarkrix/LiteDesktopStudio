@@ -3,7 +3,7 @@
 	<img width="150px" height="150px" alt="LiteDesktopStudio" src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/icon.png"></a>
 </div>
 <h2 align="center">Lite Desktop Studio</h2>
-<p>A Simple Desktop Gadet.</p>
+<p align="center">A Simple Desktop Gadet.</p>
 
 <div>ArtifacterやLiteDesktopStudioを作っていますが開発に余裕がありません。<br>
 私は寄付を募っています。開発の励みになりますので寄付をお願いします。
