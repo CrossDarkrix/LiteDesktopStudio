@@ -2,12 +2,14 @@
 	<a href="https://github.com/CrossDarkrix/LiteDesktopStudio">
 	<img width="150px" height="150px" alt="LiteDesktopStudio" src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/icon.png"></a>
 </div>
+<h2 align="center">Lite Desktop Studio</h2>
+<p>A Simple Desktop Gadet.</p>
+
 <div>ArtifacterやLiteDesktopStudioを作っていますが開発に余裕がありません。<br>
 私は寄付を募っています。開発の励みになりますので寄付をお願いします。
 <br><a href="https://www.buymeacoffee.com/crossdarkrix"><img src="https://img.buymeacoffee.com/button-api/?text=BuyMeCoffie&emoji=%E2%98%95&slug=crossdarkrix&button_colour=FFDD00&font_colour=000000&font_family=Bree&outline_colour=000000&coffee_colour=ffffff"></a></div>
 
-<h2 align="center">Lite Desktop Studio</h2>
-<p>A Simple Desktop Gadet.</p>
+
 <h2>ScreenShot</h2>
 <a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/screenshot1.png" width="300px" height="250px"></a>
 <a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/screenshot2.png" width="300px" height="250px"></a>
