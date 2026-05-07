@@ -1,3 +1,4 @@
+import asyncio
 import concurrent.futures
 import sys
 import os
@@ -16,6 +17,7 @@ import soundcard as sc
 import numpy as np
 import psutil
 import calendar as py_calendar
+from winsdk.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as MediaManager)
 from PySide6.QtCore import (
     Qt,
     QRectF,
@@ -35,6 +37,8 @@ from PySide6.QtGui import (
     QLinearGradient,
     QTextDocument,
     QPainterPath,
+    QImage,
+    QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -557,8 +561,8 @@ class WeatherEngine:
         if location:
             encoded = urllib.parse.quote(location)
             return f"https://wttr.in/{encoded}?{query}"
-
-        return f"https://wttr.in/?{query}"
+        else:
+            return f"https://wttr.in/?{query}"
 
     def _translate_weather_desc(self, text: str):
         text = text or "--"
@@ -672,7 +676,7 @@ class WeatherEngine:
             req = urllib.request.Request(
                 url,
                 headers={
-                    "User-Agent": "DesktopForge-Py WeatherWidget"
+                    "User-Agent": "LiteDesktopStudio-WeatherWidget-v1.0"
                 }
             )
 
@@ -1039,43 +1043,181 @@ class VisualizerWidget(BaseWidget):
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
+class MediaMetadataEngine:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._thread = None
+        self._running = False
+
+        self.available = False
+        self.error = ""
+        self.title = ""
+        self.artist = ""
+        self.album = ""
+        self.app_id = ""
+        self.playback_status = ""
+        self.thumbnail_bytes = b""
+        self.updated_at = ""
+
+        self.poll_interval = 2.0
+        self._force_fetch = True
+
+    def start(self):
+        if self._thread is not None and self._thread.is_alive():
+            return
+
+        self._running = True
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+
+    def force_refresh(self):
+        with self._lock:
+            self._force_fetch = True
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "available": self.available,
+                "error": self.error,
+                "title": self.title,
+                "artist": self.artist,
+                "album": self.album,
+                "app_id": self.app_id,
+                "playback_status": self.playback_status,
+                "thumbnail_bytes": self.thumbnail_bytes,
+                "updated_at": self.updated_at,
+            }
+
+    def _worker(self):
+        while self._running:
+            with self._lock:
+                self._force_fetch = False
+
+            self._run_async_fetch_once()
+            time.sleep(self.poll_interval)
+
+    def _run_async_fetch_once(self):
+        try:
+            asyncio.run(self._fetch_once())
+        except Exception as e:
+            with self._lock:
+                self.available = False
+                self.error = repr(e)
+                self.updated_at = time.strftime("%H:%M:%S")
+
+    async def _fetch_once(self):
+        try:
+            manager = await MediaManager.request_async()
+            session = manager.get_current_session()
+
+            if session is None:
+                with self._lock:
+                    self.available = True
+                    self.error = ""
+                    self.title = ""
+                    self.artist = ""
+                    self.album = ""
+                    self.app_id = ""
+                    self.playback_status = "No session"
+                    self.thumbnail_bytes = b""
+                    self.updated_at = time.strftime("%H:%M:%S")
+                return
+
+            props = await session.try_get_media_properties_async()
+
+            title = getattr(props, "title", "") or ""
+            artist = getattr(props, "artist", "") or ""
+            album = getattr(props, "album_title", "") or ""
+            thumbnail = getattr(props, "thumbnail", None)
+            app_id = getattr(session, "source_app_user_model_id", "") or ""
+
+            playback_status = ""
+            try:
+                info = session.get_playback_info()
+                status = getattr(info, "playback_status", "")
+                playback_status = str(status).split(".")[-1]
+            except Exception:
+                playback_status = ""
+
+            thumb_bytes = b""
+            if thumbnail is not None:
+                thumb_bytes = await self._read_thumbnail_bytes(thumbnail)
+
+            with self._lock:
+                self.available = True
+                self.error = ""
+                self.title = title
+                self.artist = artist
+                self.album = album
+                self.app_id = app_id
+                self.playback_status = playback_status
+                self.thumbnail_bytes = thumb_bytes
+                self.updated_at = time.strftime("%H:%M:%S")
+
+        except Exception as e:
+            with self._lock:
+                self.available = False
+                self.error = repr(e)
+                self.updated_at = time.strftime("%H:%M:%S")
+
+    async def _read_thumbnail_bytes(self, thumbnail_ref):
+        try:
+            stream = await thumbnail_ref.open_read_async()
+            size = int(getattr(stream, "size", 0) or 0)
+
+            if size <= 0:
+                return b""
+
+            try:
+                from winsdk.windows.storage.streams import DataReader
+            except Exception:
+                from winrt.windows.storage.streams import DataReader  # type: ignore
+
+            reader = DataReader(stream)
+            await reader.load_async(size)
+
+            data = bytearray(size)
+            reader.read_bytes(data)
+
+            try:
+                reader.close()
+            except Exception:
+                pass
+
+            return bytes(data)
+
+        except Exception:
+            return b""
+
 class MediaPlayerWidget(BaseWidget):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self._last_thumbnail_bytes = None
+        self._thumbnail_pixmap = None
+
     def button_rects(self):
         r = self.rect
-        button_size = min(46, max(32, int(r.height() * 0.28)))
+
+        button_size = min(42, max(30, int(r.height() * 0.22)))
         gap = 10
+
         total_w = button_size * 4 + gap * 3
         start_x = r.left() + (r.width() - total_w) / 2
-        y = r.top() + r.height() * 0.48
+        y = r.bottom() - button_size - 18
+
         return {
-            "prev": QRectF(
-                start_x,
-                y,
-                button_size,
-                button_size
-            ),
-            "play": QRectF(
-                start_x + button_size + gap,
-                y,
-                button_size,
-                button_size
-            ),
-            "next": QRectF(
-                start_x + (button_size + gap) * 2,
-                y,
-                button_size,
-                button_size
-            ),
-            "stop": QRectF(
-                start_x + (button_size + gap) * 3,
-                y,
-                button_size,
-                button_size
-            ),
+            "prev": QRectF(start_x, y, button_size, button_size),
+            "play": QRectF(start_x + button_size + gap, y, button_size, button_size),
+            "next": QRectF(start_x + (button_size + gap) * 2, y, button_size, button_size),
+            "stop": QRectF(start_x + (button_size + gap) * 3, y, button_size, button_size),
         }
 
     def button_at(self, pos: QPoint):
         rects = self.button_rects()
+
         for name, rect in rects.items():
             if rect.contains(pos):
                 return name
@@ -1084,16 +1226,24 @@ class MediaPlayerWidget(BaseWidget):
 
     def paint(self, p: QPainter, ctx: Dict):
         r = self.rect
+
         p.save()
-        bg = widget_bg_color(self.cfg)
+
+        try:
+            bg = widget_bg_color(self.cfg)
+        except Exception:
+            bg = QColor(self.cfg.bg or "#10141C")
+            bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
+
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setBrush(QBrush(bg))
         p.setPen(Qt.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
+        accent = QColor(self.cfg.color or "#80FF9F")
         title_color = QColor(245, 248, 255)
         sub_color = QColor(210, 218, 230, 160)
-        accent = QColor(self.cfg.color or "#5BE7FF")
+        muted_color = QColor(210, 218, 230, 115)
 
         p.setFont(QFont("Segoe UI", 10, QFont.Bold))
         p.setPen(title_color)
@@ -1103,46 +1253,127 @@ class MediaPlayerWidget(BaseWidget):
             self.cfg.title or ""
         )
 
-        p.setFont(QFont("Segoe UI", 8))
-        p.setPen(sub_color)
+        media_meta = ctx.get("media_meta")
+        data = media_meta.snapshot() if media_meta is not None else {}
+
+        cover_rect = QRectF(r.left() + 14, r.top() + 44, 76, 76)
+        text_left = cover_rect.right() + 14
+        text_w = r.right() - text_left - 14
+
+        self._draw_cover(p, cover_rect, data.get("thumbnail_bytes", b""), accent)
+
+        title = data.get("title", "") or "No media"
+        artist = data.get("artist", "") or ""
+        album = data.get("album", "") or ""
+        status = data.get("playback_status", "") or ""
+        app_id = data.get("app_id", "") or ""
+        error = data.get("error", "") or ""
+
+        p.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        p.setPen(title_color)
         p.drawText(
-            QRectF(r.left() + 14, r.top() + 34, r.width() - 28, 18),
+            QRectF(text_left, r.top() + 46, text_w, 24),
             Qt.AlignLeft | Qt.AlignVCenter,
-            "System media controls"
+            self._elide_text(p, title, int(text_w))
         )
 
-        rects = self.button_rects()
+        p.setFont(QFont("Segoe UI", 9))
+        p.setPen(sub_color)
+        p.drawText(
+            QRectF(text_left, r.top() + 72, text_w, 20),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            self._elide_text(p, artist or album or app_id, int(text_w))
+        )
 
+        p.setFont(QFont("Segoe UI", 8))
+        p.setPen(muted_color)
+        meta_line = status
+        if album and artist:
+            meta_line = f"{status} / {album}" if status else album
+        elif app_id and not artist:
+            meta_line = f"{status} / {app_id}" if status else app_id
+
+        p.drawText(
+            QRectF(text_left, r.top() + 94, text_w, 20),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            self._elide_text(p, meta_line, int(text_w))
+        )
+
+        if error:
+            p.setFont(QFont("Segoe UI", 7))
+            p.setPen(QColor(255, 190, 130, 170))
+            p.drawText(
+                QRectF(r.left() + 14, r.top() + 124, r.width() - 28, 16),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                self._elide_text(p, error, int(r.width() - 28))
+            )
+
+        rects = self.button_rects()
         self._draw_button(p, rects["prev"], "⏮", accent)
         self._draw_button(p, rects["play"], "⏯", accent)
         self._draw_button(p, rects["next"], "⏭", accent)
         self._draw_button(p, rects["stop"], "⏹", accent)
-
-        p.setFont(QFont("Segoe UI", 8))
-        p.setPen(QColor(210, 218, 230, 130))
-        p.drawText(
-            QRectF(r.left() + 12, r.bottom() - 24, r.width() - 24, 18),
-            Qt.AlignCenter,
-            "Prev / Play-Pause / Next / Stop"
-        )
 
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
 
         p.restore()
 
+    def _draw_cover(self, p: QPainter, rect: QRectF, thumbnail_bytes, accent: QColor):
+        pixmap = self._thumbnail_from_bytes(thumbnail_bytes)
+
+        p.setBrush(QColor(255, 255, 255, 24))
+        p.setPen(QPen(QColor(255, 255, 255, 45), 1))
+        p.drawRoundedRect(rect, 14, 14)
+
+        if pixmap is not None and not pixmap.isNull():
+            scaled = pixmap.scaled(
+                int(rect.width()),
+                int(rect.height()),
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation
+            )
+
+            x = int(rect.left() + (rect.width() - scaled.width()) / 2)
+            y = int(rect.top() + (rect.height() - scaled.height()) / 2)
+
+            p.save()
+            p.setClipRect(rect)
+            p.drawPixmap(x, y, scaled)
+            p.restore()
+            return
+
+        p.setFont(QFont("Segoe UI Symbol", 28, QFont.Bold))
+        p.setPen(accent)
+        p.drawText(rect, Qt.AlignCenter, "♪")
+
+    def _thumbnail_from_bytes(self, thumbnail_bytes):
+        if not thumbnail_bytes:
+            self._last_thumbnail_bytes = None
+            self._thumbnail_pixmap = None
+            return None
+
+        if self._last_thumbnail_bytes == thumbnail_bytes and self._thumbnail_pixmap is not None:
+            return self._thumbnail_pixmap
+
+        image = QImage.fromData(thumbnail_bytes)
+        if image.isNull():
+            self._last_thumbnail_bytes = None
+            self._thumbnail_pixmap = None
+            return None
+
+        self._last_thumbnail_bytes = thumbnail_bytes
+        self._thumbnail_pixmap = QPixmap.fromImage(image)
+        return self._thumbnail_pixmap
+
     def _draw_button(self, p: QPainter, rect: QRectF, text: str, accent: QColor):
         p.setBrush(QColor(255, 255, 255, 24))
         p.setPen(QPen(QColor(255, 255, 255, 45), 1))
         p.drawRoundedRect(rect, 14, 14)
 
-        p.setFont(QFont("Segoe UI Symbol", 16, QFont.Bold))
+        p.setFont(QFont("Segoe UI Symbol", 15, QFont.Bold))
         p.setPen(accent)
-        p.drawText(
-            rect,
-            Qt.AlignCenter,
-            text
-        )
+        p.drawText(rect, Qt.AlignCenter, text)
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
@@ -1151,6 +1382,10 @@ class MediaPlayerWidget(BaseWidget):
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
+
+    def _elide_text(self, p: QPainter, text: str, width: int):
+        metrics = p.fontMetrics()
+        return metrics.elidedText(text or "", Qt.ElideRight, max(20, width))
 
 class SystemWidget(BaseWidget):
     def paint(self, p: QPainter, ctx: Dict):
@@ -3733,7 +3968,8 @@ class DesktopCanvas(QWidget):
             Qt.WindowType.WindowStaysOnBottomHint |
             Qt.Tool
         )
-
+        self.media_meta = MediaMetadataEngine()
+        self.media_meta.start()
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
 
@@ -3933,6 +4169,7 @@ class DesktopCanvas(QWidget):
             "weather": self.weather,
             "dark": self.dark_mode,
             "edit_mode": self.edit_mode,
+            "media_meta": self.media_meta,
         }
 
         for w in self.widgets:
@@ -3990,6 +4227,9 @@ class DesktopCanvas(QWidget):
                             self.media.next_track()
                         elif button == "stop":
                             self.media.stop()
+
+                        if hasattr(self, "media_meta"):
+                            self.media_meta.force_refresh()
 
                         self.update()
                         self.notify_studio_selection_changed()
@@ -4158,7 +4398,7 @@ class DesktopCanvas(QWidget):
                 x=1180,
                 y=450,
                 w=320,
-                h=160,
+                h=200,
                 title="",
                 color="#5BE7FF",
                 bg="#10141C",
@@ -4338,6 +4578,10 @@ class DesktopCanvas(QWidget):
             pass
         try:
             self.js_html_views.clear()
+        except Exception:
+            pass
+        try:
+            self.media_meta.stop()
         except Exception:
             pass
         self.save_config()
