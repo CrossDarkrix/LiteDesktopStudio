@@ -73,7 +73,33 @@ CONFIG_PATH = "config.json"
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
 DEFAULT_NETWORK_UP_COLOR = "#80FF9F"
+DEFAULT_STUDIO_THEME = "dark"
+STUDIO_THEME_DARK = "dark"
+STUDIO_THEME_LIGHT = "light"
 
+
+def normalize_studio_theme(value):
+    value = (value or "").strip().lower()
+
+    if value in (STUDIO_THEME_DARK, STUDIO_THEME_LIGHT):
+        return value
+
+    return DEFAULT_STUDIO_THEME
+
+
+def get_next_studio_theme(value):
+    value = normalize_studio_theme(value)
+
+    if value == STUDIO_THEME_DARK:
+        return STUDIO_THEME_LIGHT
+
+    return STUDIO_THEME_DARK
+
+def set_canvas_studio_theme(canvas, theme):
+    canvas.studio_theme = normalize_studio_theme(theme)
+
+def get_canvas_studio_theme(canvas):
+    return normalize_studio_theme(getattr(canvas, "studio_theme", DEFAULT_STUDIO_THEME))
 
 class DummyVolumeController:
     def __init__(self):
@@ -2881,6 +2907,298 @@ class WidgetEditor(QDialog):
 class LiteDeskStudio(QMainWindow):
     def __init__(self, canvas):
         super().__init__()
+        self.STUDIO_DARK_STYLESHEET = """
+                    QMainWindow {
+                        background: #0F1117;
+                        color: #F5F7FA;
+                    }
+
+                    QWidget {
+                        font-family: "Segoe UI";
+                        color: #F5F7FA;
+                        background: transparent;
+                    }
+
+                    QWidget#SidePanel,
+                    QWidget#CenterPanel,
+                    QWidget#PropertyPanel {
+                        background: #151922;
+                        border: 1px solid #252B38;
+                        border-radius: 16px;
+                    }
+
+                    QLabel#Title {
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: #FFFFFF;
+                    }
+
+                    QLabel#SectionTitle {
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: #80FF9F;
+                        margin-top: 6px;
+                    }
+
+                    QLabel#SubText,
+                    QLabel#StatusText {
+                        color: #AAB2C0;
+                        font-size: 12px;
+                    }
+
+                    QPushButton {
+                        background: #232A38;
+                        color: #FFFFFF;
+                        border: 1px solid #343D50;
+                        border-radius: 10px;
+                        padding: 8px 10px;
+                    }
+
+                    QPushButton:hover {
+                        background: #24382D;
+                        border: 1px solid #3DDC84;
+                    }
+
+                    QPushButton:pressed {
+                        background: #1C2230;
+                    }
+
+                    QPushButton:disabled {
+                        background: #1A1D25;
+                        color: #555C68;
+                        border: 1px solid #242936;
+                    }
+
+                    QLineEdit,
+                    QTextEdit,
+                    QSpinBox {
+                        background: #0F131C;
+                        color: #FFFFFF;
+                        border: 1px solid #30384A;
+                        border-radius: 8px;
+                        padding: 6px;
+                        selection-background-color: #2FA866;
+                    }
+
+                    QTextEdit#HelpBox {
+                        background: #10141C;
+                        color: #BFC7D5;
+                        border: 1px solid #252B38;
+                        border-radius: 12px;
+                    }
+
+                    QListWidget {
+                        background: #0F131C;
+                        border: 1px solid #30384A;
+                        border-radius: 10px;
+                        padding: 4px;
+                    }
+
+                    QListWidget::item {
+                        padding: 8px;
+                        border-radius: 8px;
+                    }
+
+                    QListWidget::item:selected {
+                        background: #2FA866;
+                        color: white;
+                    }
+
+                    QListWidget::item:hover {
+                        background: #222A38;
+                    }
+
+                    QCheckBox {
+                        spacing: 8px;
+                        color: #FFFFFF;
+                    }
+
+                    QCheckBox::indicator {
+                        width: 18px;
+                        height: 18px;
+                    }
+                    QScrollArea#PropertyScrollArea {
+                        background: transparent;
+                        border: none;
+                    }
+
+                    QScrollArea#PropertyScrollArea > QWidget > QWidget {
+                        background: #151922;
+                        border: 1px solid #252B38;
+                        border-radius: 16px;
+                    }
+
+                    QScrollBar:vertical {
+                        background: transparent;
+                        width: 10px;
+                        margin: 8px 2px 8px 2px;
+                    }
+
+                    QScrollBar::handle:vertical {
+                        background: #343D50;
+                        border-radius: 5px;
+                        min-height: 30px;
+                    }
+
+                    QScrollBar::handle:vertical:hover {
+                        background: #51617D;
+                    }
+
+                    QScrollBar::add-line:vertical,
+                    QScrollBar::sub-line:vertical {
+                        height: 0px;
+                    }
+
+                    QScrollBar::add-page:vertical,
+                    QScrollBar::sub-page:vertical {
+                        background: transparent;
+                    }
+                """
+        self.STUDIO_LIGHT_STYLESHEET = """
+                    QMainWindow {
+                        background: #F3F5F9;
+                        color: #111318;
+                    }
+
+                    QWidget {
+                        font-family: "Segoe UI";
+                        color: #111318;
+                        background: transparent;
+                    }
+
+                    QWidget#SidePanel,
+                    QWidget#CenterPanel,
+                    QWidget#PropertyPanel {
+                        background: #FFFFFF;
+                        border: 1px solid #DDE2EA;
+                        border-radius: 16px;
+                    }
+
+                    QLabel#Title {
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: #111318;
+                    }
+
+                    QLabel#SectionTitle {
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: #2FA866;
+                        margin-top: 6px;
+                    }
+
+                    QLabel#SubText,
+                    QLabel#StatusText {
+                        color: #5A6475;
+                        font-size: 12px;
+                    }
+
+                    QPushButton {
+                        background: #FFFFFF;
+                        color: #111318;
+                        border: 1px solid #CED5E0;
+                        border-radius: 10px;
+                        padding: 8px 10px;
+                    }
+
+                    QPushButton:hover {
+                        background: #EFFFF4;
+                        border: 1px solid #80FF9F;
+                    }
+
+                    QPushButton:pressed {
+                        background: #D7FFE3;
+                    }
+
+                    QPushButton:disabled {
+                        background: #F1F3F6;
+                        color: #A0A8B5;
+                        border: 1px solid #D8DDE5;
+                    }
+
+                    QLineEdit,
+                    QTextEdit,
+                    QSpinBox {
+                        background: #FFFFFF;
+                        color: #111318;
+                        border: 1px solid #CCD3DD;
+                        border-radius: 8px;
+                        padding: 6px;
+                        selection-background-color: #2FA866;
+                    }
+
+                    QTextEdit#HelpBox {
+                        background: #F8FAFE;
+                        color: #384252;
+                        border: 1px solid #DDE2EA;
+                        border-radius: 12px;
+                    }
+
+                    QListWidget {
+                        background: #FFFFFF;
+                        border: 1px solid #CCD3DD;
+                        border-radius: 10px;
+                        padding: 4px;
+                    }
+
+                    QListWidget::item {
+                        padding: 8px;
+                        border-radius: 8px;
+                    }
+
+                    QListWidget::item:selected {
+                        background: #2FA866;
+                        color: white;
+                    }
+
+                    QListWidget::item:hover {
+                        background: #EFFFF4;
+                    }
+
+                    QCheckBox {
+                        spacing: 8px;
+                        color: #111318;
+                    }
+
+                    QCheckBox::indicator {
+                        width: 18px;
+                        height: 18px;
+                    }
+                    QScrollArea#PropertyScrollArea {
+                        background: transparent;
+                        border: none;
+                    }
+
+                    QScrollArea#PropertyBar::handle:vertical {QScrollArea#PropertyScrollArea > QWidget > QWidget {
+                        background: #C5CDDA;
+                        border-radius: 5px;
+                        min-height: 30px;
+                    }
+
+                    QScrollBar::handle:vertical:hover {
+                        background: #9AA8BB;
+                    }
+
+                    QScrollBar::add-line:vertical,
+                    QScrollBar::sub-line:vertical {
+                        height: 0px;
+                    }
+
+                    QScrollBar::add-page:vertical,
+                    QScrollBar::sub-page:vertical {
+                        background: transparent;
+                    }
+                        background: #FFFFFF;
+                        border: 1px solid #DDE2EA;
+                        border-radius: 16px;
+                    }
+
+                    QScrollBar:vertical {
+                        background: transparent;
+                        width: 10px;
+                        margin: 8px 2px 8px 2px;
+                    }
+                """
         if os.path.exists(os.path.join(os.getcwd(), 'icon.png')):
             self.setWindowIcon(QIcon(os.path.join(os.getcwd(), 'icon.png')))
         self.updating_ui = False
@@ -3029,7 +3347,11 @@ class LiteDeskStudio(QMainWindow):
         self.edit_mode_check.setChecked(self.canvas.edit_mode)
         self.edit_mode_check.stateChanged.connect(self.on_edit_mode_changed)
         top.addWidget(self.edit_mode_check)
-
+        self.btn_toggle_studio_theme = QPushButton()
+        self.btn_toggle_studio_theme.setMinimumHeight(32)
+        self.btn_toggle_studio_theme.clicked.connect(self.toggle_studio_theme)
+        top.addWidget(self.btn_toggle_studio_theme)
+        self.update_studio_theme_button_text()
         layout.addLayout(top)
 
         help_box = QTextEdit()
@@ -3859,301 +4181,49 @@ class LiteDeskStudio(QMainWindow):
             "・Config save: JSON"
         )
 
-    def apply_style(self):
-        if WindowsTheme.is_dark_mode():
-            self.setStyleSheet("""
-                QMainWindow {
-                    background: #0F1117;
-                    color: #F5F7FA;
-                }
+    def apply_studio_theme_stylesheet(self, studio, theme):
+        theme = normalize_studio_theme(theme)
 
-                QWidget {
-                    font-family: "Segoe UI";
-                    color: #F5F7FA;
-                    background: transparent;
-                }
-
-                QWidget#SidePanel,
-                QWidget#CenterPanel,
-                QWidget#PropertyPanel {
-                    background: #151922;
-                    border: 1px solid #252B38;
-                    border-radius: 16px;
-                }
-
-                QLabel#Title {
-                    font-size: 22px;
-                    font-weight: 700;
-                    color: #FFFFFF;
-                }
-
-                QLabel#SectionTitle {
-                    font-size: 13px;
-                    font-weight: 700;
-                    color: #80FF9F;
-                    margin-top: 6px;
-                }
-
-                QLabel#SubText,
-                QLabel#StatusText {
-                    color: #AAB2C0;
-                    font-size: 12px;
-                }
-
-                QPushButton {
-                    background: #232A38;
-                    color: #FFFFFF;
-                    border: 1px solid #343D50;
-                    border-radius: 10px;
-                    padding: 8px 10px;
-                }
-
-                QPushButton:hover {
-                    background: #24382D;
-                    border: 1px solid #3DDC84;
-                }
-
-                QPushButton:pressed {
-                    background: #1C2230;
-                }
-
-                QPushButton:disabled {
-                    background: #1A1D25;
-                    color: #555C68;
-                    border: 1px solid #242936;
-                }
-
-                QLineEdit,
-                QTextEdit,
-                QSpinBox {
-                    background: #0F131C;
-                    color: #FFFFFF;
-                    border: 1px solid #30384A;
-                    border-radius: 8px;
-                    padding: 6px;
-                    selection-background-color: #2FA866;
-                }
-
-                QTextEdit#HelpBox {
-                    background: #10141C;
-                    color: #BFC7D5;
-                    border: 1px solid #252B38;
-                    border-radius: 12px;
-                }
-
-                QListWidget {
-                    background: #0F131C;
-                    border: 1px solid #30384A;
-                    border-radius: 10px;
-                    padding: 4px;
-                }
-
-                QListWidget::item {
-                    padding: 8px;
-                    border-radius: 8px;
-                }
-
-                QListWidget::item:selected {
-                    background: #2FA866;
-                    color: white;
-                }
-
-                QListWidget::item:hover {
-                    background: #222A38;
-                }
-
-                QCheckBox {
-                    spacing: 8px;
-                    color: #FFFFFF;
-                }
-
-                QCheckBox::indicator {
-                    width: 18px;
-                    height: 18px;
-                }
-                QScrollArea#PropertyScrollArea {
-                    background: transparent;
-                    border: none;
-                }
-                
-                QScrollArea#PropertyScrollArea > QWidget > QWidget {
-                    background: #151922;
-                    border: 1px solid #252B38;
-                    border-radius: 16px;
-                }
-                
-                QScrollBar:vertical {
-                    background: transparent;
-                    width: 10px;
-                    margin: 8px 2px 8px 2px;
-                }
-                
-                QScrollBar::handle:vertical {
-                    background: #343D50;
-                    border-radius: 5px;
-                    min-height: 30px;
-                }
-                
-                QScrollBar::handle:vertical:hover {
-                    background: #51617D;
-                }
-                
-                QScrollBar::add-line:vertical,
-                QScrollBar::sub-line:vertical {
-                    height: 0px;
-                }
-                
-                QScrollBar::add-page:vertical,
-                QScrollBar::sub-page:vertical {
-                    background: transparent;
-                }
-            """)
+        if theme == STUDIO_THEME_LIGHT:
+            studio.setStyleSheet(self.STUDIO_LIGHT_STYLESHEET)
         else:
-            self.setStyleSheet("""
-                QMainWindow {
-                    background: #F3F5F9;
-                    color: #111318;
-                }
+            studio.setStyleSheet(self.STUDIO_DARK_STYLESHEET)
 
-                QWidget {
-                    font-family: "Segoe UI";
-                    color: #111318;
-                    background: transparent;
-                }
+    def apply_style(self):
+        theme = get_canvas_studio_theme(self.canvas)
+        self.apply_studio_theme_stylesheet(self, theme)
+        self.update_studio_theme_button_text()
 
-                QWidget#SidePanel,
-                QWidget#CenterPanel,
-                QWidget#PropertyPanel {
-                    background: #FFFFFF;
-                    border: 1px solid #DDE2EA;
-                    border-radius: 16px;
-                }
+    def init_studio_theme_button(self, parent_layout):
+        self.btn_toggle_studio_theme = QPushButton()
+        self.btn_toggle_studio_theme.setMinimumHeight(32)
+        self.btn_toggle_studio_theme.clicked.connect(self.toggle_studio_theme)
+        parent_layout.addWidget(self.btn_toggle_studio_theme)
+        self.update_studio_theme_button_text()
 
-                QLabel#Title {
-                    font-size: 22px;
-                    font-weight: 700;
-                    color: #111318;
-                }
+    def update_studio_theme_button_text(self):
+        if not hasattr(self, "btn_toggle_studio_theme"):
+            return
 
-                QLabel#SectionTitle {
-                    font-size: 13px;
-                    font-weight: 700;
-                    color: #2FA866;
-                    margin-top: 6px;
-                }
+        theme = get_canvas_studio_theme(self.canvas)
 
-                QLabel#SubText,
-                QLabel#StatusText {
-                    color: #5A6475;
-                    font-size: 12px;
-                }
+        if theme == STUDIO_THEME_DARK:
+            self.btn_toggle_studio_theme.setText("テーマ: ダーク")
+        else:
+            self.btn_toggle_studio_theme.setText("テーマ: ライト")
 
-                QPushButton {
-                    background: #FFFFFF;
-                    color: #111318;
-                    border: 1px solid #CED5E0;
-                    border-radius: 10px;
-                    padding: 8px 10px;
-                }
+    def toggle_studio_theme(self):
+        current = get_canvas_studio_theme(self.canvas)
+        next_theme = get_next_studio_theme(current)
+        set_canvas_studio_theme(self.canvas, next_theme)
 
-                QPushButton:hover {
-                    background: #EFFFF4;
-                    border: 1px solid #80FF9F;
-                }
+        self.apply_style()
 
-                QPushButton:pressed {
-                    background: #D7FFE3;
-                }
+        try:
+            self.canvas.save_config()
+        except Exception:
+            pass
 
-                QPushButton:disabled {
-                    background: #F1F3F6;
-                    color: #A0A8B5;
-                    border: 1px solid #D8DDE5;
-                }
-
-                QLineEdit,
-                QTextEdit,
-                QSpinBox {
-                    background: #FFFFFF;
-                    color: #111318;
-                    border: 1px solid #CCD3DD;
-                    border-radius: 8px;
-                    padding: 6px;
-                    selection-background-color: #2FA866;
-                }
-
-                QTextEdit#HelpBox {
-                    background: #F8FAFE;
-                    color: #384252;
-                    border: 1px solid #DDE2EA;
-                    border-radius: 12px;
-                }
-
-                QListWidget {
-                    background: #FFFFFF;
-                    border: 1px solid #CCD3DD;
-                    border-radius: 10px;
-                    padding: 4px;
-                }
-
-                QListWidget::item {
-                    padding: 8px;
-                    border-radius: 8px;
-                }
-
-                QListWidget::item:selected {
-                    background: #2FA866;
-                    color: white;
-                }
-
-                QListWidget::item:hover {
-                    background: #EFFFF4;
-                }
-
-                QCheckBox {
-                    spacing: 8px;
-                    color: #111318;
-                }
-
-                QCheckBox::indicator {
-                    width: 18px;
-                    height: 18px;
-                }
-                QScrollArea#PropertyScrollArea {
-                    background: transparent;
-                    border: none;
-                }
-                
-                QScrollArea#PropertyBar::handle:vertical {QScrollArea#PropertyScrollArea > QWidget > QWidget {
-                    background: #C5CDDA;
-                    border-radius: 5px;
-                    min-height: 30px;
-                }
-                
-                QScrollBar::handle:vertical:hover {
-                    background: #9AA8BB;
-                }
-                
-                QScrollBar::add-line:vertical,
-                QScrollBar::sub-line:vertical {
-                    height: 0px;
-                }
-                
-                QScrollBar::add-page:vertical,
-                QScrollBar::sub-page:vertical {
-                    background: transparent;
-                }
-                    background: #FFFFFF;
-                    border: 1px solid #DDE2EA;
-                    border-radius: 16px;
-                }
-                
-                QScrollBar:vertical {
-                    background: transparent;
-                    width: 10px;
-                    margin: 8px 2px 8px 2px;
-                }
-            """)
     def closeEvent(self, event):
         try:
             if hasattr(self, "ui_timer") and self.ui_timer is not None:
@@ -4172,6 +4242,7 @@ class LiteDeskStudio(QMainWindow):
 class DesktopCanvas(QWidget):
     def __init__(self):
         super().__init__()
+        self.studio_theme = DEFAULT_STUDIO_THEME
         self.volume_sliding = False
         self.setWindowTitle(APP_NAME)
         self.setMouseTracking(True)
@@ -4701,6 +4772,7 @@ class DesktopCanvas(QWidget):
 
     def save_config(self):
         data = {
+            "studio_theme": get_canvas_studio_theme(self),
             "widgets": [asdict(w.to_config()) for w in self.widgets]
         }
         try:
@@ -4788,13 +4860,14 @@ class DesktopCanvas(QWidget):
                     """,
                 )),
             ]
+            self.studio_theme = DEFAULT_STUDIO_THEME
             self.save_config()
             return
 
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-
+                self.studio_theme = normalize_studio_theme(data.get("studio_theme", DEFAULT_STUDIO_THEME))
             self.widgets = []
             for item in data.get("widgets", []):
                 cfg = WidgetConfig(**item)
