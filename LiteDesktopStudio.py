@@ -1237,7 +1237,7 @@ class NetworkWidget(BaseWidget):
         p.drawText(
             QRectF(r.left() + 14, r.top() + 10, r.width() - 28, 24),
             Qt.AlignLeft | Qt.AlignVCenter,
-            self.cfg.title or "Network"
+            self.cfg.title or ""
         )
 
         content_x = r.left() + 16
