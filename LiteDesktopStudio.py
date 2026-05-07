@@ -6,6 +6,8 @@ import math
 import time
 import warnings
 import queue
+import urllib.request
+import urllib.parse
 import ctypes
 import threading
 from dataclasses import dataclass, asdict
@@ -21,6 +23,7 @@ from PySide6.QtCore import (
     QTimer,
     QSize,
     QEvent,
+    QUrl,
 )
 from PySide6.QtGui import (
     QColor,
@@ -64,6 +67,18 @@ warnings.filterwarnings(
 
 APP_NAME = "LiteDeskEngine"
 CONFIG_PATH = "config.json"
+
+DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
+DEFAULT_NETWORK_UP_COLOR = "#80FF9F"
+
+
+def get_network_down_color(cfg):
+    return getattr(cfg, "network_down_color", None) or DEFAULT_NETWORK_DOWN_COLOR
+
+
+def get_network_up_color(cfg):
+    return getattr(cfg, "network_up_color", None) or DEFAULT_NETWORK_UP_COLOR
+
 
 def widget_bg_color(cfg, default_alpha=155):
     bg = QColor(getattr(cfg, "bg", None) or "#10141C")
@@ -378,7 +393,7 @@ class AudioEngine:
                 data = recorder.record(numframes=blocksize)
 
                 if data is None or len(data) == 0:
-                    time.sleep(0.005)
+                    time.sleep(0.00005)
                     continue
 
                 # data は frames x channels の numpy array
@@ -440,6 +455,319 @@ class AudioEngine:
 
             t += 0.08
             time.sleep(1 / 60)
+
+class WeatherEngine:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._running = True
+        self._thread = None
+
+        self.location = ""
+        self.temperature = "--"
+        self.feels_like = "--"
+        self.description = "Loading..."
+        self.humidity = "--"
+        self.wind_kmph = "--"
+        self.area = ""
+        self.country = ""
+        self.updated_at = ""
+        self.error = ""
+        self.icon = "☁"
+        self.weather_code = ""
+
+        self.forecast = []
+
+        self.refresh_interval = 86400.0
+        self._last_fetch = 0.0
+        self._force_fetch = True
+        self.last_fetch_date = ""
+
+    def start(self):
+        if self._thread is not None and self._thread.is_alive():
+            return
+
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._worker,
+            daemon=True
+        )
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+
+    def set_location(self, location: str):
+        location = (location or "").strip()
+
+        with self._lock:
+            if location != self.location:
+                self.location = location
+                self._force_fetch = True
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "location": self.location,
+                "temperature": self.temperature,
+                "feels_like": self.feels_like,
+                "description": self.description,
+                "humidity": self.humidity,
+                "wind_kmph": self.wind_kmph,
+                "area": self.area,
+                "country": self.country,
+                "updated_at": self.updated_at,
+                "error": self.error,
+                "icon": self.icon,
+                "weather_code": self.weather_code,
+                "forecast": list(self.forecast),
+            }
+
+    def _worker(self):
+        while self._running:
+            now = time.time()
+            today = time.strftime("%Y-%m-%d")
+            should_fetch = False
+
+            with self._lock:
+                if self._force_fetch:
+                    should_fetch = True
+                    self._force_fetch = False
+                elif self.last_fetch_date != today:
+                    should_fetch = True
+                elif now - self._last_fetch >= self.refresh_interval:
+                    should_fetch = True
+
+                location = self.location
+
+            if should_fetch:
+                self._fetch_weather(location)
+
+                with self._lock:
+                    self._last_fetch = time.time()
+                    self.last_fetch_date = today
+
+            time.sleep(60.0)
+
+    def _build_url(self, location: str):
+        query = urllib.parse.urlencode({
+            "format": "j1",
+            "lang": "ja"
+        })
+
+        if location:
+            encoded = urllib.parse.quote(location)
+            return f"https://wttr.in/{encoded}?{query}"
+
+        return f"https://wttr.in/?{query}"
+
+    def _translate_weather_desc(self, text: str):
+        text = text or "--"
+
+        table = {
+            "Sunny": "晴れ",
+            "Clear": "快晴",
+            "Partly cloudy": "一部曇り",
+            "Cloudy": "曇り",
+            "Overcast": "厚い曇り",
+            "Mist": "霧",
+            "Fog": "霧",
+            "Patchy rain nearby": "所により雨",
+            "Light rain": "小雨",
+            "Moderate rain": "雨",
+            "Heavy rain": "強い雨",
+            "Light drizzle": "霧雨",
+            "Patchy light drizzle": "所により霧雨",
+            "Patchy light rain": "所により小雨",
+            "Light rain shower": "弱いにわか雨",
+            "Moderate or heavy rain shower": "強いにわか雨",
+            "Thunderstorm": "雷雨",
+            "Patchy snow nearby": "所により雪",
+            "Light snow": "小雪",
+            "Moderate snow": "雪",
+            "Heavy snow": "大雪",
+            "Blizzard": "吹雪",
+        }
+
+        return table.get(text, text)
+
+    def _weather_icon(self, code=None, desc=""):
+        code_text = str(code or "").strip()
+        desc_text = (desc or "").lower()
+
+        code_icon_map = {
+            "113": "☀",   # Sunny / Clear
+            "116": "⛅",   # Partly cloudy
+            "119": "☁",   # Cloudy
+            "122": "☁",   # Overcast
+            "143": "🌫",  # Mist
+            "176": "🌦",  # Patchy rain nearby
+            "179": "🌨",  # Patchy snow nearby
+            "182": "🌨",  # Patchy sleet nearby
+            "185": "🌧",  # Patchy freezing drizzle nearby
+            "200": "⛈",  # Thundery outbreaks nearby
+            "227": "🌨",  # Blowing snow
+            "230": "❄",   # Blizzard
+            "248": "🌫",  # Fog
+            "260": "🌫",  # Freezing fog
+            "263": "🌦",  # Patchy light drizzle
+            "266": "🌧",  # Light drizzle
+            "281": "🌧",  # Freezing drizzle
+            "284": "🌧",  # Heavy freezing drizzle
+            "293": "🌦",  # Patchy light rain
+            "296": "🌧",  # Light rain
+            "299": "🌧",  # Moderate rain at times
+            "302": "🌧",  # Moderate rain
+            "305": "🌧",  # Heavy rain at times
+            "308": "🌧",  # Heavy rain
+            "311": "🌧",  # Light freezing rain
+            "314": "🌧",  # Moderate or heavy freezing rain
+            "317": "🌨",  # Light sleet
+            "320": "🌨",  # Moderate or heavy sleet
+            "323": "🌨",  # Patchy light snow
+            "326": "🌨",  # Light snow
+            "329": "❄",   # Patchy moderate snow
+            "332": "❄",   # Moderate snow
+            "335": "❄",   # Patchy heavy snow
+            "338": "❄",   # Heavy snow
+            "350": "🌨",  # Ice pellets
+            "353": "🌦",  # Light rain shower
+            "356": "🌧",  # Moderate or heavy rain shower
+            "359": "🌧",  # Torrential rain shower
+            "362": "🌨",  # Light sleet showers
+            "365": "🌨",  # Moderate or heavy sleet showers
+            "368": "🌨",  # Light snow showers
+            "371": "❄",   # Moderate or heavy snow showers
+            "374": "🌨",  # Light showers of ice pellets
+            "377": "🌨",  # Moderate or heavy showers of ice pellets
+            "386": "⛈",  # Patchy light rain with thunder
+            "389": "⛈",  # Moderate or heavy rain with thunder
+            "392": "⛈",  # Patchy light snow with thunder
+            "395": "⛈",  # Moderate or heavy snow with thunder
+        }
+
+        if code_text in code_icon_map:
+            return code_icon_map[code_text]
+
+        if "thunder" in desc_text or "雷" in desc_text:
+            return "⛈"
+        if "snow" in desc_text or "雪" in desc_text:
+            return "❄"
+        if "rain" in desc_text or "drizzle" in desc_text or "雨" in desc_text:
+            return "🌧"
+        if "fog" in desc_text or "mist" in desc_text or "霧" in desc_text:
+            return "🌫"
+        if "sunny" in desc_text or "clear" in desc_text or "晴" in desc_text or "快晴" in desc_text:
+            return "☀"
+        if "partly" in desc_text or "一部" in desc_text:
+            return "⛅"
+        if "cloud" in desc_text or "曇" in desc_text:
+            return "☁"
+
+        return "☁"
+
+    def _fetch_weather(self, location: str):
+        url = self._build_url(location)
+
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "DesktopForge-Py WeatherWidget"
+                }
+            )
+
+            with urllib.request.urlopen(req, timeout=8) as response:
+                raw = response.read().decode(
+                    "utf-8",
+                    errors="replace"
+                )
+
+            data = json.loads(raw)
+
+            current_list = data.get("current_condition", [])
+            current = current_list[0] if current_list else {}
+
+            nearest_area = data.get("nearest_area", [])
+            area_data = nearest_area[0] if nearest_area else {}
+
+            weather_list = data.get("weather", [])
+
+            temp = current.get("temp_C", "--")
+            feels = current.get("FeelsLikeC", "--")
+            humidity = current.get("humidity", "--")
+            wind = current.get("windspeedKmph", "--")
+            weather_code = current.get("weatherCode", "")
+
+            desc = "--"
+            desc_list = current.get("weatherDesc", [])
+
+            if desc_list:
+                desc = desc_list[0].get("value", "--")
+
+            icon = self._weather_icon(weather_code, desc)
+            desc = self._translate_weather_desc(desc)
+
+            area = ""
+            area_names = area_data.get("areaName", [])
+
+            if area_names:
+                area = area_names[0].get("value", "")
+
+            country = ""
+            countries = area_data.get("country", [])
+
+            if countries:
+                country = countries[0].get("value", "")
+
+            forecast = []
+
+            for day_data in weather_list[:3]:
+                date = day_data.get("date", "")
+                max_temp = day_data.get("maxtempC", "--")
+                min_temp = day_data.get("mintempC", "--")
+
+                day_desc = ""
+                day_code = ""
+                hourly = day_data.get("hourly", [])
+
+                if hourly:
+                    mid = hourly[len(hourly) // 2]
+                    weather_desc = mid.get("weatherDesc", [])
+                    day_code = mid.get("weatherCode", "")
+
+                    if weather_desc:
+                        day_desc = weather_desc[0].get("value", "")
+
+                day_icon = self._weather_icon(day_code, day_desc)
+                day_desc = self._translate_weather_desc(day_desc)
+
+                forecast.append({
+                    "date": date,
+                    "max": max_temp,
+                    "min": min_temp,
+                    "desc": day_desc,
+                    "icon": day_icon,
+                    "code": day_code,
+                })
+
+            with self._lock:
+                self.temperature = temp
+                self.feels_like = feels
+                self.description = desc
+                self.humidity = humidity
+                self.wind_kmph = wind
+                self.area = area
+                self.country = country
+                self.updated_at = time.strftime("%H:%M:%S")
+                self.error = ""
+                self.icon = icon
+                self.weather_code = weather_code
+                self.forecast = forecast
+
+        except Exception as e:
+            with self._lock:
+                self.error = str(e)
+                self.updated_at = time.strftime("%H:%M:%S")
 
 class MediaController:
     VK_MEDIA_NEXT_TRACK = 0xB0
@@ -618,7 +946,11 @@ class WidgetConfig:
     cpu_color: str = "#5BE7FF"
     memory_color: str = "#B388FF"
     disk_color: str = "#80FF9F"
-
+    clock_show_digital: bool = True
+    visualizer_flip_vertical: bool = False
+    weather_location: str = ""
+    network_down_color: str = "#5BE7FF"
+    network_up_color: str = "#80FF9F"
 
 class BaseWidget:
     def __init__(self, cfg: WidgetConfig):
@@ -669,12 +1001,25 @@ class VisualizerWidget(BaseWidget):
         p.setBrush(QBrush(grad))
         p.setPen(Qt.NoPen)
 
+        flip_vertical = bool(getattr(self.cfg, "visualizer_flip_vertical", False))
+
         base_y = r.bottom() - margin
+        top_y = r.top() + margin + 18
+
         for i, v in enumerate(bars):
             h = max(2, available_h * float(v))
             x = r.left() + margin + i * (bar_w + bar_gap)
-            y = base_y - h
-            p.drawRoundedRect(QRectF(x, y, bar_w, h), 3, 3)
+
+            if flip_vertical:
+                y = top_y
+            else:
+                y = base_y - h
+
+            p.drawRoundedRect(
+                QRectF(x, y, bar_w, h),
+                3,
+                3
+            )
 
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setPen(QColor(230, 240, 255, 220))
@@ -868,21 +1213,31 @@ class NetworkWidget(BaseWidget):
     def paint(self, p: QPainter, ctx: Dict):
         monitor = ctx["monitor"]
         monitor.update()
+
         r = self.rect
 
-        bg = widget_bg_color(self.cfg)
+        p.save()
+
+        try:
+            bg = widget_bg_color(self.cfg)
+        except Exception:
+            bg = QColor(self.cfg.bg or "#10141C")
+            bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
 
         p.setRenderHint(QPainter.Antialiasing, True)
-        p.setBrush(bg)
+        p.setBrush(QBrush(bg))
         p.setPen(Qt.NoPen)
         p.drawRoundedRect(r, 16, 16)
+
+        down_color = QColor(get_network_down_color(self.cfg))
+        up_color = QColor(get_network_up_color(self.cfg))
 
         p.setFont(QFont("Segoe UI", 10, QFont.Bold))
         p.setPen(QColor(245, 248, 255))
         p.drawText(
             QRectF(r.left() + 14, r.top() + 10, r.width() - 28, 24),
             Qt.AlignLeft | Qt.AlignVCenter,
-            self.cfg.title or ""
+            self.cfg.title or "Network"
         )
 
         content_x = r.left() + 16
@@ -893,9 +1248,9 @@ class NetworkWidget(BaseWidget):
             content_x,
             r.top() + 42,
             content_w,
-            "DOWN",
-            format_bytes_per_sec(getattr(monitor, "net_down", 0.0)),
-            QColor("#5BE7FF")
+            "UP",
+            format_bytes_per_sec(getattr(monitor, "net_up", 0.0)),
+            up_color
         )
 
         self._draw_net_row(
@@ -903,9 +1258,9 @@ class NetworkWidget(BaseWidget):
             content_x,
             r.top() + 68,
             content_w,
-            "UP",
-            format_bytes_per_sec(getattr(monitor, "net_up", 0.0)),
-            QColor("#80FF9F")
+            "DOWN",
+            format_bytes_per_sec(getattr(monitor, "net_down", 0.0)),
+            down_color
         )
 
         graph_top = r.top() + 98
@@ -913,7 +1268,7 @@ class NetworkWidget(BaseWidget):
         graph_h = r.bottom() - graph_top - graph_bottom_margin
 
         if graph_h < 36:
-           graph_h = 36
+            graph_h = 36
 
         graph_rect = QRectF(
             content_x,
@@ -929,7 +1284,9 @@ class NetworkWidget(BaseWidget):
             p,
             graph_rect,
             down_history,
-            up_history
+            up_history,
+            down_color,
+            up_color
         )
 
         total_down = self._format_total_bytes(
@@ -948,7 +1305,9 @@ class NetworkWidget(BaseWidget):
         )
 
         if self.selected and ctx.get("edit_mode", True):
-           self._paint_selection(p)
+            self._paint_selection(p)
+
+        p.restore()
 
     def _draw_net_row(self, p: QPainter, x, y, w, label, value, color):
         label_rect = QRectF(x, y, 64, 20)
@@ -970,7 +1329,7 @@ class NetworkWidget(BaseWidget):
             value
         )
 
-    def _draw_history_graph(self, p: QPainter, rect: QRectF, down_history, up_history):
+    def _draw_history_graph(self, p: QPainter, rect: QRectF, down_history, up_history, down_color, up_color):
         if rect.width() <= 4 or rect.height() <= 4:
             return
 
@@ -999,18 +1358,17 @@ class NetworkWidget(BaseWidget):
         self._draw_graph_line(
             p,
             rect,
-            down_values,
+            up_values,
             padded_max,
-            QColor("#5BE7FF"),
+            up_color,
             True
         )
-
         self._draw_graph_line(
             p,
             rect,
-            up_values,
+            down_values,
             padded_max,
-            QColor("#80FF9F"),
+            down_color,
             False
         )
 
@@ -1220,14 +1578,15 @@ class AnalogClockWidget(BaseWidget):
         p.setPen(Qt.NoPen)
         p.drawEllipse(QPoint(int(cx), int(cy)), 5, 5)
 
-        digital = time.strftime("%H:%M:%S", now)
-        p.setFont(QFont("Segoe UI", 9))
-        p.setPen(QColor(230, 235, 245, 210))
-        p.drawText(
-            QRectF(r.left(), r.bottom() - 28, r.width(), 20),
-            Qt.AlignCenter,
-            digital
-        )
+        if getattr(self.cfg, "clock_show_digital", True):
+            digital = time.strftime("%H:%M:%S", now)
+            p.setFont(QFont("Segoe UI", 9))
+            p.setPen(QColor(230, 235, 245, 210))
+            p.drawText(
+                QRectF(r.left(), r.bottom() - 28, r.width(), 20),
+                Qt.AlignCenter,
+                digital
+            )
 
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
@@ -1394,6 +1753,231 @@ class CalendarWidget(BaseWidget):
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
+
+# noinspection LanguageDetectionInspection
+DEFAULT_JS_HTML = """
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", sans-serif;
+    color: white;
+}
+.card {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    padding: 16px;
+    background: rgba(16, 20, 28, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #80FF9F;
+}
+button {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(128, 255, 159, 0.55);
+    background: rgba(128, 255, 159, 0.12);
+    color: white;
+}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="title">JavaScript Widget</div>
+  <p id="text">この内容は WidgetConfig.text として config.json に保存されます。</p>
+  <button onclick="document.getElementById('text').textContent = 'Clicked: ' + new Date().toLocaleTimeString();">
+    Click me
+  </button>
+</div>
+</body>
+</html>
+"""
+
+
+def build_js_html_document(html: str) -> str:
+    html = html or ""
+
+    if "<html" in html.lower() or "<!doctype" in html.lower():
+        return html
+
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html, body {{
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", sans-serif;
+    color: white;
+}}
+body {{
+    box-sizing: border-box;
+}}
+</style>
+</head>
+<body>
+{html}
+</body>
+</html>"""
+
+
+class JSHtmlWidget(BaseWidget):
+    def paint(self, p: QPainter, ctx: Dict):
+        # QWebEngineView が実際の HTML/JS を描画します。
+        # Canvas 側では編集モードの選択枠だけ描きます。
+        if self.selected and ctx.get("edit_mode", True):
+            self._paint_selection(p)
+
+    def _paint_selection(self, p: QPainter):
+        pen = QPen(QColor("#FFFFFF"))
+        pen.setStyle(Qt.DashLine)
+
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(self.rect, 16, 16)
+
+
+class JSHtmlViewManager:
+    def __init__(self, canvas):
+        self.canvas = canvas
+        self.views = {}
+        self.last_html = {}
+        self.available = True
+        self.error = ""
+
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+        except Exception as e:
+            self.available = False
+            self.error = repr(e)
+
+    def sync(self, widgets):
+        if not self.available:
+            return
+
+        active_ids = set()
+
+        for widget in widgets:
+            if not isinstance(widget, JSHtmlWidget):
+                continue
+
+            key = id(widget)
+            active_ids.add(key)
+
+            view = self.views.get(key)
+            if view is None:
+                view = self._create_view()
+                self.views[key] = view
+
+            self._sync_view(widget, view)
+
+        stale_ids = [key for key in self.views.keys() if key not in active_ids]
+        for key in stale_ids:
+            view = self.views.pop(key)
+            self.last_html.pop(key, None)
+            try:
+                view.hide()
+                view.deleteLater()
+            except Exception:
+                pass
+
+    def clear(self):
+        for view in list(self.views.values()):
+            try:
+                view.hide()
+                view.deleteLater()
+            except Exception:
+                pass
+
+        self.views.clear()
+        self.last_html.clear()
+
+    def _create_view(self):
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+
+        view = QWebEngineView(self.canvas)
+        view.setAttribute(Qt.WA_TranslucentBackground, True)
+        view.setStyleSheet("background: transparent;")
+
+        try:
+            page = view.page()
+            page.setBackgroundColor(Qt.transparent)
+        except Exception:
+            pass
+
+        try:
+            settings = view.settings()
+            try:
+                from PySide6.QtWebEngineCore import QWebEngineSettings
+                settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+                settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+                settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        view.show()
+        return view
+
+    def _sync_view(self, widget, view):
+        cfg = widget.cfg
+        r = widget.rect
+
+        view.setGeometry(
+            int(r.left()),
+            int(r.top()),
+            max(1, int(r.width())),
+            max(1, int(r.height()))
+        )
+
+        edit_mode = bool(getattr(self.canvas, "edit_mode", True))
+        view.setAttribute(Qt.WA_TransparentForMouseEvents, edit_mode)
+
+        html = get_js_html_from_config(cfg)
+        html = build_js_html_document(html)
+
+        key = id(widget)
+        if self.last_html.get(key) != html:
+            self.last_html[key] = html
+            try:
+                view.setHtml(html, QUrl("about:blank"))
+            except Exception:
+                view.setHtml(html)
+
+        if not view.isVisible():
+            view.show()
+
+
+def get_js_html_from_config(cfg):
+    # JavaScript HTML は WidgetConfig.text に保存します。
+    return getattr(cfg, "text", "") or DEFAULT_JS_HTML
+
+
+def set_js_html_to_config(cfg, html: str):
+    # Studio UI の HTML/Text 欄から保存する時に使えます。
+    cfg.text = html or ""
+
+
 class HtmlWidget(BaseWidget):
     def __init__(self, cfg: WidgetConfig):
         super().__init__(cfg)
@@ -1514,6 +2098,244 @@ class VolumeWidget(BaseWidget):
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
+class WeatherWidget(BaseWidget):
+    def paint(self, p: QPainter, ctx: Dict):
+        weather = ctx["weather"]
+
+        location = getattr(self.cfg, "weather_location", "")
+        weather.set_location(location)
+
+        data = weather.snapshot()
+        r = self.rect
+
+        p.save()
+
+        try:
+            bg = widget_bg_color(self.cfg)
+        except Exception:
+            bg = QColor(self.cfg.bg or "#10141C")
+            bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
+
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setBrush(QBrush(bg))
+        p.setPen(Qt.NoPen)
+        p.drawRoundedRect(r, 16, 16)
+
+        accent = QColor(self.cfg.color or "#80FF9F")
+        title_color = QColor(245, 248, 255)
+        sub_color = QColor(210, 218, 230, 170)
+        text_color = QColor(235, 240, 250, 220)
+
+        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setPen(title_color)
+        p.drawText(
+            QRectF(r.left() + 14, r.top() + 10, r.width() - 28, 24),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            self.cfg.title or ""
+        )
+
+        area_label = data.get("area") or location or "現在地"
+        country = data.get("country") or ""
+
+        if country:
+            place_text = f"{area_label}, {country}"
+        else:
+            place_text = area_label
+
+        p.setFont(QFont("Segoe UI", 8))
+        p.setPen(sub_color)
+        p.drawText(
+            QRectF(r.left() + 14, r.top() + 34, r.width() - 28, 18),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            place_text
+        )
+
+        error = data.get("error", "")
+
+        if error:
+            p.setFont(QFont("Segoe UI", 9))
+            p.setPen(QColor(255, 180, 120))
+            p.drawText(
+                QRectF(r.left() + 14, r.top() + 62, r.width() - 28, 40),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                "天気の取得に失敗しました"
+            )
+
+            p.setFont(QFont("Segoe UI", 8))
+            p.setPen(QColor(255, 210, 180, 160))
+            p.drawText(
+                QRectF(r.left() + 14, r.top() + 98, r.width() - 28, 50),
+                Qt.AlignLeft | Qt.TextWordWrap,
+                error
+            )
+
+            if self.selected and ctx.get("edit_mode", True):
+                self._paint_selection(p)
+
+            p.restore()
+            return
+
+        temp = data.get("temperature", "--")
+        feels = data.get("feels_like", "--")
+        desc = data.get("description", "Loading...")
+        humidity = data.get("humidity", "--")
+        wind = data.get("wind_kmph", "--")
+        icon = data.get("icon", "☁")
+
+        icon_rect = QRectF(r.left() + 14, r.top() + 56, r.width() * 0.22, 62)
+        temp_rect = QRectF(r.left() + r.width() * 0.25, r.top() + 58, r.width() * 0.23, 56)
+        desc_rect = QRectF(r.left() + r.width() * 0.50, r.top() + 62, r.width() * 0.46, 24)
+        feels_rect = QRectF(r.left() + r.width() * 0.50, r.top() + 88, r.width() * 0.46, 20)
+
+        p.setFont(QFont("Segoe UI Emoji", 36))
+        p.setPen(accent)
+        p.drawText(
+            icon_rect,
+            Qt.AlignCenter,
+            icon
+        )
+
+        p.setFont(QFont("Segoe UI", 34, QFont.Bold))
+        p.setPen(accent)
+        p.drawText(
+            temp_rect,
+            Qt.AlignLeft | Qt.AlignVCenter,
+            f"{temp}°"
+        )
+
+        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setPen(text_color)
+        p.drawText(
+            desc_rect,
+            Qt.AlignLeft | Qt.AlignVCenter,
+            desc
+        )
+
+        p.setFont(QFont("Segoe UI", 8))
+        p.setPen(sub_color)
+        p.drawText(
+            feels_rect,
+            Qt.AlignLeft | Qt.AlignVCenter,
+            f"体感 {feels}°C"
+        )
+
+        info_top = r.top() + 122
+        info_h = 22
+
+        self._draw_info_row(
+            p,
+            r.left() + 14,
+            info_top,
+            r.width() - 28,
+            "湿度",
+            f"{humidity}%",
+            sub_color,
+            text_color
+        )
+
+        self._draw_info_row(
+            p,
+            r.left() + 14,
+            info_top + info_h,
+            r.width() - 28,
+            "風速",
+            f"{wind} km/h",
+            sub_color,
+            text_color
+        )
+
+        forecast = data.get("forecast", [])
+        forecast_top = info_top + info_h * 2 + 8
+
+        if forecast and r.height() >= 220:
+            p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            p.setPen(sub_color)
+            p.drawText(
+                QRectF(r.left() + 14, forecast_top, r.width() - 28, 18),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                "3日予報"
+            )
+
+            card_top = forecast_top + 22
+            card_w = (r.width() - 34) / 3.0
+
+            for i, item in enumerate(forecast[:3]):
+                x = r.left() + 14 + i * (card_w + 3)
+                rect = QRectF(x, card_top, card_w, 56)
+
+                p.setBrush(QColor(255, 255, 255, 20))
+                p.setPen(Qt.NoPen)
+                p.drawRoundedRect(rect, 10, 10)
+
+                date = item.get("date", "")
+                max_t = item.get("max", "--")
+                min_t = item.get("min", "--")
+                day_icon = item.get("icon", "☁")
+
+                p.setFont(QFont("Segoe UI", 7))
+                p.setPen(sub_color)
+                p.drawText(
+                    QRectF(rect.left() + 5, rect.top() + 3, rect.width() - 10, 12),
+                    Qt.AlignCenter,
+                    date[-5:] if len(date) >= 5 else date
+                )
+
+                p.setFont(QFont("Segoe UI Emoji", 14))
+                p.setPen(accent)
+                p.drawText(
+                    QRectF(rect.left() + 5, rect.top() + 16, rect.width() - 10, 18),
+                    Qt.AlignCenter,
+                    day_icon
+                )
+
+                p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+                p.setPen(text_color)
+                p.drawText(
+                    QRectF(rect.left() + 5, rect.top() + 35, rect.width() - 10, 16),
+                    Qt.AlignCenter,
+                    f"{min_t}°/{max_t}°"
+                )
+
+        updated = data.get("updated_at", "")
+
+        if updated:
+            p.setFont(QFont("Segoe UI", 7))
+            p.setPen(QColor(210, 218, 230, 120))
+            p.drawText(
+                QRectF(r.left() + 12, r.bottom() - 20, r.width() - 24, 14),
+                Qt.AlignRight | Qt.AlignVCenter,
+                f"更新 {updated}"
+            )
+
+        if self.selected and ctx.get("edit_mode", True):
+            self._paint_selection(p)
+
+        p.restore()
+
+    def _draw_info_row(self, p, x, y, w, label, value, label_color, value_color):
+        p.setFont(QFont("Segoe UI", 8))
+        p.setPen(label_color)
+        p.drawText(
+            QRectF(x, y, w * 0.45, 18),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            label
+        )
+
+        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        p.setPen(value_color)
+        p.drawText(
+            QRectF(x + w * 0.45, y, w * 0.55, 18),
+            Qt.AlignRight | Qt.AlignVCenter,
+            value
+        )
+
+    def _paint_selection(self, p: QPainter):
+        pen = QPen(QColor("#FFFFFF"))
+        pen.setStyle(Qt.DashLine)
+
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(self.rect, 16, 16)
 
 def create_widget(cfg: WidgetConfig) -> BaseWidget:
     if cfg.type == "visualizer":
@@ -1539,6 +2361,12 @@ def create_widget(cfg: WidgetConfig) -> BaseWidget:
 
     if cfg.type == "media":
         return MediaPlayerWidget(cfg)
+
+    if cfg.type == "weather":
+        return WeatherWidget(cfg)
+
+    if cfg.type == "html_js":
+        return JSHtmlWidget(cfg)
 
     return SystemWidget(cfg)
 
@@ -1670,16 +2498,21 @@ class LiteDeskStudio(QMainWindow):
         self.btn_add_network = QPushButton("通信状況")
         self.btn_add_calendar = QPushButton("カレンダー")
         self.btn_add_media = QPushButton("音楽プレイヤー操作")
+        self.btn_add_html_js = QPushButton("JavaScript HTML")
         self.btn_add_html = QPushButton("HTML / CSS 風")
+        self.btn_add_weather = QPushButton("天気")
 
         self.btn_add_visualizer.clicked.connect(lambda: self.add_widget("visualizer"))
         self.btn_add_system.clicked.connect(lambda: self.add_widget("system"))
         self.btn_add_volume.clicked.connect(lambda: self.add_widget("volume"))
         self.btn_add_clock.clicked.connect(lambda: self.add_widget("clock"))
+        self.btn_add_weather.clicked.connect(lambda: self.add_widget("weather"))
         self.btn_add_network.clicked.connect(lambda: self.add_widget("network"))
         self.btn_add_calendar.clicked.connect(lambda: self.add_widget("calendar"))
         self.btn_add_media.clicked.connect(lambda: self.add_widget("media"))
+        self.btn_add_html_js.clicked.connect(lambda: self.add_widget("html_js"))
         self.btn_add_html.clicked.connect(lambda: self.add_widget("html"))
+
 
         for button in [
             self.btn_add_visualizer,
@@ -1687,8 +2520,10 @@ class LiteDeskStudio(QMainWindow):
             self.btn_add_volume,
             self.btn_add_clock,
             self.btn_add_calendar,
+            self.btn_add_weather,
             self.btn_add_network,
             self.btn_add_media,
+            self.btn_add_html_js,
             self.btn_add_html,
         ]:
             button.setMinimumHeight(36)
@@ -1872,8 +2707,9 @@ class LiteDeskStudio(QMainWindow):
         self.prop_cpu_color = QLineEdit()
         self.prop_memory_color = QLineEdit()
         self.prop_disk_color = QLineEdit()
-
         self.prop_color.textChanged.connect(self.apply_properties_live)
+        self.prop_network_down_color = QLineEdit()
+        self.prop_network_up_color = QLineEdit()
         self.prop_bg.textChanged.connect(self.apply_properties_live)
         self.prop_cpu_color.textChanged.connect(self.apply_properties_live)
         self.prop_memory_color.textChanged.connect(self.apply_properties_live)
@@ -1884,6 +2720,8 @@ class LiteDeskStudio(QMainWindow):
 
         self.btn_pick_color.clicked.connect(self.pick_color)
         self.btn_pick_bg.clicked.connect(self.pick_bg)
+        self.prop_network_down_color.textChanged.connect(self.apply_properties_live)
+        self.prop_network_up_color.textChanged.connect(self.apply_properties_live)
         self.btn_pick_cpu_color = QPushButton("CPU色を選択")
         self.btn_pick_memory_color = QPushButton("Memory色を選択")
         self.btn_pick_disk_color = QPushButton("Disk色を選択")
@@ -1891,10 +2729,20 @@ class LiteDeskStudio(QMainWindow):
         self.btn_pick_cpu_color.clicked.connect(self.pick_cpu_color)
         self.btn_pick_memory_color.clicked.connect(self.pick_memory_color)
         self.btn_pick_disk_color.clicked.connect(self.pick_disk_color)
-
+        self.btn_pick_network_down_color = QPushButton("DOWN色を選択")
+        self.btn_pick_network_up_color = QPushButton("UP色を選択")
         self.prop_font_size = QSpinBox()
         self.prop_font_size.setRange(8, 72)
         self.prop_font_size.valueChanged.connect(self.apply_properties_live)
+        self.prop_clock_show_digital = QCheckBox("デジタル時刻を表示")
+        self.prop_clock_show_digital.stateChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_flip_vertical = QCheckBox("ビジュアライザーを上下反転")
+        self.prop_visualizer_flip_vertical.stateChanged.connect(self.apply_properties_live)
+        self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
+        self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
+        self.prop_weather_location = QLineEdit()
+        self.prop_weather_location.setPlaceholderText("例: Kobe / Tokyo / Osaka")
+        self.prop_weather_location.textChanged.connect(self.apply_properties_live)
 
         form.addRow("Type", self.prop_type)
         form.addRow("Title", self.prop_title)
@@ -1915,6 +2763,23 @@ class LiteDeskStudio(QMainWindow):
 
         form.addRow("Disk Color", self.prop_disk_color)
         form.addRow("", self.btn_pick_disk_color)
+        form.addRow("Weather Location", self.prop_weather_location)
+        form.addRow("Network DOWN Color", self.prop_network_down_color)
+        form.addRow("", self.btn_pick_network_down_color)
+        form.addRow("Network UP Color", self.prop_network_up_color)
+        form.addRow("", self.btn_pick_network_up_color)
+
+        self.network_only_property_widgets = [
+            self.prop_network_down_color,
+            self.btn_pick_network_down_color,
+            self.prop_network_up_color,
+            self.btn_pick_network_up_color,
+        ]
+
+        self.weather_only_property_widgets = [
+            self.prop_weather_location,
+        ]
+
         self.system_only_property_widgets = [
             self.prop_cpu_color,
             self.btn_pick_cpu_color,
@@ -1924,6 +2789,15 @@ class LiteDeskStudio(QMainWindow):
             self.btn_pick_disk_color,
         ]
         form.addRow("Font Size", self.prop_font_size)
+        form.addRow("", self.prop_clock_show_digital)
+        form.addRow("", self.prop_visualizer_flip_vertical)
+        self.visualizer_only_property_widgets = [
+            self.prop_visualizer_flip_vertical,
+        ]
+
+        self.clock_only_property_widgets = [
+            self.prop_clock_show_digital,
+        ]
 
         layout.addLayout(form)
 
@@ -1952,7 +2826,82 @@ class LiteDeskStudio(QMainWindow):
 
         layout.addLayout(bottom)
         self.set_system_color_controls_visible(False)
+        self.set_clock_controls_visible(False)
+        self.set_visualizer_controls_visible(False)
+
         return scroll
+
+    def set_network_controls_visible(self, visible: bool):
+        widgets = getattr(self, "network_only_property_widgets", [])
+
+        for widget in widgets:
+            widget.setVisible(visible)
+
+            try:
+                label = self.property_form.labelForField(widget)
+                if label is not None:
+                    label.setVisible(visible)
+            except Exception:
+                pass
+
+    def pick_network_down_color(self):
+        current = QColor(self.prop_network_down_color.text() or DEFAULT_NETWORK_DOWN_COLOR)
+        color = QColorDialog.getColor(current, self, "DOWN色を選択")
+
+        if color.isValid():
+            self.prop_network_down_color.blockSignals(True)
+            self.prop_network_down_color.setText(color.name())
+            self.prop_network_down_color.blockSignals(False)
+            self.apply_properties(save=True)
+
+    def pick_network_up_color(self):
+        current = QColor(self.prop_network_up_color.text() or DEFAULT_NETWORK_UP_COLOR)
+        color = QColorDialog.getColor(current, self, "UP色を選択")
+
+        if color.isValid():
+            self.prop_network_up_color.blockSignals(True)
+            self.prop_network_up_color.setText(color.name())
+            self.prop_network_up_color.blockSignals(False)
+            self.apply_properties(save=True)
+
+    def set_weather_controls_visible(self, visible: bool):
+        widgets = getattr(self, "weather_only_property_widgets", [])
+
+        for widget in widgets:
+            widget.setVisible(visible)
+
+            try:
+                label = self.property_form.labelForField(widget)
+                if label is not None:
+                    label.setVisible(visible)
+            except Exception:
+                pass
+
+    def set_visualizer_controls_visible(self, visible: bool):
+        widgets = getattr(self, "visualizer_only_property_widgets", [])
+
+        for widget in widgets:
+            widget.setVisible(visible)
+
+            try:
+                label = self.property_form.labelForField(widget)
+                if label is not None:
+                    label.setVisible(visible)
+            except Exception:
+                pass
+
+    def set_clock_controls_visible(self, visible: bool):
+        widgets = getattr(self, "clock_only_property_widgets", [])
+
+        for widget in widgets:
+            widget.setVisible(visible)
+
+            try:
+                label = self.property_form.labelForField(widget)
+                if label is not None:
+                    label.setVisible(visible)
+            except Exception:
+                pass
 
     def add_widget(self, kind):
         self.canvas.add_widget(kind)
@@ -2031,6 +2980,10 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_memory_color", None),
             getattr(self, "prop_disk_color", None),
             getattr(self, "prop_bg_alpha", None),
+            getattr(self, "prop_clock_show_digital", None),
+            getattr(self, "prop_visualizer_flip_vertical", None),
+            getattr(self, "prop_network_down_color", None),
+            getattr(self, "prop_network_up_color", None),
         ]
 
         controls = [c for c in controls if c is not None]
@@ -2060,6 +3013,15 @@ class LiteDeskStudio(QMainWindow):
                 self.set_property_enabled(False)
                 self.set_system_color_controls_visible(False)
                 self.prop_bg_alpha.setValue(155)
+                self.prop_clock_show_digital.setChecked(True)
+                self.set_clock_controls_visible(False)
+                self.prop_visualizer_flip_vertical.setChecked(False)
+                self.set_visualizer_controls_visible(False)
+                self.set_weather_controls_visible(False)
+                self.prop_network_down_color.setText("")
+                self.prop_network_up_color.setText("")
+                self.set_network_controls_visible(False)
+
                 return
 
             cfg = widget.cfg
@@ -2080,6 +3042,40 @@ class LiteDeskStudio(QMainWindow):
             self.prop_bg_alpha.setValue(max(0, min(255, int(getattr(cfg, "bg_alpha", 155)))))
             self.prop_font_size.setValue(cfg.font_size)
             self.prop_text.setPlainText(cfg.text or "")
+            is_clock_widget = cfg.type == "clock"
+            self.set_clock_controls_visible(is_clock_widget)
+            is_visualizer_widget = cfg.type == "visualizer"
+            self.set_visualizer_controls_visible(is_visualizer_widget)
+            self.set_weather_controls_visible(cfg.type == "weather")
+            is_network_widget = cfg.type == "network"
+            self.set_network_controls_visible(is_network_widget)
+
+            if cfg.type == "network":
+                self.prop_network_down_color.setText(getattr(cfg, "network_down_color", "#5BE7FF"))
+                self.prop_network_up_color.setText(getattr(cfg, "network_up_color", "#80FF9F"))
+            else:
+                self.prop_network_down_color.setText("")
+                self.prop_network_up_color.setText("")
+
+            if cfg.type == "weather":
+                self.prop_weather_location.setText(getattr(cfg, "weather_location", ""))
+            else:
+                self.prop_weather_location.setText("")
+
+            if cfg.type == "visualizer":
+                self.prop_visualizer_flip_vertical.setChecked(
+                    bool(getattr(cfg, "visualizer_flip_vertical", False))
+                )
+            else:
+                self.prop_visualizer_flip_vertical.setChecked(False)
+
+            if cfg.type == "clock":
+                self.prop_clock_show_digital.setChecked(
+                    bool(getattr(cfg, "clock_show_digital", True))
+                )
+            else:
+                self.prop_clock_show_digital.setChecked(True)
+
             if cfg.type == "system":
                 self.prop_cpu_color.setText(getattr(cfg, "cpu_color", "#5BE7FF"))
                 self.prop_memory_color.setText(getattr(cfg, "memory_color", "#B388FF"))
@@ -2088,7 +3084,6 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_cpu_color.setText("")
                 self.prop_memory_color.setText("")
                 self.prop_disk_color.setText("")
-
         finally:
             for c in controls:
                 c.blockSignals(False)
@@ -2121,6 +3116,8 @@ class LiteDeskStudio(QMainWindow):
             self.btn_pick_cpu_color,
             self.btn_pick_memory_color,
             self.btn_pick_disk_color,
+            self.prop_clock_show_digital,
+            self.prop_visualizer_flip_vertical,
         ]
 
         for widget in widgets:
@@ -2170,6 +3167,10 @@ class LiteDeskStudio(QMainWindow):
             "prop_cpu_color",
             "prop_memory_color",
             "prop_disk_color",
+            "prop_clock_show_digital",
+            "prop_visualizer_flip_vertical",
+            "prop_network_down_color",
+            "prop_network_up_color",
 
         ]
 
@@ -2208,7 +3209,25 @@ class LiteDeskStudio(QMainWindow):
             cfg.bg = bg_text
             cfg.bg_alpha = self.prop_bg_alpha.value()
             cfg.font_size = font_size
-            cfg.text = text
+            cfg.text = self.prop_text.toPlainText()
+
+            if cfg.type == "html_js" and not cfg.text:
+                self.prop_text.setPlainText(DEFAULT_JS_HTML)
+            else:
+                self.prop_text.setPlainText(cfg.text or "")
+
+            if cfg.type == "weather":
+                cfg.weather_location = self.prop_weather_location.text().strip()
+
+            if cfg.type == "clock":
+                cfg.clock_show_digital = self.prop_clock_show_digital.isChecked()
+
+            if cfg.type == "visualizer":
+                cfg.visualizer_flip_vertical = self.prop_visualizer_flip_vertical.isChecked()
+
+            if cfg.type == "network":
+                cfg.network_down_color = self.prop_network_down_color.text().strip() or "#5BE7FF"
+                cfg.network_up_color = self.prop_network_up_color.text().strip() or "#80FF9F"
 
             if cfg.type == "system":
                 cpu_color_text = self.prop_cpu_color.text().strip() or "#5BE7FF"
@@ -2708,7 +3727,7 @@ class DesktopCanvas(QWidget):
         self.volume_sliding = False
         self.setWindowTitle(APP_NAME)
         self.setMouseTracking(True)
-
+        self.js_html_views = JSHtmlViewManager(self)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnBottomHint |
@@ -2725,6 +3744,8 @@ class DesktopCanvas(QWidget):
         self.monitor = SystemMonitor()
         self.volume = VolumeController()
         self.media = MediaController()
+        self.weather = WeatherEngine()
+        self.weather.start()
         self.widgets: List[BaseWidget] = []
         self.selected: Optional[BaseWidget] = None
         self.dragging = False
@@ -2772,7 +3793,7 @@ class DesktopCanvas(QWidget):
         self.control_panel.activateWindow()
 
     def show_menu(self):
-            self.open_studio()
+        self.open_studio()
 
     def notify_studio_selection_changed(self):
         if hasattr(self, "control_panel") and self.control_panel:
@@ -2830,6 +3851,8 @@ class DesktopCanvas(QWidget):
             cpu_color=getattr(old, "cpu_color", "#5BE7FF"),
             memory_color=getattr(old, "memory_color", "#B388FF"),
             disk_color=getattr(old, "disk_color", "#80FF9F"),
+            clock_show_digital=getattr(old, "clock_show_digital", True),
+            visualizer_flip_vertical=getattr(old, "visualizer_flip_vertical", False),
         )
 
         widget = create_widget(cfg)
@@ -2895,6 +3918,7 @@ class DesktopCanvas(QWidget):
             self.update()
 
     def on_frame(self):
+        self.js_html_views.sync(self.widgets)
         self.update()
 
     def paintEvent(self, event):
@@ -2906,6 +3930,7 @@ class DesktopCanvas(QWidget):
             "monitor": self.monitor,
             "volume": self.volume,
             "media": self.media,
+            "weather": self.weather,
             "dark": self.dark_mode,
             "edit_mode": self.edit_mode,
         }
@@ -3138,6 +4163,18 @@ class DesktopCanvas(QWidget):
                 color="#5BE7FF",
                 bg="#10141C",
             )
+        elif kind == "weather":
+            cfg = WidgetConfig(
+                type="weather",
+                x=1180,
+                y=630,
+                w=320,
+                h=300,
+                title="Weather",
+                color="#80FF9F",
+                bg="#10141C",
+                weather_location="",
+            )
         elif kind == "calendar":
             cfg = WidgetConfig(
                 type="calendar",
@@ -3148,6 +4185,18 @@ class DesktopCanvas(QWidget):
                 title="",
                 color="#80FF9F",
                 bg="#10141C",
+            )
+        elif kind == "html_js":
+            cfg = WidgetConfig(
+                type="html_js",
+                x=220,
+                y=520,
+                w=420,
+                h=220,
+                title="JavaScript HTML",
+                color="#80FF9F",
+                bg="#10141C",
+                text=DEFAULT_JS_HTML,
             )
         else:
             cfg = WidgetConfig(
@@ -3281,6 +4330,14 @@ class DesktopCanvas(QWidget):
             pass
         try:
             self.volume.stop()
+        except Exception:
+            pass
+        try:
+            self.weather.stop()
+        except Exception:
+            pass
+        try:
+            self.js_html_views.clear()
         except Exception:
             pass
         self.save_config()
