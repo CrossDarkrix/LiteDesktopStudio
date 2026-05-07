@@ -1266,6 +1266,23 @@ class MediaMetadataEngine:
                 "updated_at": self.updated_at,
             }
 
+    def _get_media_manager_class(self):
+        try:
+            from winsdk.windows.media.control import (
+                GlobalSystemMediaTransportControlsSessionManager as MediaManager,
+            )
+            return MediaManager, ""
+        except Exception as e1:
+            winsdk_error = repr(e1)
+
+        error = (
+            "Media metadata API is unavailable. "
+            "Install winsdk or winrt media control package. "
+            f"winsdk error: {winsdk_error}"
+        )
+
+        return None, error
+
     def _worker(self):
         while self._running:
             with self._lock:
@@ -1285,6 +1302,22 @@ class MediaMetadataEngine:
 
     async def _fetch_once(self):
         try:
+
+            MediaManager, import_error = self._get_media_manager_class()
+
+            if MediaManager is None:
+                with self._lock:
+                    self.available = False
+                    self.error = import_error
+                    self.title = ""
+                    self.artist = ""
+                    self.album = ""
+                    self.app_id = ""
+                    self.playback_status = "Unavailable"
+                    self.thumbnail_bytes = b""
+                    self.updated_at = time.strftime("%H:%M:%S")
+                return
+
             manager = await MediaManager.request_async()
             session = manager.get_current_session()
 
