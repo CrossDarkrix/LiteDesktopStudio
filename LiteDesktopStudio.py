@@ -17,7 +17,6 @@ import soundcard as sc
 import numpy as np
 import psutil
 import calendar as py_calendar
-from winsdk.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as MediaManager)
 from PySide6.QtCore import (
     Qt,
     QRectF,
