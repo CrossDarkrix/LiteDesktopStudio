@@ -76,6 +76,181 @@ DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
 DEFAULT_NETWORK_UP_COLOR = "#80FF9F"
 
 
+class DummyVolumeController:
+    def __init__(self):
+        self.available = False
+        self._volume = 50
+        self._mute = False
+
+    def get_volume(self):
+        return int(self._volume)
+
+    def set_volume(self, value):
+        self._volume = max(0, min(100, int(value)))
+
+    def get_mute(self):
+        return bool(self._mute)
+
+    def set_mute(self, value):
+        self._mute = bool(value)
+
+    def toggle_mute(self):
+        self._mute = not self._mute
+
+    def stop(self):
+        pass
+
+
+class DummyMediaController:
+    def __init__(self):
+        self.available = False
+
+    def play_pause(self):
+        pass
+
+    def next_track(self):
+        pass
+
+    def previous_track(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+class NullMediaMetadataEngine:
+    def __init__(self, error="Media metadata is unavailable on this platform"):
+        self.available = False
+        self.error = error
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def force_refresh(self):
+        pass
+
+    def snapshot(self):
+        return {
+            "available": False,
+            "error": self.error,
+            "title": "",
+            "artist": "",
+            "album": "",
+            "app_id": "",
+            "playback_status": "Unavailable",
+            "thumbnail_bytes": b"",
+            "updated_at": "",
+        }
+
+
+def is_windows():
+    return sys.platform.startswith("win")
+
+def choose_canvas_window_flags(canvas):
+    if is_windows():
+        canvas.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnBottomHint |
+            Qt.Tool
+        )
+    else:
+        canvas.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Window
+        )
+
+def is_windows_only_desktop_overlay_supported():
+    return is_windows()
+
+def create_runtime_controllers(canvas):
+    canvas.audio = AudioEngine()
+    canvas.monitor = SystemMonitor()
+
+    if is_windows():
+        try:
+            canvas.volume = VolumeController()
+        except Exception:
+            canvas.volume = DummyVolumeController()
+
+        try:
+            canvas.media = MediaController()
+        except Exception:
+            canvas.media = DummyMediaController()
+
+        try:
+            canvas.media_meta = MediaMetadataEngine()
+            canvas.media_meta.start()
+        except Exception as e:
+            canvas.media_meta = NullMediaMetadataEngine(repr(e))
+    else:
+        canvas.volume = DummyVolumeController()
+        canvas.media = DummyMediaController()
+        canvas.media_meta = NullMediaMetadataEngine(
+            "Media metadata is available only on Windows with winsdk/winrt"
+        )
+
+
+def hide_js_views_if_present(canvas):
+    try:
+        if hasattr(canvas, "js_html_views"):
+            canvas.js_html_views.set_visible(False)
+    except Exception:
+        pass
+
+
+def show_js_views_if_present(canvas):
+    try:
+        if hasattr(canvas, "js_html_views"):
+            canvas.js_html_views.set_visible(True)
+    except Exception:
+        pass
+
+def build_safe_ctx(canvas):
+    return {
+        "audio": getattr(canvas, "audio", None),
+        "monitor": getattr(canvas, "monitor", None),
+        "volume": getattr(canvas, "volume", DummyVolumeController()),
+        "media": getattr(canvas, "media", DummyMediaController()),
+        "media_meta": getattr(canvas, "media_meta", NullMediaMetadataEngine()),
+        "weather": getattr(canvas, "weather", None),
+        "dark": getattr(canvas, "dark_mode", False),
+        "edit_mode": getattr(canvas, "edit_mode", True),
+    }
+
+def stop_runtime_controllers(canvas):
+    try:
+        if hasattr(canvas, "audio") and canvas.audio is not None:
+            canvas.audio.stop()
+    except Exception:
+        pass
+
+    try:
+        if hasattr(canvas, "volume") and canvas.volume is not None:
+            canvas.volume.stop()
+    except Exception:
+        pass
+
+    try:
+        if hasattr(canvas, "media_meta") and canvas.media_meta is not None:
+            canvas.media_meta.stop()
+    except Exception:
+        pass
+
+    try:
+        if hasattr(canvas, "weather") and canvas.weather is not None:
+            canvas.weather.stop()
+    except Exception:
+        pass
+
+    try:
+        if hasattr(canvas, "js_html_views") and canvas.js_html_views is not None:
+            canvas.js_html_views.clear()
+    except Exception:
+        pass
+
 def get_network_down_color(cfg):
     return getattr(cfg, "network_down_color", None) or DEFAULT_NETWORK_DOWN_COLOR
 
@@ -676,7 +851,7 @@ class WeatherEngine:
             req = urllib.request.Request(
                 url,
                 headers={
-                    "User-Agent": "LiteDesktopStudio-WeatherWidget-v1.0"
+                    "User-Agent": "WeatherWidget"
                 }
             )
 
@@ -2104,6 +2279,13 @@ class JSHtmlViewManager:
         except Exception as e:
             self.available = False
             self.error = repr(e)
+
+    def set_visible(self, visible: bool):
+        for view in list(getattr(self, "views", {}).values()):
+            try:
+                view.setVisible(visible)
+            except Exception:
+                pass
 
     def sync(self, widgets):
         if not self.available:
@@ -3949,8 +4131,7 @@ class LiteDeskStudio(QMainWindow):
 
         try:
             if hasattr(self, "canvas") and self.canvas is not None:
-                self.canvas.show()
-                self.canvas.update()
+                self.canvas.show_canvas_after_studio_if_needed()
         except Exception:
             pass
 
@@ -3963,23 +4144,13 @@ class DesktopCanvas(QWidget):
         self.setWindowTitle(APP_NAME)
         self.setMouseTracking(True)
         self.js_html_views = JSHtmlViewManager(self)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnBottomHint |
-            Qt.Tool
-        )
-        self.media_meta = MediaMetadataEngine()
-        self.media_meta.start()
+        choose_canvas_window_flags(self)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
 
         screen = QApplication.primaryScreen().geometry()
         self.setGeometry(screen)
-
-        self.audio = AudioEngine()
-        self.monitor = SystemMonitor()
-        self.volume = VolumeController()
-        self.media = MediaController()
+        create_runtime_controllers(self)
         self.weather = WeatherEngine()
         self.weather.start()
         self.widgets: List[BaseWidget] = []
@@ -4001,7 +4172,42 @@ class DesktopCanvas(QWidget):
         self.dark_mode = WindowsTheme.is_dark_mode()
 
         self.load_config()
-        self.audio.start()
+        try:
+            self.audio.start()
+        except Exception:
+            pass
+
+    def hide_canvas_for_studio_if_needed(self):
+        if is_windows():
+            return
+
+        try:
+            if hasattr(self, "js_html_views"):
+                self.js_html_views.set_visible(False)
+        except Exception:
+            pass
+
+        try:
+            self.hide()
+        except Exception:
+            pass
+
+    def show_canvas_after_studio_if_needed(self):
+        if is_windows():
+            return
+
+        try:
+            self.show()
+            self.raise_()
+            self.update()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "js_html_views"):
+                self.js_html_views.set_visible(True)
+        except Exception:
+            pass
 
     def widget_at_pos(self, pos: QPoint):
         for widget in reversed(self.widgets):
@@ -4021,6 +4227,8 @@ class DesktopCanvas(QWidget):
                     return
             except RuntimeError:
                 self.control_panel = None
+
+        self.hide_canvas_for_studio_if_needed()
 
         self.control_panel = LiteDeskStudio(self)
         self.control_panel.destroyed.connect(self.on_studio_destroyed)
@@ -4166,10 +4374,10 @@ class DesktopCanvas(QWidget):
             "monitor": self.monitor,
             "volume": self.volume,
             "media": self.media,
-            "weather": self.weather,
+            "media_meta": getattr(self, "media_meta", None),
+            "weather": getattr(self, "weather", None),
             "dark": self.dark_mode,
             "edit_mode": self.edit_mode,
-            "media_meta": self.media_meta,
         }
 
         for w in self.widgets:
@@ -4564,26 +4772,7 @@ class DesktopCanvas(QWidget):
             self.widgets = []
 
     def closeEvent(self, event):
-        try:
-            self.audio.stop()
-        except:
-            pass
-        try:
-            self.volume.stop()
-        except Exception:
-            pass
-        try:
-            self.weather.stop()
-        except Exception:
-            pass
-        try:
-            self.js_html_views.clear()
-        except Exception:
-            pass
-        try:
-            self.media_meta.stop()
-        except Exception:
-            pass
+        stop_runtime_controllers(self)
         self.save_config()
         event.accept()
 
@@ -4591,11 +4780,16 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
+
     canvas = DesktopCanvas()
     canvas.show()
 
-    hwnd = int(canvas.winId())
-    WindowsTheme.apply_immersive_dark_titlebar(hwnd, WindowsTheme.is_dark_mode())
+    if is_windows():
+        hwnd = int(canvas.winId())
+        WindowsTheme.apply_immersive_dark_titlebar(
+            hwnd,
+            WindowsTheme.is_dark_mode()
+        )
 
     sys.exit(app.exec())
 
