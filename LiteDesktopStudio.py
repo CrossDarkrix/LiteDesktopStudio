@@ -735,9 +735,6 @@ class WeatherEngine:
             with self._lock:
                 if self._force_fetch:
                     should_fetch = True
-                    self._force_fetch = False
-                elif self.last_fetch_date != today:
-                    should_fetch = True
                 elif now - self._last_fetch >= self.refresh_interval:
                     should_fetch = True
 
@@ -750,7 +747,7 @@ class WeatherEngine:
                     self._last_fetch = time.time()
                     self.last_fetch_date = today
 
-            time.sleep(60.0)
+            time.sleep(self.refresh_interval)
 
     def _build_url(self, location: str):
         query = urllib.parse.urlencode({
