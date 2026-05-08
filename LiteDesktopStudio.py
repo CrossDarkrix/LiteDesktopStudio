@@ -681,7 +681,7 @@ class WeatherEngine:
 
         self.forecast = []
 
-        self.refresh_interval = 86400.0
+        self.refresh_interval = 36000.0
         self._last_fetch = 0.0
         self._force_fetch = True
         self.last_fetch_date = ""
