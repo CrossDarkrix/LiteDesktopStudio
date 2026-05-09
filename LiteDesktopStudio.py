@@ -11,6 +11,7 @@ import urllib.request
 import urllib.parse
 import ctypes
 import threading
+import multiprocessing
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional
 import soundcard as sc
@@ -25,6 +26,8 @@ from PySide6.QtCore import (
     QSize,
     QEvent,
     QUrl,
+    QPointF,
+    QRect,
 )
 from PySide6.QtGui import (
     QColor,
@@ -38,6 +41,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QImage,
     QPixmap,
+    QRegion,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -76,7 +80,32 @@ DEFAULT_NETWORK_UP_COLOR = "#80FF9F"
 DEFAULT_STUDIO_THEME = "dark"
 STUDIO_THEME_DARK = "dark"
 STUDIO_THEME_LIGHT = "light"
+THREADS = []
 
+
+class Thread:
+    def set_func(self, func):
+        self.func = func
+        self.thread = threading.Thread(target=self.func, daemon=True)
+
+    def start(self):
+        self.run()
+
+    def run(self):
+        self.threads = self.thread.start()
+        return 0
+
+    def running(self):
+        try:
+            return self.thread.is_alive()
+        except:
+            return None
+
+    def kill(self):
+        try:
+            self.thread.join(0)
+        except:
+            pass
 
 def normalize_studio_theme(value):
     value = (value or "").strip().lower()
@@ -354,8 +383,10 @@ class VolumeController:
         self._running = True
         self._cmd_queue = queue.Queue()
         self._lock = threading.Lock()
-        self._thread = threading.Thread(target=self._worker, daemon=True)
-        self._thread.start()
+        thread = Thread()
+        thread.set_func(self._worker)
+        thread.start()
+        THREADS.append(thread)
 
     def _worker(self):
         endpoint = None
@@ -531,13 +562,16 @@ class AudioEngine:
         self.lock = threading.Lock()
         self.use_fake = False
         self.backend_name = "soundcard"
+        self._thread = Thread()
 
     def start(self):
         self.running = True
-        concurrent.futures.ThreadPoolExecutor(os.cpu_count() * 999999).submit(self._run)
+        self._thread.set_func(self._run)
+        self._thread.start()
 
     def stop(self):
         self.running = False
+        self._thread.kill()
 
     def get_spectrum(self) -> np.ndarray:
         with self.lock:
@@ -664,7 +698,7 @@ class WeatherEngine:
     def __init__(self):
         self._lock = threading.Lock()
         self._running = True
-        self._thread = None
+        self._thread = Thread()
 
         self.location = ""
         self.temperature = "--"
@@ -687,18 +721,16 @@ class WeatherEngine:
         self.last_fetch_date = ""
 
     def start(self):
-        if self._thread is not None and self._thread.is_alive():
+        if self._thread.running() is not None:
             return
 
         self._running = True
-        self._thread = threading.Thread(
-            target=self._worker,
-            daemon=True
-        )
+        self._thread.set_func(self._worker)
         self._thread.start()
 
     def stop(self):
         self._running = False
+        self._thread.kill()
 
     def set_location(self, location: str):
         location = (location or "").strip()
@@ -1203,7 +1235,6 @@ class VisualizerWidget(BaseWidget):
         p.setPen(Qt.NoPen)
 
         flip_vertical = bool(getattr(self.cfg, "visualizer_flip_vertical", False))
-
         base_y = r.bottom() - margin
         top_y = r.top() + margin + 18
 
@@ -1243,7 +1274,7 @@ class VisualizerWidget(BaseWidget):
 class MediaMetadataEngine:
     def __init__(self):
         self._lock = threading.Lock()
-        self._thread = None
+        self._thread = Thread()
         self._running = False
 
         self.available = False
@@ -1260,15 +1291,15 @@ class MediaMetadataEngine:
         self._force_fetch = True
 
     def start(self):
-        if self._thread is not None and self._thread.is_alive():
+        if self._thread.running() is not None:
             return
 
         self._running = True
-        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.set_func(self._worker)
         self._thread.start()
-
     def stop(self):
         self._running = False
+        self._thread.kill()
 
     def force_refresh(self):
         with self._lock:
@@ -1979,82 +2010,66 @@ class NetworkWidget(BaseWidget):
 class AnalogClockWidget(BaseWidget):
     def paint(self, p: QPainter, ctx: Dict):
         r = self.rect
-        bg = widget_bg_color(self.cfg)
+        p.save()
 
         p.setRenderHint(QPainter.Antialiasing, True)
-        p.setBrush(QBrush(bg))
-        p.setPen(Qt.NoPen)
-        p.drawRoundedRect(r, 16, 16)
 
-        now = time.localtime()
-
-        hour = now.tm_hour % 12
-        minute = now.tm_min
-        second = now.tm_sec
-
-        cx = r.left() + r.width() / 2
-        cy = r.top() + r.height() / 2 + 6
-        radius = min(r.width(), r.height()) * 0.36
-
+        cx = r.center().x()
+        cy = r.center().y()
+        radius = min(r.width(), r.height()) * 0.38
         accent = QColor(self.cfg.color)
-        text_color = QColor(245, 248, 255)
+        p.setBrush(QColor("#0E1118"))
+        p.setPen(QPen(QColor(255, 255, 255, 30), 1))
+        p.drawEllipse(QPointF(cx, cy), radius, radius)
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
-        p.setPen(text_color)
-        p.drawText(
-            QRectF(r.left() + 14, r.top() + 8, r.width() - 28, 24),
-            Qt.AlignLeft | Qt.AlignVCenter,
-            self.cfg.title or ""
-        )
-
-        p.setPen(QPen(QColor(255, 255, 255, 70), 2))
-        p.setBrush(QColor(255, 255, 255, 12))
-        p.drawEllipse(QPoint(int(cx), int(cy)), int(radius), int(radius))
+        p.setPen(QPen(accent, 4))
+        p.drawEllipse(QPointF(cx, cy), radius * 1.02, radius * 1.02)
 
         for i in range(60):
             angle = math.radians(i * 6 - 90)
 
-            if i % 5 == 0:
-                inner = radius * 0.82
-                outer = radius * 0.95
-                pen = QPen(QColor(255, 255, 255, 180), 2)
-            else:
-                inner = radius * 0.88
-                outer = radius * 0.95
-                pen = QPen(QColor(255, 255, 255, 75), 1)
+            inner = radius * (0.80 if i % 5 == 0 else 0.88)
+            outer = radius * 0.96
 
-            x1 = cx + math.cos(angle) * inner
-            y1 = cy + math.sin(angle) * inner
-            x2 = cx + math.cos(angle) * outer
-            y2 = cy + math.sin(angle) * outer
+            pen = QPen(QColor(255, 255, 255, 200 if i % 5 == 0 else 80), 2 if i % 5 == 0 else 1)
 
             p.setPen(pen)
-            p.drawLine(int(x1), int(y1), int(x2), int(y2))
+            p.drawLine(
+                int(cx + math.cos(angle) * inner),
+                int(cy + math.sin(angle) * inner),
+                int(cx + math.cos(angle) * outer),
+                int(cy + math.sin(angle) * outer)
+            )
 
-        hour_angle = ((hour + minute / 60.0) * 30.0) - 90.0
-        minute_angle = ((minute + second / 60.0) * 6.0) - 90.0
-        second_angle = second * 6.0 - 90.0
+        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setPen(QColor(240, 240, 255))
 
-        self._draw_hand(p, cx, cy, radius * 0.50, hour_angle, QColor(245, 248, 255), 5)
-        self._draw_hand(p, cx, cy, radius * 0.70, minute_angle, QColor(210, 225, 255), 3)
-        self._draw_hand(p, cx, cy, radius * 0.78, second_angle, accent, 2)
+        for num in range(1, 13):
+            angle = math.radians(num * 30 - 90)
+            tr = radius * 0.65
+
+            x = cx + math.cos(angle) * tr
+            y = cy + math.sin(angle) * tr
+
+            p.drawText(QRectF(x - 12, y - 10, 24, 20), Qt.AlignCenter, str(num))
+
+        now = time.localtime()
+        h = now.tm_hour % 12
+        m = now.tm_min
+        s = now.tm_sec
+
+        ha = ((h + m / 60) * 30) - 90
+        ma = ((m + s / 60) * 6) - 90
+        sa = s * 6 - 90
+
+        self._draw_hand(p, cx, cy, radius * 0.58, ha, QColor('#D3D3D3'), 5)
+        self._draw_hand(p, cx, cy, radius * 0.82, ma, QColor('#D3D3D3'), 3)
+        self._draw_hand(p, cx, cy, radius * 0.92, sa, accent, 2)
 
         p.setBrush(accent)
         p.setPen(Qt.NoPen)
-        p.drawEllipse(QPoint(int(cx), int(cy)), 5, 5)
-
-        if getattr(self.cfg, "clock_show_digital", True):
-            digital = time.strftime("%H:%M:%S", now)
-            p.setFont(QFont("Segoe UI", 9))
-            p.setPen(QColor(230, 235, 245, 210))
-            p.drawText(
-                QRectF(r.left(), r.bottom() - 28, r.width(), 20),
-                Qt.AlignCenter,
-                digital
-            )
-
-        if self.selected and ctx.get("edit_mode", True):
-            self._paint_selection(p)
+        p.drawEllipse(QPointF(cx, cy), 4, 4)
+        p.restore()
 
     def _draw_hand(self, p, cx, cy, length, angle_deg, color, width):
         angle = math.radians(angle_deg)
@@ -2063,15 +2078,9 @@ class AnalogClockWidget(BaseWidget):
 
         pen = QPen(color, width)
         pen.setCapStyle(Qt.RoundCap)
+
         p.setPen(pen)
         p.drawLine(int(cx), int(cy), int(x), int(y))
-
-    def _paint_selection(self, p: QPainter):
-        pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
-        p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(self.rect, 16, 16)
 
 class CalendarWidget(BaseWidget):
     def paint(self, p: QPainter, ctx: Dict):
@@ -2407,8 +2416,10 @@ class JSHtmlViewManager:
                 pass
         except Exception:
             pass
-
-        view.show()
+        thread = Thread()
+        thread.set_func(view.show)
+        thread.start()
+        THREADS.append(thread)
         return view
 
     def _sync_view(self, widget, view):
@@ -2437,7 +2448,10 @@ class JSHtmlViewManager:
                 view.setHtml(html)
 
         if not view.isVisible():
-            view.show()
+            thread = Thread()
+            thread.set_func(view.show)
+            thread.start()
+            THREADS.append(thread)
 
 
 def get_js_html_from_config(cfg):
@@ -3321,7 +3335,10 @@ class LiteDeskStudio(QMainWindow):
             if self.isMinimized():
                 self.hide()
             else:
-                self.canvas.show()
+                thread = Thread()
+                thread.set_func(self.canvas.show)
+                thread.start()
+                THREADS.append(thread)
                 self.canvas.update()
 
         super().changeEvent(event)
@@ -3973,6 +3990,7 @@ class LiteDeskStudio(QMainWindow):
             cfg.y = y
             cfg.w = w
             cfg.h = h
+            self.canvas.update_platform_hit_mask()
             cfg.color = color_text
             cfg.bg = bg_text
             cfg.bg_alpha = self.prop_bg_alpha.value()
@@ -4153,6 +4171,7 @@ class LiteDeskStudio(QMainWindow):
             self.canvas.selected = None
             self.canvas.dragging = False
 
+        self.canvas.update_platform_hit_mask()
         self.canvas.update()
         self.refresh_layer_list()
         self.load_selected_to_editor()
@@ -4276,11 +4295,51 @@ class DesktopCanvas(QWidget):
             self.audio.start()
         except Exception:
             pass
+        self.update_platform_hit_mask()
+
+    def update_platform_hit_mask(self):
+        if is_windows():
+            try:
+                self.clearMask()
+            except Exception:
+                pass
+            return
+
+        try:
+            region = QRegion()
+            margin = 8 if getattr(self, "edit_mode", True) else 2
+
+            for widget in self.widgets:
+                try:
+                    rect = widget.rect.toAlignedRect()
+                except Exception:
+                    rect = QRect(
+                        int(widget.cfg.x),
+                        int(widget.cfg.y),
+                        int(widget.cfg.w),
+                        int(widget.cfg.h)
+                    )
+
+                rect = rect.adjusted(
+                    -margin,
+                    -margin,
+                    margin,
+                    margin
+                )
+
+                region = region.united(QRegion(rect))
+
+            if region.isEmpty():
+                self.setMask(QRegion(QRect(0, 0, 1, 1)))
+            else:
+                self.setMask(region)
+
+        except Exception as e:
+            print("[DesktopCanvas] update_platform_hit_mask failed:", repr(e))
 
     def hide_canvas_for_studio_if_needed(self):
         if is_windows():
             return
-
         try:
             if hasattr(self, "js_html_views"):
                 self.js_html_views.set_visible(False)
@@ -4295,17 +4354,24 @@ class DesktopCanvas(QWidget):
     def show_canvas_after_studio_if_needed(self):
         if is_windows():
             return
-
         try:
             self.show()
             self.raise_()
+            self.update_platform_hit_mask()
             self.update()
         except Exception:
             pass
-
         try:
             if hasattr(self, "js_html_views"):
                 self.js_html_views.set_visible(True)
+        except Exception:
+            pass
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        try:
+            self.update_platform_hit_mask()
         except Exception:
             pass
 
@@ -4372,6 +4438,7 @@ class DesktopCanvas(QWidget):
             self.widgets.remove(self.selected)
             self.selected = None
             self.save_config()
+            self.update_platform_hit_mask()
             self.update()
 
     def duplicate_selected_widget(self):
@@ -4409,6 +4476,7 @@ class DesktopCanvas(QWidget):
         widget.selected = True
 
         self.save_config()
+        self.update_platform_hit_mask()
         self.update()
 
     def move_selected_forward(self):
@@ -4453,6 +4521,7 @@ class DesktopCanvas(QWidget):
             self.widgets.append(create_widget(cfg))
 
         self.save_config()
+        self.update_platform_hit_mask()
         self.update()
 
     def check_theme(self):
@@ -4561,13 +4630,14 @@ class DesktopCanvas(QWidget):
             return
 
     def mouseMoveEvent(self, event):
-        pos = event
         pos = event.position().toPoint()
+        new_pos = pos - self.drag_offset
 
         if self.dragging and self.selected and self.edit_mode:
-            self.selected.cfg.x = pos.x() - self.drag_offset.x()
-            self.selected.cfg.y = pos.y() - self.drag_offset.y()
-            self.update()
+            self.selected.cfg.x = new_pos.x()
+            self.selected.cfg.y = new_pos.y()
+            self.update_platform_hit_mask()
+        self.update()
 
         if self.volume_sliding and isinstance(self.selected, VolumeWidget):
             value = self.selected.volume_from_pos(pos)
@@ -4578,6 +4648,7 @@ class DesktopCanvas(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             self.volume_sliding = False
+            self.update_platform_hit_mask()
             self.save_config()
             self.notify_studio_selection_changed()
 
@@ -4625,14 +4696,17 @@ class DesktopCanvas(QWidget):
         super().wheelEvent(event)
 
     def keyPressEvent(self, event):
+
         if event.key() == Qt.Key.Key_Delete and self.selected:
             self.widgets.remove(self.selected)
             self.selected = None
+            self.update_platform_hit_mask()
             self.save_config()
             self.update()
 
         elif event.key() == Qt.Key.Key_E:
             self.edit_mode = not self.edit_mode
+            self.update_platform_hit_mask()
             self.update()
 
         elif event.key() == Qt.Key.Key_Escape:
@@ -4640,9 +4714,6 @@ class DesktopCanvas(QWidget):
             for w in self.widgets:
                 w.selected = False
             self.update()
-
-    def show_menu(self):
-        self.open_studio()
 
     def add_widget(self, kind: str):
         if kind == "visualizer":
@@ -4765,6 +4836,7 @@ class DesktopCanvas(QWidget):
 
         self.widgets.append(create_widget(cfg))
         self.save_config()
+        self.update_platform_hit_mask()
         self.update()
 
     def save_config(self):
@@ -4859,6 +4931,7 @@ class DesktopCanvas(QWidget):
             ]
             self.studio_theme = DEFAULT_STUDIO_THEME
             self.save_config()
+            self.update_platform_hit_mask()
             return
 
         try:
@@ -4869,11 +4942,13 @@ class DesktopCanvas(QWidget):
             for item in data.get("widgets", []):
                 cfg = WidgetConfig(**item)
                 self.widgets.append(create_widget(cfg))
+            self.update_platform_hit_mask()
 
         except Exception:
             self.widgets = []
 
     def closeEvent(self, event):
+        [thread.kill() for thread in THREADS]
         stop_runtime_controllers(self)
         self.save_config()
         event.accept()
