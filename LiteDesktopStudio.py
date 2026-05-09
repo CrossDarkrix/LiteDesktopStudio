@@ -1,29 +1,27 @@
 import asyncio
-import concurrent.futures
-import sys
-import os
+import calendar as py_calendar
+import ctypes
 import json
 import math
-import time
-import warnings
+import os
 import queue
-import urllib.request
-import urllib.parse
-import ctypes
+import sys
 import threading
-import multiprocessing
+import time
+import urllib.parse
+import urllib.request
+import warnings
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional
-import soundcard as sc
+
 import numpy as np
 import psutil
-import calendar as py_calendar
+import soundcard as sc
 from PySide6.QtCore import (
     Qt,
     QRectF,
     QPoint,
     QTimer,
-    QSize,
     QEvent,
     QUrl,
     QPointF,
@@ -51,7 +49,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QLabel,
-    QSlider,
     QTextEdit,
     QColorDialog,
     QFileDialog,
@@ -59,13 +56,13 @@ from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
     QLineEdit,
-    QComboBox,
     QMessageBox,
     QListWidget,
     QCheckBox,
     QGridLayout,
     QScrollArea,
 )
+
 warnings.filterwarnings(
     "ignore",
     message="data discontinuity in recording",
