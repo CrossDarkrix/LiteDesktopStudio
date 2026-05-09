@@ -139,6 +139,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self.particles_enabled = QCheckBox("パーティクル")
         self.noise_enabled = QCheckBox("ノイズ")
         self.glow_enabled = QCheckBox("グロー")
+        self.rain_ripple_enabled = QCheckBox("雨粒が水面に当たったら波紋")
+        self.rose_petals_enabled = QCheckBox("バラの花びら")
         self.ripple_enabled = QCheckBox("自動/通常 波紋")
         self.mouse_ripple_enabled = QCheckBox("マウスクリック波紋")
         self.mouse_flee_enabled = QCheckBox("マウス周辺から微粒子が逃げる")
@@ -152,11 +154,32 @@ class EffectsOverlayEditorDialog(QDialog):
         self.mouse_ripple_enabled.setChecked(self.settings.mouse_ripple_enabled)
         self.mouse_flee_enabled.setChecked(self.settings.mouse_flee_enabled)
         self.mouse_glow_enabled.setChecked(self.settings.mouse_glow_enabled)
+        self.rain_ripple_enabled.setChecked(getattr(self.settings, "rain_ripple_enabled", True))
+        self.rose_petals_enabled.setChecked(getattr(self.settings, "rose_petals_enabled", True))
+        self.rose_petal_roundness = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_roundness", 0.72),
+                                                      0.01)
+        self.rose_petal_curl = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_curl", 0.42), 0.01)
+        self.rose_petal_shadow_alpha = QSpinBox()
+        self.rose_petal_shadow_alpha.setRange(0, 255)
+        self.rose_petal_shadow_alpha.setValue(getattr(self.settings, "rose_petal_shadow_alpha", 72))
+        self.rose_petal_highlight_alpha = QSpinBox()
+        self.rose_petal_highlight_alpha.setRange(0, 255)
+        self.rose_petal_highlight_alpha.setValue(getattr(self.settings, "rose_petal_highlight_alpha", 115))
+        self.rose_petal_vein_alpha = QSpinBox()
+        self.rose_petal_vein_alpha.setRange(0, 255)
+        self.rose_petal_vein_alpha.setValue(getattr(self.settings, "rose_petal_vein_alpha", 95))
 
         self.form.addRow("雨", self.rain_enabled)
         self.form.addRow("粒子", self.particles_enabled)
         self.form.addRow("ノイズ", self.noise_enabled)
         self.form.addRow("グロー", self.glow_enabled)
+        self.form.addRow("雨×波紋", self.rain_ripple_enabled)
+        self.form.addRow("花びら", self.rose_petals_enabled)
+        self.form.addRow("花びら丸み", self.rose_petal_roundness)
+        self.form.addRow("花びらカール", self.rose_petal_curl)
+        self.form.addRow("花びら影", self.rose_petal_shadow_alpha)
+        self.form.addRow("花びらハイライト", self.rose_petal_highlight_alpha)
+        self.form.addRow("花びら葉脈", self.rose_petal_vein_alpha)
         self.form.addRow("波紋", self.ripple_enabled)
         self.form.addRow("マウス", self.mouse_ripple_enabled)
         self.form.addRow("マウス", self.mouse_flee_enabled)
@@ -184,10 +207,42 @@ class EffectsOverlayEditorDialog(QDialog):
 
         self.particle_speed = self._double_spin(0.0, 10.0, self.settings.particle_speed, 0.05)
         self.rain_speed = self._double_spin(0.0, 10.0, self.settings.rain_speed, 0.05)
+        self.rain_drop_min_size = self._double_spin(0.2, 20.0, getattr(self.settings, "rain_drop_min_size", 1.0), 0.1)
+        self.rain_drop_max_size = self._double_spin(0.2, 30.0, getattr(self.settings, "rain_drop_max_size", 2.4), 0.1)
+        self.rain_drop_length_randomness = self._double_spin(0.0, 2.0, getattr(self.settings, "rain_drop_length_randomness", 0.55), 0.05)
         self.glow_speed = self._double_spin(0.0, 10.0, self.settings.glow_speed, 0.05)
         self.ripple_speed = self._double_spin(0.05, 10.0, self.settings.ripple_speed, 0.05)
         self.particle_size = self._double_spin(0.1, 20.0, self.settings.particle_size, 0.1)
         self.rain_length = self._double_spin(1.0, 120.0, self.settings.rain_length, 1.0)
+        self.rain_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_chance", 0.55), 0.05)
+        self.rain_ripple_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_surface_y", 0.82), 0.01)
+        self.rain_ripple_min_radius = self._double_spin(1.0, 300.0, getattr(self.settings, "rain_ripple_min_radius", 24.0), 1.0)
+        self.rain_ripple_max_radius_linked = self._double_spin(1.0, 500.0, getattr(self.settings, "rain_ripple_max_radius_linked", 92.0), 1.0)
+        self.rain_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_cooldown", 0.025), 0.005)
+        self.rose_petal_ripple_enabled = QCheckBox("花びらが水面に落ちたら波紋")
+        self.rose_petal_ripple_enabled.setChecked(getattr(self.settings, "rose_petal_ripple_enabled", True))
+        self.form.addRow("花びら×波紋", self.rose_petal_ripple_enabled)
+
+        self.rose_petal_count = QSpinBox()
+        self.rose_petal_count.setRange(0, 500)
+        self.rose_petal_count.setValue(getattr(self.settings, "rose_petal_count", 24))
+        self.form.addRow("花びら数", self.rose_petal_count)
+
+        self.rose_petal_speed = self._double_spin(0.01, 5.0, getattr(self.settings, "rose_petal_speed", 0.35), 0.01)
+        self.rose_petal_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_petal_sway", 1.0), 0.05)
+        self.rose_petal_size = self._double_spin(2.0, 80.0, getattr(self.settings, "rose_petal_size", 16.0), 0.5)
+        self.rose_petal_alpha = QSpinBox()
+        self.rose_petal_alpha.setRange(0, 255)
+        self.rose_petal_alpha.setValue(getattr(self.settings, "rose_petal_alpha", 210))
+        self.rose_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_surface_y", 0.84), 0.01)
+        self.rose_petal_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_chance", 0.9), 0.05)
+        self.rose_petal_ripple_min_radius = self._double_spin(1.0, 400.0, getattr(self.settings, "rose_petal_ripple_min_radius", 36.0), 1.0)
+        self.rose_petal_ripple_max_radius = self._double_spin(1.0, 700.0, getattr(self.settings, "rose_petal_ripple_max_radius", 130.0), 1.0)
+        self.rose_petal_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_cooldown", 0.04), 0.005)
+        self.rose_petal_rest_on_surface = QCheckBox("水面に少し浮かべる")
+        self.rose_petal_rest_on_surface.setChecked(getattr(self.settings, "rose_petal_rest_on_surface", False))
+        self.rose_petal_color = self._color_row("花びら色", getattr(self.settings, "rose_petal_color", "#FF7AAE"))
+        self.rose_petal_edge_color = self._color_row("花びら縁色", getattr(self.settings, "rose_petal_edge_color", "#FFD1E3"))
         self.glow_radius = self._double_spin(10.0, 600.0, self.settings.glow_radius, 5.0)
         self.mouse_glow_radius = self._double_spin(10.0, 600.0, self.settings.mouse_glow_radius, 5.0)
         self.ripple_max_radius = self._double_spin(10.0, 800.0, self.settings.ripple_max_radius, 5.0)
@@ -195,8 +250,26 @@ class EffectsOverlayEditorDialog(QDialog):
 
         self.form.addRow("粒子速度", self.particle_speed)
         self.form.addRow("雨速度", self.rain_speed)
+        self.form.addRow("雨粒の最小太さ", self.rain_drop_min_size)
+        self.form.addRow("雨粒の最大太さ", self.rain_drop_max_size)
+        self.form.addRow("雨粒の長さランダム", self.rain_drop_length_randomness)
         self.form.addRow("グロー速度", self.glow_speed)
         self.form.addRow("波紋速度", self.ripple_speed)
+        self.form.addRow("雨波紋の発生率", self.rain_ripple_chance)
+        self.form.addRow("花びら落下速度", self.rose_petal_speed)
+        self.form.addRow("花びら揺れ", self.rose_petal_sway)
+        self.form.addRow("花びらサイズ", self.rose_petal_size)
+        self.form.addRow("花びら透明度", self.rose_petal_alpha)
+        self.form.addRow("花びら水面Y", self.rose_petal_surface_y)
+        self.form.addRow("花びら波紋発生率", self.rose_petal_ripple_chance)
+        self.form.addRow("花びら波紋最小半径", self.rose_petal_ripple_min_radius)
+        self.form.addRow("花びら波紋最大半径", self.rose_petal_ripple_max_radius)
+        self.form.addRow("花びら波紋間隔", self.rose_petal_ripple_cooldown)
+        self.form.addRow("花びら", self.rose_petal_rest_on_surface)
+        self.form.addRow("水面Y位置", self.rain_ripple_surface_y)
+        self.form.addRow("雨波紋の最小半径", self.rain_ripple_min_radius)
+        self.form.addRow("雨波紋の最大半径", self.rain_ripple_max_radius_linked)
+        self.form.addRow("雨波紋の間隔", self.rain_ripple_cooldown)
         self.form.addRow("粒子サイズ", self.particle_size)
         self.form.addRow("雨の長さ", self.rain_length)
         self.form.addRow("グロー半径", self.glow_radius)
@@ -326,6 +399,35 @@ class EffectsOverlayEditorDialog(QDialog):
             rain_color=self.rain_color.text().strip() or "#9FD7FF",
             glow_color=self.glow_color.text().strip() or "#80FFCC",
             ripple_color=self.ripple_color.text().strip() or "#A8EFFF",
+            rain_ripple_enabled=self.rain_ripple_enabled.isChecked(),
+            rain_ripple_chance=self.rain_ripple_chance.value(),
+            rain_ripple_surface_y=self.rain_ripple_surface_y.value(),
+            rain_ripple_min_radius=self.rain_ripple_min_radius.value(),
+            rain_ripple_max_radius_linked=self.rain_ripple_max_radius_linked.value(),
+            rain_ripple_cooldown=self.rain_ripple_cooldown.value(),
+            rain_drop_min_size=self.rain_drop_min_size.value(),
+            rain_drop_max_size=self.rain_drop_max_size.value(),
+            rain_drop_length_randomness=self.rain_drop_length_randomness.value(),
+            rose_petals_enabled=self.rose_petals_enabled.isChecked(),
+            rose_petal_ripple_enabled=self.rose_petal_ripple_enabled.isChecked(),
+            rose_petal_count=self.rose_petal_count.value(),
+            rose_petal_color=self.rose_petal_color.text().strip() or "#FF7AAE",
+            rose_petal_edge_color=self.rose_petal_edge_color.text().strip() or "#FFD1E3",
+            rose_petal_speed=self.rose_petal_speed.value(),
+            rose_petal_sway=self.rose_petal_sway.value(),
+            rose_petal_size=self.rose_petal_size.value(),
+            rose_petal_alpha=self.rose_petal_alpha.value(),
+            rose_petal_surface_y=self.rose_petal_surface_y.value(),
+            rose_petal_ripple_chance=self.rose_petal_ripple_chance.value(),
+            rose_petal_ripple_min_radius=self.rose_petal_ripple_min_radius.value(),
+            rose_petal_ripple_max_radius=self.rose_petal_ripple_max_radius.value(),
+            rose_petal_ripple_cooldown=self.rose_petal_ripple_cooldown.value(),
+            rose_petal_rest_on_surface=self.rose_petal_rest_on_surface.isChecked(),
+            rose_petal_roundness=self.rose_petal_roundness.value(),
+            rose_petal_curl=self.rose_petal_curl.value(),
+            rose_petal_shadow_alpha=self.rose_petal_shadow_alpha.value(),
+            rose_petal_highlight_alpha=self.rose_petal_highlight_alpha.value(),
+            rose_petal_vein_alpha=self.rose_petal_vein_alpha.value(),
             noise_color=self.noise_color.text().strip() or "#FFFFFF",
             mouse_glow_color=self.mouse_glow_color.text().strip() or "#80FFCC",
             particle_speed=self.particle_speed.value(),
@@ -350,6 +452,21 @@ class EffectsOverlayEditorDialog(QDialog):
             self.widget._particles.clear()
             self.widget._rain.clear()
             self.widget._ripples.clear()
+            self.widget._rose_petals.clear()
+        except Exception:
+            pass
+
+        try:
+            self.widget._last_petal_ripple_time = 0.0
+        except Exception:
+            pass
+        try:
+            self.widget._rose_petals.clear()
+        except Exception:
+            pass
+
+        try:
+            self.widget._last_petal_ripple_time = 0.0
         except Exception:
             pass
 
@@ -403,6 +520,39 @@ class EffectOverlaySettings:
     intensity: float = 1.0
     noise_alpha: int = 24
     background_alpha: int = 0
+
+    rain_ripple_enabled: bool = True
+    rain_ripple_chance: float = 0.55
+    rain_ripple_surface_y: float = 0.82
+    rain_ripple_min_radius: float = 24.0
+    rain_ripple_max_radius_linked: float = 92.0
+    rain_ripple_cooldown: float = 0.025
+
+    rain_drop_min_size: float = 1.0
+    rain_drop_max_size: float = 2.4
+    rain_drop_length_randomness: float = 0.55
+
+    rose_petals_enabled: bool = True
+    rose_petal_ripple_enabled: bool = True
+    rose_petal_count: int = 24
+    rose_petal_color: str = "#FF7AAE"
+    rose_petal_edge_color: str = "#FFD1E3"
+    rose_petal_speed: float = 0.35
+    rose_petal_sway: float = 1.0
+    rose_petal_size: float = 16.0
+    rose_petal_alpha: int = 210
+    rose_petal_surface_y: float = 0.84
+    rose_petal_ripple_chance: float = 0.9
+    rose_petal_ripple_min_radius: float = 36.0
+    rose_petal_ripple_max_radius: float = 130.0
+    rose_petal_ripple_cooldown: float = 0.04
+    rose_petal_rest_on_surface: bool = False
+
+    rose_petal_roundness: float = 0.72
+    rose_petal_curl: float = 0.42
+    rose_petal_shadow_alpha: int = 72
+    rose_petal_highlight_alpha: int = 115
+    rose_petal_vein_alpha: int = 95
 
     def to_dict(self):
         return asdict(self)
@@ -484,8 +634,51 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         intensity=float(defaults.get("intensity", 1.0)),
         noise_alpha=max(0, min(255, int(defaults.get("noise_alpha", 24)))),
         background_alpha=max(0, min(255, int(defaults.get("background_alpha", 0)))),
+        rain_ripple_enabled=bool(defaults.get("rain_ripple_enabled", True)),
+        rain_ripple_chance=float(defaults.get("rain_ripple_chance", 0.55)),
+        rain_ripple_surface_y=float(defaults.get("rain_ripple_surface_y", 0.82)),
+        rain_ripple_min_radius=float(defaults.get("rain_ripple_min_radius", 24.0)),
+        rain_ripple_max_radius_linked=float(defaults.get("rain_ripple_max_radius_linked", 92.0)),
+        rain_ripple_cooldown=float(defaults.get("rain_ripple_cooldown", 0.025)),
+        rain_drop_min_size=float(defaults.get("rain_drop_min_size", 1.0)),
+        rain_drop_max_size=float(defaults.get("rain_drop_max_size", 2.4)),
+        rain_drop_length_randomness=float(defaults.get("rain_drop_length_randomness", 0.55)),
+        rose_petals_enabled=bool(defaults.get("rose_petals_enabled", True)),
+        rose_petal_ripple_enabled=bool(defaults.get("rose_petal_ripple_enabled", True)),
+        rose_petal_count=max(0, int(defaults.get("rose_petal_count", 24))),
+        rose_petal_color=str(defaults.get("rose_petal_color", "#FF7AAE")),
+        rose_petal_edge_color=str(defaults.get("rose_petal_edge_color", "#FFD1E3")),
+        rose_petal_speed=float(defaults.get("rose_petal_speed", 0.35)),
+        rose_petal_sway=float(defaults.get("rose_petal_sway", 1.0)),
+        rose_petal_size=float(defaults.get("rose_petal_size", 16.0)),
+        rose_petal_alpha=max(0, min(255, int(defaults.get("rose_petal_alpha", 210)))),
+        rose_petal_surface_y=float(defaults.get("rose_petal_surface_y", 0.84)),
+        rose_petal_ripple_chance=float(defaults.get("rose_petal_ripple_chance", 0.9)),
+        rose_petal_ripple_min_radius=float(defaults.get("rose_petal_ripple_min_radius", 36.0)),
+        rose_petal_ripple_max_radius=float(defaults.get("rose_petal_ripple_max_radius", 130.0)),
+        rose_petal_ripple_cooldown=float(defaults.get("rose_petal_ripple_cooldown", 0.04)),
+        rose_petal_rest_on_surface=bool(defaults.get("rose_petal_rest_on_surface", False)),
+        rose_petal_roundness=float(defaults.get("rose_petal_roundness", 0.72)),
+        rose_petal_curl=float(defaults.get("rose_petal_curl", 0.42)),
+        rose_petal_shadow_alpha=max(0, min(255, int(defaults.get("rose_petal_shadow_alpha", 72)))),
+        rose_petal_highlight_alpha=max(0, min(255, int(defaults.get("rose_petal_highlight_alpha", 115)))),
+        rose_petal_vein_alpha=max(0, min(255, int(defaults.get("rose_petal_vein_alpha", 95)))),
     )
 
+@dataclass
+class RosePetal:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    size: float
+    rotation: float
+    rotation_speed: float
+    sway_phase: float
+    alpha: float
+    seed: float
+    resting: bool = False
+    rest_created_at: float = 0.0
 
 def set_effect_overlay_settings(cfg, settings: EffectOverlaySettings):
     ensure_effect_overlay_fields(cfg)
@@ -1628,6 +1821,9 @@ class EffectsOverlayWidget(BaseWidget):
         self._mouse_active_until = 0.0
         self._last_rect_size = (0, 0)
         self._random = random.Random(20260505)
+        self._last_rain_ripple_time = 0.0
+        self._rose_petals: List[RosePetal] = []
+        self._last_petal_ripple_time = 0.0
 
     def paint(self, p: QPainter, ctx: Dict):
         settings = get_effect_overlay_settings(self.cfg)
@@ -1654,6 +1850,11 @@ class EffectsOverlayWidget(BaseWidget):
         if settings.noise_enabled:
             self._draw_noise(p, r, settings, now)
 
+        if getattr(settings, "rose_petals_enabled", False):
+            self._ensure_rose_petals(r, settings)
+            self._update_rose_petals(r, settings, dt, now)
+            self._draw_rose_petals(p, r, settings, now)
+
         if settings.glow_enabled:
             self._draw_glow_orbs(p, r, settings, now)
 
@@ -1671,6 +1872,271 @@ class EffectsOverlayWidget(BaseWidget):
 
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
+
+        p.restore()
+
+    def _ensure_rose_petals(self, r: QRectF, settings: EffectOverlaySettings):
+        if not hasattr(self, "_rose_petals"):
+            self._rose_petals = []
+
+        target = max(0, int(getattr(settings, "rose_petal_count", 24)))
+
+        while len(self._rose_petals) < target:
+            self._rose_petals.append(self._new_rose_petal(r, settings, from_top=True))
+
+        if len(self._rose_petals) > target:
+            self._rose_petals = self._rose_petals[:target]
+
+    def _new_rose_petal(self, r: QRectF, settings: EffectOverlaySettings, from_top: bool = False):
+        base_size = max(2.0, float(getattr(settings, "rose_petal_size", 16.0)))
+        speed_scale = max(0.05, float(getattr(settings, "rose_petal_speed", 0.35)))
+
+        x = r.left() + self._random.random() * max(1.0, r.width())
+        if from_top:
+            y = r.top() - self._random.random() * max(80.0, r.height() * 0.35)
+        else:
+            y = r.top() + self._random.random() * max(1.0, r.height())
+
+        return RosePetal(
+            x=float(x),
+            y=float(y),
+            vx=(-12.0 + self._random.random() * 24.0) * speed_scale,
+            vy=(18.0 + self._random.random() * 34.0) * speed_scale,
+            size=base_size * (0.7 + self._random.random() * 0.8),
+            rotation=self._random.random() * math.tau,
+            rotation_speed=(-1.2 + self._random.random() * 2.4) * speed_scale,
+            sway_phase=self._random.random() * math.tau,
+            alpha=0.55 + self._random.random() * 0.45,
+            seed=self._random.random() * 10000.0,
+            resting=False,
+            rest_created_at=0.0,
+        )
+
+    def _update_rose_petals(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
+        surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, "rose_petal_surface_y", 0.84))))
+        sway = float(getattr(settings, "rose_petal_sway", 1.0))
+        rest_on_surface = bool(getattr(settings, "rose_petal_rest_on_surface", False))
+
+        for petal in self._rose_petals:
+            if petal.resting:
+                petal.x += math.sin(now * 0.8 + petal.seed) * 2.0 * dt
+                petal.rotation += petal.rotation_speed * 0.15 * dt
+
+                if now - petal.rest_created_at > 4.0:
+                    fresh = self._new_rose_petal(r, settings, from_top=True)
+                    petal.__dict__.update(fresh.__dict__)
+                continue
+
+            prev_y = petal.y
+            side_sway = math.sin(now * 1.2 + petal.sway_phase) * 24.0 * sway
+            petal.x += (petal.vx + side_sway) * dt
+            petal.y += petal.vy * dt
+            petal.rotation += petal.rotation_speed * dt
+
+            hit_surface = prev_y < surface_y <= petal.y
+            out_of_bounds = (
+                    petal.y > r.bottom() + 80 or
+                    petal.x < r.left() - 120 or
+                    petal.x > r.right() + 120
+            )
+
+            if hit_surface:
+                self._maybe_spawn_petal_ripple(petal, surface_y, settings, now)
+                if rest_on_surface:
+                    petal.y = surface_y
+                    petal.vy = 0.0
+                    petal.vx *= 0.2
+                    petal.resting = True
+                    petal.rest_created_at = now
+                else:
+                    fresh = self._new_rose_petal(r, settings, from_top=True)
+                    petal.__dict__.update(fresh.__dict__)
+                continue
+
+            if out_of_bounds:
+                fresh = self._new_rose_petal(r, settings, from_top=True)
+                petal.__dict__.update(fresh.__dict__)
+
+    def _maybe_spawn_petal_ripple(self, petal, surface_y: float, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "rose_petal_ripple_enabled", True)):
+            return
+
+        if not bool(getattr(settings, "ripple_enabled", True)):
+            return
+
+        cooldown = max(0.0, float(getattr(settings, "rose_petal_ripple_cooldown", 0.04)))
+        if now - getattr(self, "_last_petal_ripple_time", 0.0) < cooldown:
+            return
+
+        chance = max(0.0, min(1.0, float(getattr(settings, "rose_petal_ripple_chance", 0.9))))
+        if self._random.random() > chance:
+            return
+
+        min_radius = max(1.0, float(getattr(settings, "rose_petal_ripple_min_radius", 36.0)))
+        max_radius = max(min_radius, float(getattr(settings, "rose_petal_ripple_max_radius", 130.0)))
+        size_factor = max(0.2,
+                          min(1.5, float(petal.size) / max(1.0, float(getattr(settings, "rose_petal_size", 16.0)))))
+        radius = min_radius + (max_radius - min_radius) * min(1.0, size_factor)
+
+        self._ripples.append(
+            EffectRipple(
+                x=float(petal.x),
+                y=float(surface_y),
+                created_at=now,
+                max_radius=radius,
+                color=getattr(settings, "ripple_color", "#A8EFFF"),
+                speed=max(0.05, float(getattr(settings, "ripple_speed", 1.0))) * 0.85,
+            )
+        )
+        self._last_petal_ripple_time = now
+
+    def _draw_rose_petals(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        # 花びら描画はここで一回だけ行う。
+        base = QColor(getattr(settings, "rose_petal_color", "#FF7AAE"))
+        edge = QColor(getattr(settings, "rose_petal_edge_color", "#FFD1E3"))
+        alpha_base = max(0, min(255, int(getattr(settings, "rose_petal_alpha", 210))))
+        intensity = max(0.0, float(getattr(settings, "intensity", 1.0)))
+
+        for petal in list(getattr(self, "_rose_petals", [])):
+            flutter = 0.75 + 0.25 * math.sin(now * 2.0 + petal.seed)
+            alpha = int(alpha_base * petal.alpha * flutter * intensity)
+
+            if alpha <= 0:
+                continue
+
+            c = QColor(base)
+            c.setAlpha(max(0, min(255, alpha)))
+
+            ec = QColor(edge)
+            ec.setAlpha(max(0, min(255, int(alpha * 0.75))))
+
+            # 重要:
+            # ここで3D版 _draw_single_rose_petal を一回だけ呼ぶ。
+            self._draw_single_rose_petal(
+                p,
+                petal.x,
+                petal.y,
+                petal.size,
+                petal.rotation,
+                c,
+                ec
+            )
+
+    def _draw_single_rose_petal(self, p: QPainter, x: float, y: float, size: float, rotation: float, color: QColor, edge_color: QColor):
+        settings = get_effect_overlay_settings(self.cfg)
+        roundness = max(0.0, min(1.0, float(getattr(settings, "rose_petal_roundness", 0.72))))
+        curl = max(0.0, min(1.0, float(getattr(settings, "rose_petal_curl", 0.42))))
+        highlight_alpha = max(0, min(255, int(getattr(settings, "rose_petal_highlight_alpha", 115))))
+        vein_alpha = max(0, min(255, int(getattr(settings, "rose_petal_vein_alpha", 95))))
+        internal_shadow_alpha = max(0, min(255, int(getattr(settings, "rose_petal_shadow_alpha", 28))))
+        p.save()
+        p.translate(x, y)
+        p.rotate(math.degrees(rotation))
+
+        w = size * (0.70 + roundness * 0.18)
+        h = size * (1.18 + roundness * 0.12)
+
+        path = QPainterPath()
+        path.moveTo(0.0, -h * 0.58)
+        path.cubicTo(
+            w * (0.52 + roundness * 0.16),
+            -h * 0.48,
+            w * (0.72 + roundness * 0.12),
+            h * 0.08,
+            w * 0.18,
+            h * 0.55,
+        )
+        path.cubicTo(
+            w * 0.04,
+            h * 0.68,
+            -w * 0.04,
+            h * 0.68,
+            -w * 0.18,
+            h * 0.55,
+        )
+        path.cubicTo(
+            -w * (0.72 + roundness * 0.12),
+            h * 0.08,
+            -w * (0.52 + roundness * 0.16),
+            -h * 0.48,
+            0.0,
+            -h * 0.58,
+        )
+        path.closeSubpath()
+
+        body_grad = QRadialGradient(QPointF(-w * 0.12, -h * 0.20), max(w, h) * 0.95)
+        c_center = QColor(color)
+        c_center.setAlpha(color.alpha())
+        c_mid = QColor(
+            min(255, int(color.red() * 1.08)),
+            min(255, int(color.green() * 1.04)),
+            min(255, int(color.blue() * 1.06)),
+            color.alpha(),
+        )
+        c_edge = QColor(
+            max(0, int(color.red() * 0.68)),
+            max(0, int(color.green() * 0.62)),
+            max(0, int(color.blue() * 0.70)),
+            max(0, min(255, int(color.alpha() * 0.92))),
+        )
+        body_grad.setColorAt(0.0, c_mid)
+        body_grad.setColorAt(0.45, c_center)
+        body_grad.setColorAt(1.0, c_edge)
+
+        p.setBrush(QBrush(body_grad))
+        p.setPen(QPen(edge_color, max(1, int(size * 0.055))))
+        p.drawPath(path)
+
+        p.save()
+        p.setClipPath(path)
+
+        if internal_shadow_alpha > 0:
+            shade = QColor(70, 0, 35, max(0, min(255, int(internal_shadow_alpha * color.alpha() / 255))))
+            shade_clear = QColor(shade)
+            shade_clear.setAlpha(0)
+            shade_grad = QLinearGradient(0, -h * 0.20, 0, h * 0.58)
+            shade_grad.setColorAt(0.0, shade_clear)
+            shade_grad.setColorAt(0.72, shade_clear)
+            shade_grad.setColorAt(1.0, shade)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(shade_grad))
+            p.drawPath(path)
+
+        highlight = QColor(255, 255, 255, max(0, min(255, int(highlight_alpha * color.alpha() / 255))))
+        highlight_grad = QRadialGradient(QPointF(-w * 0.16, -h * 0.23), max(1.0, size * 0.72))
+        h0 = QColor(highlight)
+        h1 = QColor(highlight)
+        h1.setAlpha(int(h0.alpha() * 0.22))
+        h2 = QColor(highlight)
+        h2.setAlpha(0)
+        highlight_grad.setColorAt(0.0, h0)
+        highlight_grad.setColorAt(0.55, h1)
+        highlight_grad.setColorAt(1.0, h2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(highlight_grad))
+        p.drawEllipse(QRectF(-w * 0.48, -h * 0.55, w * 0.72, h * 0.76))
+
+        p.restore()
+
+        curl_color = QColor(edge_color)
+        curl_color.setAlpha(max(0, min(255, int(edge_color.alpha() * (0.35 + curl * 0.65)))))
+        curl_pen = QPen(curl_color, max(1, int(size * (0.035 + curl * 0.035))))
+        curl_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(curl_pen)
+        curl_path = QPainterPath()
+        curl_path.moveTo(w * 0.08, -h * 0.47)
+        curl_path.cubicTo(w * 0.52, -h * 0.30, w * 0.48, h * 0.18, w * 0.10, h * 0.48)
+        p.drawPath(curl_path)
+
+        vein = QColor(edge_color)
+        vein.setAlpha(max(0, min(255, int(vein_alpha * edge_color.alpha() / 255))))
+        vein_pen = QPen(vein, max(1, int(size * 0.04)))
+        vein_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(vein_pen)
+        vein_path = QPainterPath()
+        vein_path.moveTo(0.0, -h * 0.42)
+        vein_path.cubicTo(-w * 0.08, -h * 0.12, w * 0.07, h * 0.20, 0.0, h * 0.42)
+        p.drawPath(vein_path)
 
         p.restore()
 
@@ -1735,12 +2201,17 @@ class EffectsOverlayWidget(BaseWidget):
     def _new_raindrop(self, r: QRectF, settings: EffectOverlaySettings):
         speed = 260.0 + self._random.random() * 340.0 * max(0.1, settings.rain_speed)
         wind = -45.0 + self._random.random() * 90.0
+
+        min_size = max(0.2, float(getattr(settings, "rain_drop_min_size", 1.0)))
+        max_size = max(min_size, float(getattr(settings, "rain_drop_max_size", 2.4)))
+        drop_size = min_size + self._random.random() * (max_size - min_size)
+
         return EffectParticle(
             x=float(r.left() + self._random.random() * max(1.0, r.width())),
             y=float(r.top() - self._random.random() * max(1.0, r.height())),
             vx=wind,
             vy=speed,
-            size=1.0 + self._random.random() * 1.4,
+            size=drop_size,
             alpha=0.25 + self._random.random() * 0.55,
             seed=self._random.random() * 10000.0,
         )
@@ -1774,18 +2245,32 @@ class EffectsOverlayWidget(BaseWidget):
                 particle.y = r.top() - 20
 
     def _update_rain(self, r: QRectF, settings: EffectOverlaySettings, dt: float):
+        now = time.time()
+        surface_y = r.top() + r.height() * max(
+            0.0,
+            min(1.0, getattr(settings, "rain_ripple_surface_y", 0.82))
+        )
+
         for drop in self._rain:
+            prev_y = drop.y
+
             drop.x += drop.vx * dt
             drop.y += drop.vy * dt
-            if drop.y > r.bottom() + 60 or drop.x < r.left() - 80 or drop.x > r.right() + 80:
-                fresh = self._new_raindrop(r, settings)
-                drop.x = fresh.x
-                drop.y = r.top() - self._random.random() * 120.0
-                drop.vx = fresh.vx
-                drop.vy = fresh.vy
-                drop.size = fresh.size
-                drop.alpha = fresh.alpha
-                drop.seed = fresh.seed
+
+            hit_surface = prev_y < surface_y <= drop.y
+            out_of_bounds = (
+                    drop.y > r.bottom() + 60 or
+                    drop.x < r.left() - 80 or
+                    drop.x > r.right() + 80
+            )
+
+            if hit_surface:
+                self._maybe_spawn_rain_ripple(drop, surface_y, settings, now)
+                self._reset_raindrop(drop, r, settings)
+                continue
+
+            if out_of_bounds:
+                self._reset_raindrop(drop, r, settings)
 
     def _cleanup_ripples(self, now: float):
         alive = []
@@ -1795,6 +2280,48 @@ class EffectsOverlayWidget(BaseWidget):
             if age <= duration:
                 alive.append(ripple)
         self._ripples = alive
+
+    def _maybe_spawn_rain_ripple(self, drop, surface_y: float, settings: EffectOverlaySettings, now: float):
+        if not getattr(settings, "rain_ripple_enabled", True):
+            return
+
+        if not getattr(settings, "ripple_enabled", True):
+            return
+
+        cooldown = max(0.0, float(getattr(settings, "rain_ripple_cooldown", 0.025)))
+        if now - getattr(self, "_last_rain_ripple_time", 0.0) < cooldown:
+            return
+
+        chance = max(0.0, min(1.0, float(getattr(settings, "rain_ripple_chance", 0.55))))
+        if self._random.random() > chance:
+            return
+
+        speed_factor = max(0.2, min(2.5, abs(float(drop.vy)) / 520.0))
+        min_radius = max(1.0, float(getattr(settings, "rain_ripple_min_radius", 24.0)))
+        max_radius = max(min_radius, float(getattr(settings, "rain_ripple_max_radius_linked", 92.0)))
+        radius = min_radius + (max_radius - min_radius) * min(1.0, speed_factor)
+
+        self._ripples.append(
+            EffectRipple(
+                x=float(drop.x),
+                y=float(surface_y),
+                created_at=now,
+                max_radius=radius,
+                color=getattr(settings, "ripple_color", "#A8EFFF"),
+                speed=max(0.05, float(getattr(settings, "ripple_speed", 1.0))) * (0.9 + speed_factor * 0.2),
+            )
+        )
+        self._last_rain_ripple_time = now
+
+    def _reset_raindrop(self, drop, r: QRectF, settings: EffectOverlaySettings):
+        fresh = self._new_raindrop(r, settings)
+        drop.x = fresh.x
+        drop.y = r.top() - self._random.random() * 160.0
+        drop.vx = fresh.vx
+        drop.vy = fresh.vy
+        drop.size = fresh.size
+        drop.alpha = fresh.alpha
+        drop.seed = fresh.seed
 
     def _push_particles_away(self, pos: QPointF, strength: float):
         for particle in self._particles:
@@ -1824,15 +2351,31 @@ class EffectsOverlayWidget(BaseWidget):
 
     def _draw_rain(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings):
         color = QColor(settings.rain_color)
-        length = settings.rain_length
+        base_length = float(getattr(settings, "rain_length", 16.0))
+        length_randomness = max(
+            0.0,
+            min(2.0, float(getattr(settings, "rain_drop_length_randomness", 0.55)))
+        )
 
         for drop in self._rain:
             c = QColor(color)
             c.setAlpha(int(190 * drop.alpha * settings.intensity))
-            pen = QPen(c, max(1, int(drop.size)))
+
+            thickness = max(1, int(round(float(drop.size))))
+
+            pen = QPen(c, thickness)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(pen)
+
+            variance = (
+                    1.0
+                    - length_randomness * 0.5
+                    + (abs(math.sin(drop.seed)) * length_randomness)
+            )
+            length = max(1.0, base_length * variance)
+
             slant = drop.vx * 0.035
+
             p.drawLine(
                 int(drop.x),
                 int(drop.y),
