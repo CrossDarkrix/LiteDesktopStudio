@@ -3,6 +3,7 @@ import calendar as py_calendar
 import ctypes
 import json
 import math
+import random
 import os
 import queue
 import sys
@@ -34,6 +35,7 @@ from PySide6.QtGui import (
     QPen,
     QIcon,
     QBrush,
+    QRadialGradient,
     QLinearGradient,
     QTextDocument,
     QPainterPath,
@@ -61,6 +63,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
     QScrollArea,
+    QDoubleSpinBox,
 )
 
 warnings.filterwarnings(
@@ -78,6 +81,415 @@ DEFAULT_STUDIO_THEME = "dark"
 STUDIO_THEME_DARK = "dark"
 STUDIO_THEME_LIGHT = "light"
 THREADS = []
+
+EFFECT_KIND_RAIN = "rain"
+EFFECT_KIND_PARTICLES = "particles"
+EFFECT_KIND_NOISE = "noise"
+EFFECT_KIND_GLOW = "glow"
+EFFECT_KIND_RIPPLE = "ripple"
+
+MOUSE_EFFECT_RIPPLE = "click_ripple"
+MOUSE_EFFECT_FLEE = "particle_flee"
+MOUSE_EFFECT_GLOW = "mouse_glow"
+
+class EffectsOverlayEditorDialog(QDialog):
+    def __init__(self, widget, parent=None):
+        super().__init__(parent)
+        self.widget = widget
+        self.cfg = widget.cfg
+        ensure_effect_overlay_fields(self.cfg)
+        self.settings = get_effect_overlay_settings(self.cfg)
+
+        self.setWindowTitle("エフェクト設定")
+        self.resize(600, 720)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(8)
+
+        title = QLabel("Effects Overlay")
+        title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        outer.addWidget(title)
+
+        desc = QLabel("各エフェクトを個別にオン/オフできます。設定項目が多いため、この画面はスクロールできます。")
+        desc.setWordWrap(True)
+        outer.addWidget(desc)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(self.scroll, 1)
+
+        content = QWidget()
+        self.scroll.setWidget(content)
+
+        root = QVBoxLayout(content)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(12)
+
+        self.form = QFormLayout()
+        self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        self.form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        self.form.setVerticalSpacing(8)
+        root.addLayout(self.form)
+
+        # Individual effect toggles
+        self.rain_enabled = QCheckBox("雨粒")
+        self.particles_enabled = QCheckBox("パーティクル")
+        self.noise_enabled = QCheckBox("ノイズ")
+        self.glow_enabled = QCheckBox("グロー")
+        self.ripple_enabled = QCheckBox("自動/通常 波紋")
+        self.mouse_ripple_enabled = QCheckBox("マウスクリック波紋")
+        self.mouse_flee_enabled = QCheckBox("マウス周辺から微粒子が逃げる")
+        self.mouse_glow_enabled = QCheckBox("マウス周辺だけ光る")
+
+        self.rain_enabled.setChecked(self.settings.rain_enabled)
+        self.particles_enabled.setChecked(self.settings.particles_enabled)
+        self.noise_enabled.setChecked(self.settings.noise_enabled)
+        self.glow_enabled.setChecked(self.settings.glow_enabled)
+        self.ripple_enabled.setChecked(self.settings.ripple_enabled)
+        self.mouse_ripple_enabled.setChecked(self.settings.mouse_ripple_enabled)
+        self.mouse_flee_enabled.setChecked(self.settings.mouse_flee_enabled)
+        self.mouse_glow_enabled.setChecked(self.settings.mouse_glow_enabled)
+
+        self.form.addRow("雨", self.rain_enabled)
+        self.form.addRow("粒子", self.particles_enabled)
+        self.form.addRow("ノイズ", self.noise_enabled)
+        self.form.addRow("グロー", self.glow_enabled)
+        self.form.addRow("波紋", self.ripple_enabled)
+        self.form.addRow("マウス", self.mouse_ripple_enabled)
+        self.form.addRow("マウス", self.mouse_flee_enabled)
+        self.form.addRow("マウス", self.mouse_glow_enabled)
+
+        self._add_separator(root, "数量")
+
+        self.particle_count = QSpinBox()
+        self.particle_count.setRange(0, 2000)
+        self.particle_count.setValue(self.settings.particle_count)
+
+        self.rain_count = QSpinBox()
+        self.rain_count.setRange(0, 2000)
+        self.rain_count.setValue(self.settings.rain_count)
+
+        self.glow_count = QSpinBox()
+        self.glow_count.setRange(0, 32)
+        self.glow_count.setValue(self.settings.glow_count)
+
+        self.form.addRow("パーティクル数", self.particle_count)
+        self.form.addRow("雨粒数", self.rain_count)
+        self.form.addRow("グロー数", self.glow_count)
+
+        self._add_separator(root, "速度・サイズ")
+
+        self.particle_speed = self._double_spin(0.0, 10.0, self.settings.particle_speed, 0.05)
+        self.rain_speed = self._double_spin(0.0, 10.0, self.settings.rain_speed, 0.05)
+        self.glow_speed = self._double_spin(0.0, 10.0, self.settings.glow_speed, 0.05)
+        self.ripple_speed = self._double_spin(0.05, 10.0, self.settings.ripple_speed, 0.05)
+        self.particle_size = self._double_spin(0.1, 20.0, self.settings.particle_size, 0.1)
+        self.rain_length = self._double_spin(1.0, 120.0, self.settings.rain_length, 1.0)
+        self.glow_radius = self._double_spin(10.0, 600.0, self.settings.glow_radius, 5.0)
+        self.mouse_glow_radius = self._double_spin(10.0, 600.0, self.settings.mouse_glow_radius, 5.0)
+        self.ripple_max_radius = self._double_spin(10.0, 800.0, self.settings.ripple_max_radius, 5.0)
+        self.intensity = self._double_spin(0.0, 5.0, self.settings.intensity, 0.05)
+
+        self.form.addRow("粒子速度", self.particle_speed)
+        self.form.addRow("雨速度", self.rain_speed)
+        self.form.addRow("グロー速度", self.glow_speed)
+        self.form.addRow("波紋速度", self.ripple_speed)
+        self.form.addRow("粒子サイズ", self.particle_size)
+        self.form.addRow("雨の長さ", self.rain_length)
+        self.form.addRow("グロー半径", self.glow_radius)
+        self.form.addRow("マウスグロー半径", self.mouse_glow_radius)
+        self.form.addRow("波紋最大半径", self.ripple_max_radius)
+        self.form.addRow("全体強度", self.intensity)
+
+        self._add_separator(root, "透明度")
+
+        self.noise_alpha = QSpinBox()
+        self.noise_alpha.setRange(0, 255)
+        self.noise_alpha.setValue(self.settings.noise_alpha)
+
+        self.background_alpha = QSpinBox()
+        self.background_alpha.setRange(0, 255)
+        self.background_alpha.setValue(self.settings.background_alpha)
+
+        self.form.addRow("ノイズ濃度", self.noise_alpha)
+        self.form.addRow("背景不透明度", self.background_alpha)
+
+        self._add_separator(root, "色")
+
+        self.particle_color = self._color_row("粒子色", self.settings.particle_color)
+        self.rain_color = self._color_row("雨色", self.settings.rain_color)
+        self.glow_color = self._color_row("グロー色", self.settings.glow_color)
+        self.ripple_color = self._color_row("波紋色", self.settings.ripple_color)
+        self.noise_color = self._color_row("ノイズ色", self.settings.noise_color)
+        self.mouse_glow_color = self._color_row("マウスグロー色", self.settings.mouse_glow_color)
+
+        root.addStretch(1)
+
+        quick = QHBoxLayout()
+        self.btn_all_on = QPushButton("全部ON")
+        self.btn_all_off = QPushButton("全部OFF")
+        self.btn_mouse_only = QPushButton("マウス系だけON")
+        self.btn_ambient_only = QPushButton("環境系だけON")
+        self.btn_all_on.clicked.connect(self.set_all_on)
+        self.btn_all_off.clicked.connect(self.set_all_off)
+        self.btn_mouse_only.clicked.connect(self.set_mouse_only)
+        self.btn_ambient_only.clicked.connect(self.set_ambient_only)
+        quick.addWidget(self.btn_all_on)
+        quick.addWidget(self.btn_all_off)
+        quick.addWidget(self.btn_mouse_only)
+        quick.addWidget(self.btn_ambient_only)
+        outer.addLayout(quick)
+
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        self.btn_apply = QPushButton("適用")
+        self.btn_ok = QPushButton("OK")
+        self.btn_cancel = QPushButton("キャンセル")
+        self.btn_apply.clicked.connect(self.apply_to_config)
+        self.btn_ok.clicked.connect(self.accept_with_apply)
+        self.btn_cancel.clicked.connect(self.reject)
+        bottom.addWidget(self.btn_apply)
+        bottom.addWidget(self.btn_ok)
+        bottom.addWidget(self.btn_cancel)
+        outer.addLayout(bottom)
+
+    def _add_separator(self, root, text):
+        label = QLabel(text)
+        label.setStyleSheet("font-weight: 700; color: #80FFCC; margin-top: 8px;")
+        root.addWidget(label)
+
+    def _double_spin(self, minimum, maximum, value, step):
+        spin = QDoubleSpinBox()
+        spin.setRange(float(minimum), float(maximum))
+        spin.setDecimals(3)
+        spin.setSingleStep(float(step))
+        spin.setValue(float(value))
+        return spin
+
+    def _color_row(self, label, value):
+        edit = QLineEdit(value)
+        button = QPushButton("選択")
+        row_widget = QWidget()
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(edit, 1)
+        row.addWidget(button)
+        self.form.addRow(label, row_widget)
+
+        def pick():
+            color = QColorDialog.getColor(QColor(edit.text() or "#FFFFFF"), self, label)
+            if color.isValid():
+                edit.setText(color.name())
+
+        button.clicked.connect(pick)
+        return edit
+
+    def _set_toggle_values(self, rain, particles, noise, glow, ripple, mouse_ripple, mouse_flee, mouse_glow):
+        self.rain_enabled.setChecked(bool(rain))
+        self.particles_enabled.setChecked(bool(particles))
+        self.noise_enabled.setChecked(bool(noise))
+        self.glow_enabled.setChecked(bool(glow))
+        self.ripple_enabled.setChecked(bool(ripple))
+        self.mouse_ripple_enabled.setChecked(bool(mouse_ripple))
+        self.mouse_flee_enabled.setChecked(bool(mouse_flee))
+        self.mouse_glow_enabled.setChecked(bool(mouse_glow))
+
+    def set_all_on(self):
+        self._set_toggle_values(True, True, True, True, True, True, True, True)
+
+    def set_all_off(self):
+        self._set_toggle_values(False, False, False, False, False, False, False, False)
+
+    def set_mouse_only(self):
+        self._set_toggle_values(False, False, False, False, False, True, True, True)
+
+    def set_ambient_only(self):
+        self._set_toggle_values(True, True, True, True, True, False, False, False)
+
+    def build_settings(self):
+        return EffectOverlaySettings(
+            rain_enabled=self.rain_enabled.isChecked(),
+            particles_enabled=self.particles_enabled.isChecked(),
+            noise_enabled=self.noise_enabled.isChecked(),
+            glow_enabled=self.glow_enabled.isChecked(),
+            ripple_enabled=self.ripple_enabled.isChecked(),
+            mouse_ripple_enabled=self.mouse_ripple_enabled.isChecked(),
+            mouse_flee_enabled=self.mouse_flee_enabled.isChecked(),
+            mouse_glow_enabled=self.mouse_glow_enabled.isChecked(),
+            particle_count=self.particle_count.value(),
+            rain_count=self.rain_count.value(),
+            glow_count=self.glow_count.value(),
+            particle_color=self.particle_color.text().strip() or "#DDEBFF",
+            rain_color=self.rain_color.text().strip() or "#9FD7FF",
+            glow_color=self.glow_color.text().strip() or "#80FFCC",
+            ripple_color=self.ripple_color.text().strip() or "#A8EFFF",
+            noise_color=self.noise_color.text().strip() or "#FFFFFF",
+            mouse_glow_color=self.mouse_glow_color.text().strip() or "#80FFCC",
+            particle_speed=self.particle_speed.value(),
+            rain_speed=self.rain_speed.value(),
+            glow_speed=self.glow_speed.value(),
+            ripple_speed=self.ripple_speed.value(),
+            particle_size=self.particle_size.value(),
+            rain_length=self.rain_length.value(),
+            glow_radius=self.glow_radius.value(),
+            mouse_glow_radius=self.mouse_glow_radius.value(),
+            ripple_max_radius=self.ripple_max_radius.value(),
+            intensity=self.intensity.value(),
+            noise_alpha=self.noise_alpha.value(),
+            background_alpha=self.background_alpha.value(),
+        )
+
+    def apply_to_config(self):
+        settings = self.build_settings()
+        set_effect_overlay_settings(self.cfg, settings)
+
+        try:
+            self.widget._particles.clear()
+            self.widget._rain.clear()
+            self.widget._ripples.clear()
+        except Exception:
+            pass
+
+        try:
+            parent = self.parent()
+            if parent is not None and hasattr(parent, "canvas"):
+                parent.canvas.save_config()
+                parent.canvas.update()
+        except Exception:
+            pass
+
+    def accept_with_apply(self):
+        self.apply_to_config()
+        self.accept()
+
+
+@dataclass
+class EffectOverlaySettings:
+    rain_enabled: bool = True
+    particles_enabled: bool = True
+    noise_enabled: bool = False
+    glow_enabled: bool = False
+    ripple_enabled: bool = False
+
+    mouse_ripple_enabled: bool = True
+    mouse_flee_enabled: bool = True
+    mouse_glow_enabled: bool = True
+
+    particle_count: int = 120
+    rain_count: int = 90
+    glow_count: int = 4
+
+    particle_color: str = "#DDEBFF"
+    rain_color: str = "#9FD7FF"
+    glow_color: str = "#80FFCC"
+    ripple_color: str = "#A8EFFF"
+    noise_color: str = "#FFFFFF"
+    mouse_glow_color: str = "#80FFCC"
+
+    particle_speed: float = 0.55
+    rain_speed: float = 1.0
+    glow_speed: float = 0.55
+    ripple_speed: float = 1.0
+
+    particle_size: float = 2.0
+    rain_length: float = 16.0
+    glow_radius: float = 160.0
+    mouse_glow_radius: float = 140.0
+    ripple_max_radius: float = 180.0
+
+    intensity: float = 1.0
+    noise_alpha: int = 24
+    background_alpha: int = 0
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class EffectParticle:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    size: float
+    alpha: float
+    seed: float
+
+
+@dataclass
+class EffectRipple:
+    x: float
+    y: float
+    created_at: float
+    max_radius: float
+    color: str
+    speed: float = 1.0
+
+
+DEFAULT_EFFECT_OVERLAY_SETTINGS = EffectOverlaySettings().to_dict()
+
+
+def ensure_effect_overlay_fields(cfg):
+    if not hasattr(cfg, "effects_json"):
+        cfg.effects_json = json.dumps(DEFAULT_EFFECT_OVERLAY_SETTINGS, ensure_ascii=False)
+    if not hasattr(cfg, "effects_follow_mouse"):
+        cfg.effects_follow_mouse = True
+
+
+def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
+    ensure_effect_overlay_fields(cfg)
+    raw = getattr(cfg, "effects_json", "") or "{}"
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = {}
+
+    if not isinstance(data, dict):
+        data = {}
+
+    defaults = DEFAULT_EFFECT_OVERLAY_SETTINGS.copy()
+    defaults.update(data)
+
+    return EffectOverlaySettings(
+        rain_enabled=bool(defaults.get("rain_enabled", True)),
+        particles_enabled=bool(defaults.get("particles_enabled", True)),
+        noise_enabled=bool(defaults.get("noise_enabled", False)),
+        glow_enabled=bool(defaults.get("glow_enabled", True)),
+        ripple_enabled=bool(defaults.get("ripple_enabled", True)),
+        mouse_ripple_enabled=bool(defaults.get("mouse_ripple_enabled", True)),
+        mouse_flee_enabled=bool(defaults.get("mouse_flee_enabled", True)),
+        mouse_glow_enabled=bool(defaults.get("mouse_glow_enabled", True)),
+        particle_count=max(0, int(defaults.get("particle_count", 120))),
+        rain_count=max(0, int(defaults.get("rain_count", 90))),
+        glow_count=max(0, int(defaults.get("glow_count", 4))),
+        particle_color=str(defaults.get("particle_color", "#DDEBFF")),
+        rain_color=str(defaults.get("rain_color", "#9FD7FF")),
+        glow_color=str(defaults.get("glow_color", "#80FFCC")),
+        ripple_color=str(defaults.get("ripple_color", "#A8EFFF")),
+        noise_color=str(defaults.get("noise_color", "#FFFFFF")),
+        mouse_glow_color=str(defaults.get("mouse_glow_color", "#80FFCC")),
+        particle_speed=float(defaults.get("particle_speed", 0.55)),
+        rain_speed=float(defaults.get("rain_speed", 1.0)),
+        glow_speed=float(defaults.get("glow_speed", 0.55)),
+        ripple_speed=float(defaults.get("ripple_speed", 1.0)),
+        particle_size=float(defaults.get("particle_size", 2.0)),
+        rain_length=float(defaults.get("rain_length", 16.0)),
+        glow_radius=float(defaults.get("glow_radius", 160.0)),
+        mouse_glow_radius=float(defaults.get("mouse_glow_radius", 140.0)),
+        ripple_max_radius=float(defaults.get("ripple_max_radius", 180.0)),
+        intensity=float(defaults.get("intensity", 1.0)),
+        noise_alpha=max(0, min(255, int(defaults.get("noise_alpha", 24)))),
+        background_alpha=max(0, min(255, int(defaults.get("background_alpha", 0)))),
+    )
+
+
+def set_effect_overlay_settings(cfg, settings: EffectOverlaySettings):
+    ensure_effect_overlay_fields(cfg)
+    cfg.effects_json = json.dumps(settings.to_dict(), ensure_ascii=False)
 
 
 class Thread:
@@ -1182,6 +1594,10 @@ class WidgetConfig:
     network_down_color: str = "#5BE7FF"
     network_up_color: str = "#80FF9F"
 
+    effects_json: str = "{}"
+    effects_follow_mouse: bool = True
+
+
 class BaseWidget:
     def __init__(self, cfg: WidgetConfig):
         self.cfg = cfg
@@ -1200,6 +1616,315 @@ class BaseWidget:
     def to_config(self) -> WidgetConfig:
         return self.cfg
 
+class EffectsOverlayWidget(BaseWidget):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        ensure_effect_overlay_fields(self.cfg)
+        self._particles: List[EffectParticle] = []
+        self._rain: List[EffectParticle] = []
+        self._ripples: List[EffectRipple] = []
+        self._last_time = time.time()
+        self._mouse_pos: Optional[QPointF] = None
+        self._mouse_active_until = 0.0
+        self._last_rect_size = (0, 0)
+        self._random = random.Random(20260505)
+
+    def paint(self, p: QPainter, ctx: Dict):
+        settings = get_effect_overlay_settings(self.cfg)
+        r = self.rect
+        now = time.time()
+        dt = max(0.001, min(0.05, now - self._last_time))
+        self._last_time = now
+
+        self._ensure_emitters(r, settings)
+        self._update_particles(r, settings, dt, now)
+        self._update_rain(r, settings, dt)
+        self._cleanup_ripples(now)
+
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        if settings.background_alpha > 0:
+            bg = QColor(getattr(self.cfg, "bg", "#000000") or "#000000")
+            bg.setAlpha(settings.background_alpha)
+            p.setBrush(QBrush(bg))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRect(r)
+
+        if settings.noise_enabled:
+            self._draw_noise(p, r, settings, now)
+
+        if settings.glow_enabled:
+            self._draw_glow_orbs(p, r, settings, now)
+
+        if settings.mouse_glow_enabled and self._mouse_pos is not None and now <= self._mouse_active_until:
+            self._draw_mouse_glow(p, r, settings, now)
+
+        if settings.particles_enabled:
+            self._draw_particles(p, r, settings, now)
+
+        if settings.rain_enabled:
+            self._draw_rain(p, r, settings)
+
+        if settings.ripple_enabled or settings.mouse_ripple_enabled:
+            self._draw_ripples(p, r, settings, now)
+
+        if self.selected and ctx.get("edit_mode", True):
+            self._paint_selection(p)
+
+        p.restore()
+
+    def on_mouse_move(self, pos: QPoint):
+        self._mouse_pos = QPointF(pos)
+        self._mouse_active_until = time.time() + 0.7
+
+    def on_mouse_press(self, pos: QPoint):
+        self._mouse_pos = QPointF(pos)
+        self._mouse_active_until = time.time() + 1.0
+        settings = get_effect_overlay_settings(self.cfg)
+
+        if settings.mouse_ripple_enabled:
+            self._ripples.append(
+                EffectRipple(
+                    x=float(pos.x()),
+                    y=float(pos.y()),
+                    created_at=time.time(),
+                    max_radius=settings.ripple_max_radius,
+                    color=settings.ripple_color,
+                    speed=settings.ripple_speed,
+                )
+            )
+
+        if settings.mouse_flee_enabled:
+            self._push_particles_away(QPointF(pos), strength=420.0)
+
+    def on_mouse_release(self, pos: QPoint):
+        self._mouse_pos = QPointF(pos)
+        self._mouse_active_until = time.time() + 0.4
+
+    def _ensure_emitters(self, r: QRectF, settings: EffectOverlaySettings):
+        size_key = (int(r.width()), int(r.height()))
+        if size_key != self._last_rect_size:
+            self._particles.clear()
+            self._rain.clear()
+            self._last_rect_size = size_key
+
+        while len(self._particles) < settings.particle_count:
+            self._particles.append(self._new_particle(r, settings))
+        if len(self._particles) > settings.particle_count:
+            self._particles = self._particles[:settings.particle_count]
+
+        while len(self._rain) < settings.rain_count:
+            self._rain.append(self._new_raindrop(r, settings))
+        if len(self._rain) > settings.rain_count:
+            self._rain = self._rain[:settings.rain_count]
+
+    def _new_particle(self, r: QRectF, settings: EffectOverlaySettings):
+        angle = self._random.random() * math.tau
+        speed = 8.0 + self._random.random() * 22.0 * max(0.1, settings.particle_speed)
+        return EffectParticle(
+            x=float(r.left() + self._random.random() * max(1.0, r.width())),
+            y=float(r.top() + self._random.random() * max(1.0, r.height())),
+            vx=math.cos(angle) * speed,
+            vy=math.sin(angle) * speed,
+            size=max(0.4, settings.particle_size * (0.5 + self._random.random() * 1.4)),
+            alpha=0.25 + self._random.random() * 0.75,
+            seed=self._random.random() * 10000.0,
+        )
+
+    def _new_raindrop(self, r: QRectF, settings: EffectOverlaySettings):
+        speed = 260.0 + self._random.random() * 340.0 * max(0.1, settings.rain_speed)
+        wind = -45.0 + self._random.random() * 90.0
+        return EffectParticle(
+            x=float(r.left() + self._random.random() * max(1.0, r.width())),
+            y=float(r.top() - self._random.random() * max(1.0, r.height())),
+            vx=wind,
+            vy=speed,
+            size=1.0 + self._random.random() * 1.4,
+            alpha=0.25 + self._random.random() * 0.55,
+            seed=self._random.random() * 10000.0,
+        )
+
+    def _update_particles(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
+        mouse = self._mouse_pos if (self._mouse_pos is not None and now <= self._mouse_active_until) else None
+
+        for particle in self._particles:
+            wobble = math.sin(now * 1.7 + particle.seed) * 8.0
+            particle.x += (particle.vx + wobble) * dt
+            particle.y += particle.vy * dt
+
+            if mouse is not None and settings.mouse_flee_enabled:
+                dx = particle.x - mouse.x()
+                dy = particle.y - mouse.y()
+                dist2 = dx * dx + dy * dy
+                radius = 150.0
+                if 1.0 < dist2 < radius * radius:
+                    dist = math.sqrt(dist2)
+                    force = (1.0 - dist / radius) * 220.0 * settings.intensity
+                    particle.x += (dx / dist) * force * dt
+                    particle.y += (dy / dist) * force * dt
+
+            if particle.x < r.left() - 40:
+                particle.x = r.right() + 20
+            elif particle.x > r.right() + 40:
+                particle.x = r.left() - 20
+            if particle.y < r.top() - 40:
+                particle.y = r.bottom() + 20
+            elif particle.y > r.bottom() + 40:
+                particle.y = r.top() - 20
+
+    def _update_rain(self, r: QRectF, settings: EffectOverlaySettings, dt: float):
+        for drop in self._rain:
+            drop.x += drop.vx * dt
+            drop.y += drop.vy * dt
+            if drop.y > r.bottom() + 60 or drop.x < r.left() - 80 or drop.x > r.right() + 80:
+                fresh = self._new_raindrop(r, settings)
+                drop.x = fresh.x
+                drop.y = r.top() - self._random.random() * 120.0
+                drop.vx = fresh.vx
+                drop.vy = fresh.vy
+                drop.size = fresh.size
+                drop.alpha = fresh.alpha
+                drop.seed = fresh.seed
+
+    def _cleanup_ripples(self, now: float):
+        alive = []
+        for ripple in self._ripples:
+            age = now - ripple.created_at
+            duration = max(0.2, 1.1 / max(0.05, ripple.speed))
+            if age <= duration:
+                alive.append(ripple)
+        self._ripples = alive
+
+    def _push_particles_away(self, pos: QPointF, strength: float):
+        for particle in self._particles:
+            dx = particle.x - pos.x()
+            dy = particle.y - pos.y()
+            dist2 = dx * dx + dy * dy
+            radius = 220.0
+            if 1.0 < dist2 < radius * radius:
+                dist = math.sqrt(dist2)
+                force = (1.0 - dist / radius) * strength
+                particle.x += (dx / dist) * force * 0.016
+                particle.y += (dy / dist) * force * 0.016
+                particle.vx += (dx / dist) * force * 0.05
+                particle.vy += (dy / dist) * force * 0.05
+
+    def _draw_particles(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        base = QColor(settings.particle_color)
+        p.setPen(Qt.PenStyle.NoPen)
+
+        for particle in self._particles:
+            twinkle = 0.55 + 0.45 * math.sin(now * 2.8 + particle.seed)
+            c = QColor(base)
+            c.setAlpha(int(180 * particle.alpha * twinkle * settings.intensity))
+            p.setBrush(QBrush(c))
+            radius = max(1, int(particle.size * (0.8 + twinkle * 0.4)))
+            p.drawEllipse(QPoint(int(particle.x), int(particle.y)), radius, radius)
+
+    def _draw_rain(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings):
+        color = QColor(settings.rain_color)
+        length = settings.rain_length
+
+        for drop in self._rain:
+            c = QColor(color)
+            c.setAlpha(int(190 * drop.alpha * settings.intensity))
+            pen = QPen(c, max(1, int(drop.size)))
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            slant = drop.vx * 0.035
+            p.drawLine(
+                int(drop.x),
+                int(drop.y),
+                int(drop.x - slant),
+                int(drop.y - length),
+            )
+
+    def _draw_glow_orbs(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if settings.glow_count <= 0:
+            return
+
+        base = QColor(settings.glow_color)
+        for i in range(settings.glow_count):
+            phase = now * settings.glow_speed + i * 2.399963
+            x = r.left() + r.width() * (0.5 + 0.42 * math.sin(phase * 0.57 + i))
+            y = r.top() + r.height() * (0.5 + 0.38 * math.cos(phase * 0.43 + i * 1.7))
+            radius = settings.glow_radius * (0.75 + 0.25 * math.sin(phase + i))
+            self._draw_radial_glow(p, x, y, radius, base, int(80 * settings.intensity))
+
+    def _draw_mouse_glow(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if self._mouse_pos is None:
+            return
+        base = QColor(settings.mouse_glow_color)
+        pulse = 0.8 + 0.2 * math.sin(now * 6.0)
+        self._draw_radial_glow(
+            p,
+            self._mouse_pos.x(),
+            self._mouse_pos.y(),
+            settings.mouse_glow_radius * pulse,
+            base,
+            int(95 * settings.intensity),
+        )
+
+    def _draw_radial_glow(self, p: QPainter, x: float, y: float, radius: float, color: QColor, alpha: int):
+        gradient = QRadialGradient(x, y, max(1.0, radius))
+        c0 = QColor(color)
+        c0.setAlpha(max(0, min(255, alpha)))
+        c1 = QColor(color)
+        c1.setAlpha(max(0, min(255, int(alpha * 0.25))))
+        c2 = QColor(color)
+        c2.setAlpha(0)
+        gradient.setColorAt(0.0, c0)
+        gradient.setColorAt(0.45, c1)
+        gradient.setColorAt(1.0, c2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(gradient))
+        p.drawEllipse(QRectF(x - radius, y - radius, radius * 2, radius * 2))
+
+    def _draw_ripples(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        for ripple in self._ripples:
+            age = now - ripple.created_at
+            duration = max(0.2, 1.1 / max(0.05, ripple.speed))
+            t = max(0.0, min(1.0, age / duration))
+            radius = ripple.max_radius * self._ease_out_cubic(t)
+            alpha = int(210 * (1.0 - t) * settings.intensity)
+            c = QColor(ripple.color)
+            c.setAlpha(max(0, min(255, alpha)))
+            pen = QPen(c, max(1, int(3 * (1.0 - t) + 1)))
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(ripple.x, ripple.y), radius, radius)
+
+    def _draw_noise(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        color = QColor(settings.noise_color)
+        color.setAlpha(settings.noise_alpha)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(color))
+
+        width = int(max(1, r.width()))
+        height = int(max(1, r.height()))
+        density = max(40, min(900, int(width * height / 18000)))
+        seed = int(now * 18)
+        rng = random.Random(seed)
+
+        for _ in range(density):
+            x = int(r.left() + rng.random() * width)
+            y = int(r.top() + rng.random() * height)
+            if rng.random() < 0.8:
+                p.drawRect(x, y, 1, 1)
+            else:
+                p.drawRect(x, y, 2, 1)
+
+    def _ease_out_cubic(self, t: float):
+        return 1.0 - pow(1.0 - t, 3.0)
+
+    def _paint_selection(self, p: QPainter):
+        pen = QPen(QColor("#FFFFFF"))
+        pen.setStyle(Qt.PenStyle.DashLine)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(self.rect, 16, 16)
 
 class VisualizerWidget(BaseWidget):
     def paint(self, p: QPainter, ctx: Dict):
@@ -2824,6 +3549,9 @@ def create_widget(cfg: WidgetConfig) -> BaseWidget:
     if cfg.type == "visualizer":
         return VisualizerWidget(cfg)
 
+    if cfg.type == "effects_overlay":
+        return EffectsOverlayWidget(cfg)
+
     if cfg.type == "system":
         return SystemWidget(cfg)
 
@@ -3267,6 +3995,7 @@ class LiteDeskStudio(QMainWindow):
         layout.addWidget(add_label)
 
         self.btn_add_visualizer = QPushButton("音楽ビジュアライザー")
+        self.btn_add_effects_overlay = QPushButton("エフェクトオーバーレイ")
         self.btn_add_system = QPushButton("CPU / Memory / Disk")
         self.btn_add_volume = QPushButton("音量操作")
         self.btn_add_clock = QPushButton("アナログ時計")
@@ -3278,6 +4007,7 @@ class LiteDeskStudio(QMainWindow):
         self.btn_add_weather = QPushButton("天気")
 
         self.btn_add_visualizer.clicked.connect(lambda: self.add_widget("visualizer"))
+        self.btn_add_effects_overlay.clicked.connect(lambda: self.add_widget("effects_overlay"))
         self.btn_add_system.clicked.connect(lambda: self.add_widget("system"))
         self.btn_add_volume.clicked.connect(lambda: self.add_widget("volume"))
         self.btn_add_clock.clicked.connect(lambda: self.add_widget("clock"))
@@ -3291,6 +4021,7 @@ class LiteDeskStudio(QMainWindow):
 
         for button in [
             self.btn_add_visualizer,
+            self.btn_add_effects_overlay,
             self.btn_add_system,
             self.btn_add_volume,
             self.btn_add_clock,
@@ -3326,6 +4057,21 @@ class LiteDeskStudio(QMainWindow):
         layout.addLayout(layer_buttons)
 
         return scroll
+
+    def open_effects_overlay_editor(self):
+        widget = getattr(self.canvas, "selected", None)
+        if widget is None or widget.cfg.type != "effects_overlay":
+            QMessageBox.information(
+                self,
+                "エフェクト設定",
+                "Effects Overlay ウィジェットを選択してください。"
+            )
+            return
+
+        dialog = EffectsOverlayEditorDialog(widget, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.canvas.save_config()
+            self.canvas.update()
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
@@ -3385,7 +4131,9 @@ class LiteDeskStudio(QMainWindow):
 
         action_grid = QGridLayout()
         action_grid.setSpacing(8)
-
+        self.btn_effects_editor = QPushButton("エフェクト設定")
+        self.btn_effects_editor.clicked.connect(self.open_effects_overlay_editor)
+        layout.addWidget(self.btn_effects_editor)
         self.btn_save = QPushButton("設定を保存")
         self.btn_reload = QPushButton("UIを再読み込み")
         self.btn_duplicate = QPushButton("複製")
@@ -4342,6 +5090,21 @@ class DesktopCanvas(QWidget):
             pass
         self.update_platform_hit_mask()
 
+    def notify_effect_widgets_mouse_move(self, pos):
+        for widget in self.widgets:
+            if isinstance(widget, EffectsOverlayWidget):
+                widget.on_mouse_move(pos)
+
+    def notify_effect_widgets_mouse_press(self, pos):
+        for widget in self.widgets:
+            if isinstance(widget, EffectsOverlayWidget):
+                widget.on_mouse_press(pos)
+
+    def notify_effect_widgets_mouse_release(self, pos):
+        for widget in self.widgets:
+            if isinstance(widget, EffectsOverlayWidget):
+                widget.on_mouse_release(pos)
+
     def update_platform_hit_mask(self):
         if is_windows():
             try:
@@ -4623,7 +5386,7 @@ class DesktopCanvas(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
-
+            self.notify_effect_widgets_mouse_press(pos)
             clicked_widget = None
 
             for widget in reversed(self.widgets):
@@ -4677,10 +5440,13 @@ class DesktopCanvas(QWidget):
             self.update()
             self.notify_studio_selection_changed()
         elif event.button() == Qt.MouseButton.RightButton:
+            pos = event.position().toPoint()
+            self.notify_effect_widgets_mouse_press(pos)
             return
 
     def mouseMoveEvent(self, event):
         pos = event.position().toPoint()
+        self.notify_effect_widgets_mouse_move(pos)
         new_pos = pos - self.drag_offset
 
         if self.dragging and self.selected and self.edit_mode:
@@ -4695,6 +5461,8 @@ class DesktopCanvas(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event):
+        pos = event.position().toPoint()
+        self.notify_effect_widgets_mouse_release(pos)
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             self.volume_sliding = False
@@ -4777,6 +5545,19 @@ class DesktopCanvas(QWidget):
                 color="#5BE7FF",
                 bg="#10141C",
             )
+        elif kind == "effects_overlay":
+            cfg = WidgetConfig(
+                type="effects_overlay",
+                x=0,
+                y=0,
+                w=QApplication.primaryScreen().geometry().width(),
+                h=QApplication.primaryScreen().geometry().height(),
+                title="Effects Overlay",
+                color="#80FFCC",
+                bg="#000000",
+                bg_alpha=0,
+            )
+            ensure_effect_overlay_fields(cfg)
         elif kind == "system":
             cfg = WidgetConfig(
                 type="system",
