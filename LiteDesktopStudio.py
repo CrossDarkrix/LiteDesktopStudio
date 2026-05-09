@@ -4123,40 +4123,88 @@ class LiteDeskStudio(QMainWindow):
         self.refresh_runtime_status()
 
     def export_config(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "設定をエクスポート",
-            "litedesk_config.json",
-            "JSON Files (*.json)"
-        )
-
-        if not path:
+        if getattr(self, "exporting_config", False):
             return
 
+        self.exporting_config = True
+
         try:
+            dialog = QFileDialog(self, "設定をエクスポート")
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+            dialog.setNameFilter("JSON Files (*.json)")
+            dialog.setDefaultSuffix("json")
+            dialog.selectFile("litedesk_config.json")
+            dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+            # Linux / macOS でネイティブダイアログが固まる対策
+            try:
+                dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+            except AttributeError:
+                dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            files = dialog.selectedFiles()
+            if not files:
+                return
+
+            path = files[0]
+            if not path:
+                return
+
+            if not path.lower().endswith(".json"):
+                path += ".json"
+
             self.canvas.export_config_to(path)
             QMessageBox.information(self, "エクスポート", "設定を書き出しました。")
+
         except Exception as e:
             QMessageBox.warning(self, "エラー", str(e))
 
-    def import_config(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "設定をインポート",
-            "",
-            "JSON Files (*.json)"
-        )
+        finally:
+            self.exporting_config = False
 
-        if not path:
+    def import_config(self):
+        if getattr(self, "importing_config", False):
             return
 
+        self.importing_config = True
+
         try:
+            dialog = QFileDialog(self, "設定をインポート")
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+            dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+            dialog.setNameFilter("JSON Files (*.json)")
+            dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+            # Linux / macOS でネイティブダイアログが固まる対策
+            try:
+                dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+            except AttributeError:
+                dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            files = dialog.selectedFiles()
+            if not files:
+                return
+
+            path = files[0]
+            if not path:
+                return
+
             self.canvas.import_config_from(path)
             self.refresh_layer_list()
             self.load_selected_to_editor()
             QMessageBox.information(self, "インポート", "設定を読み込みました。")
+
         except Exception as e:
             QMessageBox.warning(self, "エラー", str(e))
+
+        finally:
+            self.importing_config = False
 
     def on_edit_mode_changed(self, state=None):
         self.canvas.edit_mode = self.edit_mode_check.isChecked()
@@ -4500,11 +4548,16 @@ class DesktopCanvas(QWidget):
 
     def export_config_to(self, path: str):
         data = {
+            "studio_theme": get_canvas_studio_theme(self),
             "widgets": [asdict(w.to_config()) for w in self.widgets]
         }
 
-        with open(path, "w", encoding="utf-8") as f:
+        tmp_path = path + ".tmp"
+
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+        os.replace(tmp_path, path)
 
     def import_config_from(self, path: str):
         with open(path, "r", encoding="utf-8") as f:
