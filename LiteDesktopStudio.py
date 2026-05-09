@@ -70,7 +70,7 @@ warnings.filterwarnings(
 )
 
 APP_NAME = "LiteDeskEngine"
-CONFIG_PATH = "config.json"
+CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
 DEFAULT_NETWORK_UP_COLOR = "#80FF9F"
