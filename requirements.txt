@@ -1,0 +1,5 @@
+PySide6
+numpy
+soundcard
+winsdk
+pycaw
