@@ -161,11 +161,6 @@ class EffectsOverlayEditorDialog(QDialog):
         title = QLabel("Effects Overlay")
         title.setStyleSheet("font-size: 18px; font-weight: 700;")
         outer.addWidget(title)
-
-        desc = QLabel("設定をカテゴリ別に整理しました。普段は『基本』と『バラ花びら』だけ見れば調整できます。")
-        desc.setWordWrap(True)
-        outer.addWidget(desc)
-
         quick = QHBoxLayout()
         self.btn_all_on = QPushButton("全部ON")
         self.btn_all_off = QPushButton("全部OFF")
