@@ -139,7 +139,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "intensity": 1.0,
     "background_alpha": 0,
 
-    # New lightweight visual effects
+    
     "snow_enabled": False,
     "snow_count": 90,
     "snow_speed": 0.18,
@@ -250,7 +250,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.extra_weather_form = self._create_tab("雪・水・火")
         self.extra_sky_form = self._create_tab("空・その他")
 
-        # 旧コード互換: _color_row などが self.form を参照しても動くようにする。
+        
         self.form = self.basic_form
 
         self._build_basic_tab()
@@ -1761,8 +1761,8 @@ class VolumeController:
         need_uninit = False
         try:
             import sys
-            # comtypes が import 時に COM 初期化する前に指定する
-            # COINIT_APARTMENTTHREADED = 0x2
+            
+            
             sys.coinit_flags = 0x2
             import comtypes
             from comtypes import CLSCTX_ALL
@@ -1772,8 +1772,8 @@ class VolumeController:
                 comtypes.CoInitializeEx(0x2)
                 need_uninit = True
             except OSError as e:
-                # RPC_E_CHANGED_MODE
-                # すでにこのスレッドで別モード初期化済みの場合
+                
+                
                 if getattr(e, "winerror", None) == -2147417850:
                     need_uninit = False
                 else:
@@ -1783,10 +1783,10 @@ class VolumeController:
 
             device = AudioUtilities.GetSpeakers()
 
-            # 新しめの pycaw では AudioDevice.EndpointVolume を使う
+            
             endpoint = getattr(device, "EndpointVolume", None)
 
-            # 古い/別系統のAPI向け fallback
+            
             if endpoint is None and hasattr(device, "Activate"):
                 interface = device.Activate(
                     IAudioEndpointVolume._iid_,
@@ -1810,7 +1810,7 @@ class VolumeController:
                 self._volume_cache = int(endpoint.GetMasterVolumeLevelScalar() * 100)
                 self._mute_cache = bool(endpoint.GetMute())
 
-            # print(f"[VolumeController] pycaw ready: {device_name}")
+            
 
             last_poll = 0.0
 
@@ -1954,15 +1954,15 @@ class AudioEngine:
             self._run_fake()
 
     def _find_loopback_microphone(self):
-        # ループバックを含めてマイク一覧を取得
-        # SoundCard 公式では include_loopback=True が speaker outputs 録音用
+        
+        
         mics = sc.all_microphones(include_loopback=True)
 
-        # isloopback 属性があるものを優先
+        
         loopbacks = [m for m in mics if getattr(m, "isloopback", False)]
 
         if loopbacks:
-            # まず default speaker 名に近いものを探す
+            
             try:
                 default_speaker = sc.default_speaker()
                 speaker_name = default_speaker.name.lower()
@@ -1973,10 +1973,10 @@ class AudioEngine:
             except Exception:
                 pass
 
-            # 見つからなければ最初の loopback
+            
             return loopbacks[0]
 
-        # isloopback が取れない環境向けの保険
+        
         for mic in mics:
             name = mic.name.lower()
             if "loopback" in name or "what u hear" in name or "stereo mix" in name:
@@ -2002,39 +2002,39 @@ class AudioEngine:
                     time.sleep(0.00005)
                     continue
 
-                # data は frames x channels の numpy array
+                
                 if data.ndim == 2:
                     mono = data.mean(axis=1)
                 else:
                     mono = data
 
-                # DC 成分除去
+                
                 mono = mono - np.mean(mono)
 
-                # 窓関数でスペクトルを安定化
+                
                 window = np.hanning(len(mono))
                 mono = mono * window
 
                 spec = np.abs(np.fft.rfft(mono))
 
-                # 低域〜中域を中心に使う
+                
                 spec = spec[:len(spec) // 2]
 
                 if spec.size <= 0:
                     continue
 
-                # 線形ではなく対数的にサンプリングすると見た目が自然
+                
                 idx = np.geomspace(1, spec.size - 1, self.bars).astype(int)
                 bars = spec[idx]
 
-                # 対数圧縮
+                
                 bars = np.log1p(bars)
 
                 maxv = np.max(bars)
                 if maxv > 0:
                     bars = bars / maxv
 
-                # スムージング
+                
                 with self.lock:
                     self.spectrum = (
                         self.spectrum * 0.72 +
@@ -2106,7 +2106,7 @@ class WeatherEngine:
         with self._lock:
             if location != self.location:
                 self.location = location
-                # 場所が変わったら、長い sleep 中でも次の短い監視ループで即取得する。
+                
                 self._force_fetch = True
                 self._last_fetch = 0.0
                 self.temperature = "--"
@@ -2123,7 +2123,7 @@ class WeatherEngine:
                 self.forecast = []
 
     def set_refresh_interval(self, seconds: float):
-        # 天気更新間隔を安全な範囲で変更する。既定は10分。
+        
         try:
             seconds = float(seconds)
         except Exception:
@@ -2152,9 +2152,9 @@ class WeatherEngine:
             }
 
     def _worker(self):
-        # 以前は time.sleep(self.refresh_interval) で長時間眠っていたため、
-        # 場所変更や10分更新設定がすぐ反映されませんでした。
-        # ここでは短い周期で _force_fetch / refresh_interval を監視します。
+        
+        
+        
         while self._running:
             now = time.time()
             today = time.strftime("%Y-%m-%d")
@@ -2177,7 +2177,7 @@ class WeatherEngine:
                     self.last_fetch_date = today
                     self._force_fetch = False
 
-            # 長時間 sleep しない。場所変更をすぐ拾うため短く待つ。
+            
             time.sleep(1.0)
 
     def _build_url(self, location: str):
@@ -2797,7 +2797,7 @@ class EffectsOverlayWidget(BaseWidget):
                 item.x += (item.vx + math.sin(now * 1.2 + item.seed) * 10.0) * dt
                 item.y += item.vy * dt
                 item.rotation += item.rotation_speed * dt
-                # gravity for spray
+                
                 if kind == "water_spray":
                     item.vy += 280.0 * dt
                 if kind in ("flame", "water_spray") and now - item.created_at > item.life:
@@ -2937,8 +2937,8 @@ class EffectsOverlayWidget(BaseWidget):
         p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
 
     def _draw_shooting_star(self, p: QPainter, item, alpha: int):
-        # 流れ星 / 流星群: 尻尾が流れながら徐々に消える版。
-        # item.vx / item.vy の逆方向に尾を伸ばし、複数の残像ラインを薄く重ねます。
+        
+        
         vx = float(getattr(item, "vx", 1.0))
         vy = float(getattr(item, "vy", 0.48))
         speed_len = max(1.0, math.hypot(vx, vy))
@@ -3378,7 +3378,7 @@ class EffectsOverlayWidget(BaseWidget):
         p.translate(x, y)
         p.rotate(math.degrees(rotation))
 
-        # 中くらいの花: 複数の丸い花びらを重ねて一輪のバラっぽく見せる。
+        
         layers = [
             (8, size * 0.32, size * 0.54, 0.0),
             (7, size * 0.22, size * 0.42, 0.45),
@@ -3674,7 +3674,7 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_petal_ripple_time = now
 
     def _draw_rose_petals(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
-        # fading=True の花びらは透明度を徐々に下げて描画する版。
+        
         base = QColor(getattr(settings, "rose_petal_color", "#FF7AAE"))
         edge = QColor(getattr(settings, "rose_petal_edge_color", "#FFD1E3"))
         alpha_base = max(0, min(255, int(getattr(settings, "rose_petal_alpha", 210))))
@@ -3687,7 +3687,7 @@ class EffectsOverlayWidget(BaseWidget):
             if getattr(petal, "fading", False):
                 duration = max(0.05, float(getattr(petal, "fade_duration", 0.85)))
                 t = max(0.0, min(1.0, (now - getattr(petal, "fade_started_at", now)) / duration))
-                # 最初は少し残り、後半でふっと消えるイージング。
+                
                 fade_multiplier = pow(1.0 - t, 1.7)
 
             alpha = int(alpha_base * petal.alpha * flutter * intensity * fade_multiplier)
@@ -4388,7 +4388,7 @@ class MediaMetadataEngine:
             try:
                 from winsdk.windows.storage.streams import DataReader
             except Exception:
-                from winrt.windows.storage.streams import DataReader  # type: ignore
+                from winrt.windows.storage.streams import DataReader  
 
             reader = DataReader(stream)
             await reader.load_async(size)
@@ -5181,7 +5181,7 @@ class CalendarWidget(BaseWidget):
         p.drawRoundedRect(self.rect, 16, 16)
 
 
-# noinspection LanguageDetectionInspection
+
 DEFAULT_JS_HTML = """
 <!doctype html>
 <html>
@@ -5269,8 +5269,8 @@ body {{
 
 class JSHtmlWidget(BaseWidget):
     def paint(self, p: QPainter, ctx: Dict):
-        # QWebEngineView が実際の HTML/JS を描画します。
-        # Canvas 側では編集モードの選択枠だけ描きます。
+        
+        
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
 
@@ -5292,7 +5292,7 @@ class JSHtmlViewManager:
         self.error = ""
 
         try:
-            from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+            from PySide6.QtWebEngineWidgets import QWebEngineView  
         except Exception as e:
             self.available = False
             self.error = repr(e)
@@ -5408,12 +5408,12 @@ class JSHtmlViewManager:
 
 
 def get_js_html_from_config(cfg):
-    # JavaScript HTML は WidgetConfig.text に保存します。
+    
     return getattr(cfg, "text", "") or DEFAULT_JS_HTML
 
 
 def set_js_html_to_config(cfg, html: str):
-    # Studio UI の HTML/Text 欄から保存する時に使えます。
+    
     cfg.text = html or ""
 
 
@@ -7140,7 +7140,7 @@ class LiteDeskStudio(QMainWindow):
             dialog.selectFile("litedesk_config.json")
             dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
 
-            # Linux / macOS でネイティブダイアログが固まる対策
+            
             try:
                 dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
             except AttributeError:
@@ -7182,7 +7182,7 @@ class LiteDeskStudio(QMainWindow):
             dialog.setNameFilter("JSON Files (*.json)")
             dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
 
-            # Linux / macOS でネイティブダイアログが固まる対策
+            
             try:
                 dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
             except AttributeError:
