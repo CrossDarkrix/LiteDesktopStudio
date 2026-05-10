@@ -145,7 +145,6 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_speed": 0.18,
     "snow_size": 4.5,
     "snow_alpha": 210,
-    "snow_color": "#F5FCFF",
     "snow_ripple_enabled": True,
     "snow_ripple_chance": 0.38,
     "snow_surface_y": 0.86,
@@ -154,7 +153,6 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_crystal_speed": 0.12,
     "snow_crystal_size": 15.0,
     "snow_crystal_alpha": 220,
-    "snow_crystal_color": "#EBFAFF",
     "snow_crystal_ripple_enabled": True,
     "snow_crystal_ripple_chance": 0.55,
     "snow_crystal_surface_y": 0.86,
@@ -198,9 +196,6 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_drop_speed": 0.48,
     "water_drop_size": 8.0,
     "water_drop_alpha": 210,
-    "water_drop_color": "#7DDCFF",
-    "water_drop_highlight_color": "#FFFFFF",
-    "water_drop_edge_color": "#D2F5FF",
     "water_drop_ripple_enabled": True,
     "water_drop_ripple_chance": 0.75,
     "water_drop_surface_y": 0.86,
@@ -619,13 +614,8 @@ class EffectsOverlayEditorDialog(QDialog):
     def _build_extra_weather_tab(self):
         f = self.extra_weather_form
         self._add_effect_block(f, "雪", "snow", "小さな雪がゆっくり落ちる", 90, 0.18, 4.5, 210, ripple=True, surface_default=0.86, chance_default=0.38)
-        self.snow_color = self._color_row_on(f, "雪 色", getattr(self.settings, "snow_color", "#F5FCFF"))
         self._add_effect_block(f, "中くらいの雪の結晶", "snow_crystal", "雪の結晶がゆっくり落ちる", 22, 0.12, 15.0, 220, ripple=True, surface_default=0.86, chance_default=0.55)
-        self.snow_crystal_color = self._color_row_on(f, "雪の結晶 色", getattr(self.settings, "snow_crystal_color", "#EBFAFF"))
         self._add_effect_block(f, "水玉", "water_drop", "水玉が上から落ちる", 55, 0.48, 8.0, 210, ripple=True, surface_default=0.86, chance_default=0.75)
-        self.water_drop_color = self._color_row_on(f, "水玉 色", getattr(self.settings, "water_drop_color", "#7DDCFF"))
-        self.water_drop_highlight_color = self._color_row_on(f, "水玉 ハイライト色", getattr(self.settings, "water_drop_highlight_color", "#FFFFFF"))
-        self.water_drop_edge_color = self._color_row_on(f, "水玉 縁色", getattr(self.settings, "water_drop_edge_color", "#D2F5FF"))
         self._add_effect_block(f, "泡", "bubble", "泡が下からポコポコ登る", 42, 0.26, 12.0, 150, ripple=False)
         self._add_effect_block(f, "炎", "flame", "下から炎がゆらめく", 60, 0.55, 22.0, 210, ripple=False)
         self._add_effect_block(f, "水が吹き出る", "water_spray", "下から水が噴き上がる", 64, 0.75, 6.0, 190, ripple=False)
@@ -806,7 +796,6 @@ class EffectsOverlayEditorDialog(QDialog):
             snow_speed=self.snow_speed.value(),
             snow_size=self.snow_size.value(),
             snow_alpha=self.snow_alpha.value(),
-            snow_color=self.snow_color.text().strip() or "#F5FCFF",
             snow_ripple_enabled=self.snow_ripple_enabled.isChecked(),
             snow_ripple_chance=self.snow_ripple_chance.value(),
             snow_surface_y=self.snow_surface_y.value(),
@@ -815,7 +804,6 @@ class EffectsOverlayEditorDialog(QDialog):
             snow_crystal_speed=self.snow_crystal_speed.value(),
             snow_crystal_size=self.snow_crystal_size.value(),
             snow_crystal_alpha=self.snow_crystal_alpha.value(),
-            snow_crystal_color=self.snow_crystal_color.text().strip() or "#EBFAFF",
             snow_crystal_ripple_enabled=self.snow_crystal_ripple_enabled.isChecked(),
             snow_crystal_ripple_chance=self.snow_crystal_ripple_chance.value(),
             snow_crystal_surface_y=self.snow_crystal_surface_y.value(),
@@ -859,9 +847,6 @@ class EffectsOverlayEditorDialog(QDialog):
             water_drop_speed=self.water_drop_speed.value(),
             water_drop_size=self.water_drop_size.value(),
             water_drop_alpha=self.water_drop_alpha.value(),
-            water_drop_color=self.water_drop_color.text().strip() or "#7DDCFF",
-            water_drop_highlight_color=self.water_drop_highlight_color.text().strip() or "#FFFFFF",
-            water_drop_edge_color=self.water_drop_edge_color.text().strip() or "#D2F5FF",
             water_drop_ripple_enabled=self.water_drop_ripple_enabled.isChecked(),
             water_drop_ripple_chance=self.water_drop_ripple_chance.value(),
             water_drop_surface_y=self.water_drop_surface_y.value(),
@@ -1092,7 +1077,6 @@ class EffectOverlaySettings:
     snow_speed: float = 0.18
     snow_size: float = 4.5
     snow_alpha: int = 210
-    snow_color: str = "#F5FCFF"
     snow_ripple_enabled: bool = True
     snow_ripple_chance: float = 0.38
     snow_surface_y: float = 0.86
@@ -1101,7 +1085,6 @@ class EffectOverlaySettings:
     snow_crystal_speed: float = 0.12
     snow_crystal_size: float = 15.0
     snow_crystal_alpha: int = 220
-    snow_crystal_color: str = "#EBFAFF"
     snow_crystal_ripple_enabled: bool = True
     snow_crystal_ripple_chance: float = 0.55
     snow_crystal_surface_y: float = 0.86
@@ -1145,9 +1128,6 @@ class EffectOverlaySettings:
     water_drop_speed: float = 0.48
     water_drop_size: float = 8.0
     water_drop_alpha: int = 210
-    water_drop_color: str = "#7DDCFF"
-    water_drop_highlight_color: str = "#FFFFFF"
-    water_drop_edge_color: str = "#D2F5FF"
     water_drop_ripple_enabled: bool = True
     water_drop_ripple_chance: float = 0.75
     water_drop_surface_y: float = 0.86
@@ -1371,7 +1351,6 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         snow_speed=float(defaults.get("snow_speed", 0.18)),
         snow_size=float(defaults.get("snow_size", 4.5)),
         snow_alpha=max(0, min(255, int(defaults.get("snow_alpha", 210)))),
-        snow_color=str(defaults.get("snow_color", "#F5FCFF")),
         snow_ripple_enabled=bool(defaults.get("snow_ripple_enabled", True)),
         snow_ripple_chance=float(defaults.get("snow_ripple_chance", 0.38)),
         snow_surface_y=float(defaults.get("snow_surface_y", 0.86)),
@@ -1380,7 +1359,6 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         snow_crystal_speed=float(defaults.get("snow_crystal_speed", 0.12)),
         snow_crystal_size=float(defaults.get("snow_crystal_size", 15.0)),
         snow_crystal_alpha=max(0, min(255, int(defaults.get("snow_crystal_alpha", 220)))),
-        snow_crystal_color=str(defaults.get("snow_crystal_color", "#EBFAFF")),
         snow_crystal_ripple_enabled=bool(defaults.get("snow_crystal_ripple_enabled", True)),
         snow_crystal_ripple_chance=float(defaults.get("snow_crystal_ripple_chance", 0.55)),
         snow_crystal_surface_y=float(defaults.get("snow_crystal_surface_y", 0.86)),
@@ -1424,9 +1402,6 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         water_drop_speed=float(defaults.get("water_drop_speed", 0.48)),
         water_drop_size=float(defaults.get("water_drop_size", 8.0)),
         water_drop_alpha=max(0, min(255, int(defaults.get("water_drop_alpha", 210)))),
-        water_drop_color=str(defaults.get("water_drop_color", "#7DDCFF")),
-        water_drop_highlight_color=str(defaults.get("water_drop_highlight_color", "#FFFFFF")),
-        water_drop_edge_color=str(defaults.get("water_drop_edge_color", "#D2F5FF")),
         water_drop_ripple_enabled=bool(defaults.get("water_drop_ripple_enabled", True)),
         water_drop_ripple_chance=float(defaults.get("water_drop_ripple_chance", 0.75)),
         water_drop_surface_y=float(defaults.get("water_drop_surface_y", 0.86)),
@@ -2108,7 +2083,7 @@ class WeatherEngine:
 
         self.forecast = []
 
-        self.refresh_interval = 36000.0
+        self.refresh_interval = 600.0
         self._last_fetch = 0.0
         self._force_fetch = True
         self.last_fetch_date = ""
@@ -2131,7 +2106,32 @@ class WeatherEngine:
         with self._lock:
             if location != self.location:
                 self.location = location
+                # 場所が変わったら、長い sleep 中でも次の短い監視ループで即取得する。
                 self._force_fetch = True
+                self._last_fetch = 0.0
+                self.temperature = "--"
+                self.feels_like = "--"
+                self.description = "Loading..."
+                self.humidity = "--"
+                self.wind_kmph = "--"
+                self.area = ""
+                self.country = ""
+                self.updated_at = ""
+                self.error = ""
+                self.icon = "☁"
+                self.weather_code = ""
+                self.forecast = []
+
+    def set_refresh_interval(self, seconds: float):
+        # 天気更新間隔を安全な範囲で変更する。既定は10分。
+        try:
+            seconds = float(seconds)
+        except Exception:
+            seconds = 600.0
+        seconds = max(60.0, min(86400.0, seconds))
+        with self._lock:
+            self.refresh_interval = seconds
+            self._force_fetch = True
 
     def snapshot(self):
         with self._lock:
@@ -2152,15 +2152,19 @@ class WeatherEngine:
             }
 
     def _worker(self):
+        # 以前は time.sleep(self.refresh_interval) で長時間眠っていたため、
+        # 場所変更や10分更新設定がすぐ反映されませんでした。
+        # ここでは短い周期で _force_fetch / refresh_interval を監視します。
         while self._running:
             now = time.time()
             today = time.strftime("%Y-%m-%d")
             should_fetch = False
 
             with self._lock:
+                interval = max(60.0, float(getattr(self, "refresh_interval", 600.0)))
                 if self._force_fetch:
                     should_fetch = True
-                elif now - self._last_fetch >= self.refresh_interval:
+                elif now - self._last_fetch >= interval:
                     should_fetch = True
 
                 location = self.location
@@ -2171,8 +2175,10 @@ class WeatherEngine:
                 with self._lock:
                     self._last_fetch = time.time()
                     self.last_fetch_date = today
+                    self._force_fetch = False
 
-            time.sleep(self.refresh_interval)
+            # 長時間 sleep しない。場所変更をすぐ拾うため短く待つ。
+            time.sleep(1.0)
 
     def _build_url(self, location: str):
         query = urllib.parse.urlencode({
@@ -2849,19 +2855,16 @@ class EffectsOverlayWidget(BaseWidget):
                     self._draw_balloon(p, item, alpha)
 
     def _draw_snow_dot(self, p: QPainter, item, alpha: int):
-        settings = get_effect_overlay_settings(self.cfg)
-        c = QColor(getattr(settings, "snow_color", "#F5FCFF"))
-        c.setAlpha(max(0, min(255, alpha)))
+        c = QColor(245, 252, 255, alpha)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(c))
         p.drawEllipse(QPointF(item.x, item.y), max(1.0, item.size), max(1.0, item.size))
+
     def _draw_snow_crystal(self, p: QPainter, item, alpha: int):
-        settings = get_effect_overlay_settings(self.cfg)
         p.save()
         p.translate(item.x, item.y)
         p.rotate(math.degrees(item.rotation))
-        c = QColor(getattr(settings, "snow_crystal_color", "#EBFAFF"))
-        c.setAlpha(max(0, min(255, alpha)))
+        c = QColor(235, 250, 255, alpha)
         pen = QPen(c, max(1, int(item.size * 0.08)))
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
@@ -2874,18 +2877,10 @@ class EffectsOverlayWidget(BaseWidget):
             by = math.sin(a) * item.size * 0.58
             for sign in (-1, 1):
                 ba = a + sign * 0.65
-                p.drawLine(
-                    int(bx),
-                    int(by),
-                    int(bx + math.cos(ba) * item.size * 0.25),
-                    int(by + math.sin(ba) * item.size * 0.25),
-                )
+                p.drawLine(int(bx), int(by), int(bx + math.cos(ba)*item.size*0.25), int(by + math.sin(ba)*item.size*0.25))
         p.restore()
+
     def _draw_water_drop(self, p: QPainter, item, alpha: int):
-        settings = get_effect_overlay_settings(self.cfg)
-        base_color = QColor(getattr(settings, "water_drop_color", "#7DDCFF"))
-        highlight_color = QColor(getattr(settings, "water_drop_highlight_color", "#FFFFFF"))
-        edge_color = QColor(getattr(settings, "water_drop_edge_color", "#D2F5FF"))
         p.save()
         p.translate(item.x, item.y)
         path = QPainterPath()
@@ -2893,30 +2888,15 @@ class EffectsOverlayWidget(BaseWidget):
         path.moveTo(0, -s * 1.25)
         path.cubicTo(s * 0.85, -s * 0.25, s * 0.65, s * 0.85, 0, s * 1.0)
         path.cubicTo(-s * 0.65, s * 0.85, -s * 0.85, -s * 0.25, 0, -s * 1.25)
-
-        h = QColor(highlight_color)
-        h.setAlpha(max(0, min(255, alpha)))
-        b = QColor(base_color)
-        b.setAlpha(max(0, min(255, alpha)))
-        dark = QColor(base_color)
-        dark.setAlpha(max(0, min(255, int(alpha * 0.72))))
-        dark = QColor(
-            max(0, int(dark.red() * 0.48)),
-            max(0, int(dark.green() * 0.62)),
-            max(0, int(dark.blue() * 0.80)),
-            dark.alpha(),
-        )
-
-        grad = QRadialGradient(QPointF(-s * 0.25, -s * 0.35), max(1.0, s * 1.6))
-        grad.setColorAt(0.0, h)
-        grad.setColorAt(0.45, b)
-        grad.setColorAt(1.0, dark)
+        grad = QRadialGradient(QPointF(-s*0.25, -s*0.35), max(1.0, s*1.6))
+        grad.setColorAt(0.0, QColor(255,255,255, min(255, alpha)))
+        grad.setColorAt(0.45, QColor(125,220,255, alpha))
+        grad.setColorAt(1.0, QColor(40,130,220, int(alpha*0.72)))
         p.setBrush(QBrush(grad))
-        e = QColor(edge_color)
-        e.setAlpha(max(0, min(255, int(alpha * 0.75))))
-        p.setPen(QPen(e, max(1, int(s * 0.08))))
+        p.setPen(QPen(QColor(210,245,255, int(alpha*0.75)), max(1, int(s*0.08))))
         p.drawPath(path)
         p.restore()
+
     def _draw_bubble(self, p: QPainter, item, alpha: int):
         c = QColor(170, 235, 255, max(20, int(alpha*0.55)))
         p.setBrush(Qt.BrushStyle.NoBrush)
