@@ -1954,8 +1954,6 @@ class AudioEngine:
             self._run_fake()
 
     def _find_loopback_microphone(self):
-        
-        
         mics = sc.all_microphones(include_loopback=True)
 
         
@@ -2152,8 +2150,6 @@ class WeatherEngine:
             }
 
     def _worker(self):
-        
-        
         
         while self._running:
             now = time.time()
@@ -2937,8 +2933,6 @@ class EffectsOverlayWidget(BaseWidget):
         p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
 
     def _draw_shooting_star(self, p: QPainter, item, alpha: int):
-        
-        
         vx = float(getattr(item, "vx", 1.0))
         vy = float(getattr(item, "vy", 0.48))
         speed_len = max(1.0, math.hypot(vx, vy))
@@ -4388,7 +4382,7 @@ class MediaMetadataEngine:
             try:
                 from winsdk.windows.storage.streams import DataReader
             except Exception:
-                from winrt.windows.storage.streams import DataReader  
+                pass
 
             reader = DataReader(stream)
             await reader.load_async(size)
@@ -5269,8 +5263,6 @@ body {{
 
 class JSHtmlWidget(BaseWidget):
     def paint(self, p: QPainter, ctx: Dict):
-        
-        
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
 
