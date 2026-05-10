@@ -92,16 +92,67 @@ MOUSE_EFFECT_RIPPLE = "click_ripple"
 MOUSE_EFFECT_FLEE = "particle_flee"
 MOUSE_EFFECT_GLOW = "mouse_glow"
 
+LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
+    "rain_enabled": False,
+    "particles_enabled": False,
+    "noise_enabled": False,
+    "glow_enabled": False,
+    "ripple_enabled": False,
+
+    "mouse_ripple_enabled": False,
+    "mouse_flee_enabled": False,
+    "mouse_glow_enabled": False,
+
+    "rain_ripple_enabled": False,
+    "rose_petals_enabled": True,
+    "rose_petal_ripple_enabled": False,
+    "rose_petal_count": 24,
+    "rose_petal_color": "#FF7AAE",
+    "rose_petal_edge_color": "#FFD1E3",
+    "rose_petal_speed": 0.25,
+    "rose_petal_sway": 1.15,
+    "rose_petal_size": 18.0,
+    "rose_petal_alpha": 215,
+    "rose_petal_surface_y": 0.84,
+    "rose_petal_ripple_chance": 0.0,
+    "rose_petal_rest_on_surface": False,
+    "rose_petal_fade_on_surface": True,
+    "rose_petal_fade_duration": 0.85,
+    "rose_petal_fade_sink_distance": 10.0,
+    "rose_petal_fade_spin": 0.35,
+    "rose_petal_roundness": 0.78,
+    "rose_petal_curl": 0.52,
+    "rose_petal_shadow_alpha": 0,
+    "rose_petal_highlight_alpha": 130,
+    "rose_petal_vein_alpha": 90,
+    "rose_flowers_enabled": False,
+    "blooming_roses_enabled": False,
+    "sakura_petals_enabled": False,
+    "sakura_tree_enabled": False,
+    "sakura_tree_petal_emit_enabled": False,
+    "sakura_tree_realistic_blossoms": False,
+    "sakura_tree_grand_mode": False,
+    "sakura_tree_large_mode": False,
+    "particle_count": 0,
+    "rain_count": 0,
+    "glow_count": 0,
+    "intensity": 1.0,
+    "background_alpha": 0,
+}
+
+
 class EffectsOverlayEditorDialog(QDialog):
     def __init__(self, widget, parent=None):
         super().__init__(parent)
+        from PySide6.QtWidgets import QTabWidget, QGroupBox
+
         self.widget = widget
         self.cfg = widget.cfg
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
         self.setWindowTitle("エフェクト設定")
-        self.resize(600, 720)
+        self.resize(760, 760)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -111,210 +162,46 @@ class EffectsOverlayEditorDialog(QDialog):
         title.setStyleSheet("font-size: 18px; font-weight: 700;")
         outer.addWidget(title)
 
-        desc = QLabel("各エフェクトを個別にオン/オフできます。設定項目が多いため、この画面はスクロールできます。")
+        desc = QLabel("設定をカテゴリ別に整理しました。普段は『基本』と『バラ花びら』だけ見れば調整できます。")
         desc.setWordWrap(True)
         outer.addWidget(desc)
-
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        outer.addWidget(self.scroll, 1)
-
-        content = QWidget()
-        self.scroll.setWidget(content)
-
-        root = QVBoxLayout(content)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(12)
-
-        self.form = QFormLayout()
-        self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        self.form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
-        self.form.setVerticalSpacing(8)
-        root.addLayout(self.form)
-
-        # Individual effect toggles
-        self.rain_enabled = QCheckBox("雨粒")
-        self.particles_enabled = QCheckBox("パーティクル")
-        self.noise_enabled = QCheckBox("ノイズ")
-        self.glow_enabled = QCheckBox("グロー")
-        self.rain_ripple_enabled = QCheckBox("雨粒が水面に当たったら波紋")
-        self.rose_petals_enabled = QCheckBox("バラの花びら")
-        self.ripple_enabled = QCheckBox("自動/通常 波紋")
-        self.mouse_ripple_enabled = QCheckBox("マウスクリック波紋")
-        self.mouse_flee_enabled = QCheckBox("マウス周辺から微粒子が逃げる")
-        self.mouse_glow_enabled = QCheckBox("マウス周辺だけ光る")
-
-        self.rain_enabled.setChecked(self.settings.rain_enabled)
-        self.particles_enabled.setChecked(self.settings.particles_enabled)
-        self.noise_enabled.setChecked(self.settings.noise_enabled)
-        self.glow_enabled.setChecked(self.settings.glow_enabled)
-        self.ripple_enabled.setChecked(self.settings.ripple_enabled)
-        self.mouse_ripple_enabled.setChecked(self.settings.mouse_ripple_enabled)
-        self.mouse_flee_enabled.setChecked(self.settings.mouse_flee_enabled)
-        self.mouse_glow_enabled.setChecked(self.settings.mouse_glow_enabled)
-        self.rain_ripple_enabled.setChecked(getattr(self.settings, "rain_ripple_enabled", True))
-        self.rose_petals_enabled.setChecked(getattr(self.settings, "rose_petals_enabled", True))
-        self.rose_petal_roundness = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_roundness", 0.72),
-                                                      0.01)
-        self.rose_petal_curl = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_curl", 0.42), 0.01)
-        self.rose_petal_shadow_alpha = QSpinBox()
-        self.rose_petal_shadow_alpha.setRange(0, 255)
-        self.rose_petal_shadow_alpha.setValue(getattr(self.settings, "rose_petal_shadow_alpha", 72))
-        self.rose_petal_highlight_alpha = QSpinBox()
-        self.rose_petal_highlight_alpha.setRange(0, 255)
-        self.rose_petal_highlight_alpha.setValue(getattr(self.settings, "rose_petal_highlight_alpha", 115))
-        self.rose_petal_vein_alpha = QSpinBox()
-        self.rose_petal_vein_alpha.setRange(0, 255)
-        self.rose_petal_vein_alpha.setValue(getattr(self.settings, "rose_petal_vein_alpha", 95))
-
-        self.form.addRow("雨", self.rain_enabled)
-        self.form.addRow("粒子", self.particles_enabled)
-        self.form.addRow("ノイズ", self.noise_enabled)
-        self.form.addRow("グロー", self.glow_enabled)
-        self.form.addRow("雨×波紋", self.rain_ripple_enabled)
-        self.form.addRow("花びら", self.rose_petals_enabled)
-        self.form.addRow("花びら丸み", self.rose_petal_roundness)
-        self.form.addRow("花びらカール", self.rose_petal_curl)
-        self.form.addRow("花びら影", self.rose_petal_shadow_alpha)
-        self.form.addRow("花びらハイライト", self.rose_petal_highlight_alpha)
-        self.form.addRow("花びら葉脈", self.rose_petal_vein_alpha)
-        self.form.addRow("波紋", self.ripple_enabled)
-        self.form.addRow("マウス", self.mouse_ripple_enabled)
-        self.form.addRow("マウス", self.mouse_flee_enabled)
-        self.form.addRow("マウス", self.mouse_glow_enabled)
-
-        self._add_separator(root, "数量")
-
-        self.particle_count = QSpinBox()
-        self.particle_count.setRange(0, 2000)
-        self.particle_count.setValue(self.settings.particle_count)
-
-        self.rain_count = QSpinBox()
-        self.rain_count.setRange(0, 2000)
-        self.rain_count.setValue(self.settings.rain_count)
-
-        self.glow_count = QSpinBox()
-        self.glow_count.setRange(0, 32)
-        self.glow_count.setValue(self.settings.glow_count)
-
-        self.form.addRow("パーティクル数", self.particle_count)
-        self.form.addRow("雨粒数", self.rain_count)
-        self.form.addRow("グロー数", self.glow_count)
-
-        self._add_separator(root, "速度・サイズ")
-
-        self.particle_speed = self._double_spin(0.0, 10.0, self.settings.particle_speed, 0.05)
-        self.rain_speed = self._double_spin(0.0, 10.0, self.settings.rain_speed, 0.05)
-        self.rain_drop_min_size = self._double_spin(0.2, 20.0, getattr(self.settings, "rain_drop_min_size", 1.0), 0.1)
-        self.rain_drop_max_size = self._double_spin(0.2, 30.0, getattr(self.settings, "rain_drop_max_size", 2.4), 0.1)
-        self.rain_drop_length_randomness = self._double_spin(0.0, 2.0, getattr(self.settings, "rain_drop_length_randomness", 0.55), 0.05)
-        self.glow_speed = self._double_spin(0.0, 10.0, self.settings.glow_speed, 0.05)
-        self.ripple_speed = self._double_spin(0.05, 10.0, self.settings.ripple_speed, 0.05)
-        self.particle_size = self._double_spin(0.1, 20.0, self.settings.particle_size, 0.1)
-        self.rain_length = self._double_spin(1.0, 120.0, self.settings.rain_length, 1.0)
-        self.rain_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_chance", 0.55), 0.05)
-        self.rain_ripple_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_surface_y", 0.82), 0.01)
-        self.rain_ripple_min_radius = self._double_spin(1.0, 300.0, getattr(self.settings, "rain_ripple_min_radius", 24.0), 1.0)
-        self.rain_ripple_max_radius_linked = self._double_spin(1.0, 500.0, getattr(self.settings, "rain_ripple_max_radius_linked", 92.0), 1.0)
-        self.rain_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_cooldown", 0.025), 0.005)
-        self.rose_petal_ripple_enabled = QCheckBox("花びらが水面に落ちたら波紋")
-        self.rose_petal_ripple_enabled.setChecked(getattr(self.settings, "rose_petal_ripple_enabled", True))
-        self.form.addRow("花びら×波紋", self.rose_petal_ripple_enabled)
-
-        self.rose_petal_count = QSpinBox()
-        self.rose_petal_count.setRange(0, 500)
-        self.rose_petal_count.setValue(getattr(self.settings, "rose_petal_count", 24))
-        self.form.addRow("花びら数", self.rose_petal_count)
-
-        self.rose_petal_speed = self._double_spin(0.01, 5.0, getattr(self.settings, "rose_petal_speed", 0.35), 0.01)
-        self.rose_petal_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_petal_sway", 1.0), 0.05)
-        self.rose_petal_size = self._double_spin(2.0, 80.0, getattr(self.settings, "rose_petal_size", 16.0), 0.5)
-        self.rose_petal_alpha = QSpinBox()
-        self.rose_petal_alpha.setRange(0, 255)
-        self.rose_petal_alpha.setValue(getattr(self.settings, "rose_petal_alpha", 210))
-        self.rose_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_surface_y", 0.84), 0.01)
-        self.rose_petal_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_chance", 0.9), 0.05)
-        self.rose_petal_ripple_min_radius = self._double_spin(1.0, 400.0, getattr(self.settings, "rose_petal_ripple_min_radius", 36.0), 1.0)
-        self.rose_petal_ripple_max_radius = self._double_spin(1.0, 700.0, getattr(self.settings, "rose_petal_ripple_max_radius", 130.0), 1.0)
-        self.rose_petal_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_cooldown", 0.04), 0.005)
-        self.rose_petal_rest_on_surface = QCheckBox("水面に少し浮かべる")
-        self.rose_petal_rest_on_surface.setChecked(getattr(self.settings, "rose_petal_rest_on_surface", False))
-        self.rose_petal_color = self._color_row("花びら色", getattr(self.settings, "rose_petal_color", "#FF7AAE"))
-        self.rose_petal_edge_color = self._color_row("花びら縁色", getattr(self.settings, "rose_petal_edge_color", "#FFD1E3"))
-        self.glow_radius = self._double_spin(10.0, 600.0, self.settings.glow_radius, 5.0)
-        self.mouse_glow_radius = self._double_spin(10.0, 600.0, self.settings.mouse_glow_radius, 5.0)
-        self.ripple_max_radius = self._double_spin(10.0, 800.0, self.settings.ripple_max_radius, 5.0)
-        self.intensity = self._double_spin(0.0, 5.0, self.settings.intensity, 0.05)
-
-        self.form.addRow("粒子速度", self.particle_speed)
-        self.form.addRow("雨速度", self.rain_speed)
-        self.form.addRow("雨粒の最小太さ", self.rain_drop_min_size)
-        self.form.addRow("雨粒の最大太さ", self.rain_drop_max_size)
-        self.form.addRow("雨粒の長さランダム", self.rain_drop_length_randomness)
-        self.form.addRow("グロー速度", self.glow_speed)
-        self.form.addRow("波紋速度", self.ripple_speed)
-        self.form.addRow("雨波紋の発生率", self.rain_ripple_chance)
-        self.form.addRow("花びら落下速度", self.rose_petal_speed)
-        self.form.addRow("花びら揺れ", self.rose_petal_sway)
-        self.form.addRow("花びらサイズ", self.rose_petal_size)
-        self.form.addRow("花びら透明度", self.rose_petal_alpha)
-        self.form.addRow("花びら水面Y", self.rose_petal_surface_y)
-        self.form.addRow("花びら波紋発生率", self.rose_petal_ripple_chance)
-        self.form.addRow("花びら波紋最小半径", self.rose_petal_ripple_min_radius)
-        self.form.addRow("花びら波紋最大半径", self.rose_petal_ripple_max_radius)
-        self.form.addRow("花びら波紋間隔", self.rose_petal_ripple_cooldown)
-        self.form.addRow("花びら", self.rose_petal_rest_on_surface)
-        self.form.addRow("水面Y位置", self.rain_ripple_surface_y)
-        self.form.addRow("雨波紋の最小半径", self.rain_ripple_min_radius)
-        self.form.addRow("雨波紋の最大半径", self.rain_ripple_max_radius_linked)
-        self.form.addRow("雨波紋の間隔", self.rain_ripple_cooldown)
-        self.form.addRow("粒子サイズ", self.particle_size)
-        self.form.addRow("雨の長さ", self.rain_length)
-        self.form.addRow("グロー半径", self.glow_radius)
-        self.form.addRow("マウスグロー半径", self.mouse_glow_radius)
-        self.form.addRow("波紋最大半径", self.ripple_max_radius)
-        self.form.addRow("全体強度", self.intensity)
-
-        self._add_separator(root, "透明度")
-
-        self.noise_alpha = QSpinBox()
-        self.noise_alpha.setRange(0, 255)
-        self.noise_alpha.setValue(self.settings.noise_alpha)
-
-        self.background_alpha = QSpinBox()
-        self.background_alpha.setRange(0, 255)
-        self.background_alpha.setValue(self.settings.background_alpha)
-
-        self.form.addRow("ノイズ濃度", self.noise_alpha)
-        self.form.addRow("背景不透明度", self.background_alpha)
-
-        self._add_separator(root, "色")
-
-        self.particle_color = self._color_row("粒子色", self.settings.particle_color)
-        self.rain_color = self._color_row("雨色", self.settings.rain_color)
-        self.glow_color = self._color_row("グロー色", self.settings.glow_color)
-        self.ripple_color = self._color_row("波紋色", self.settings.ripple_color)
-        self.noise_color = self._color_row("ノイズ色", self.settings.noise_color)
-        self.mouse_glow_color = self._color_row("マウスグロー色", self.settings.mouse_glow_color)
-
-        root.addStretch(1)
 
         quick = QHBoxLayout()
         self.btn_all_on = QPushButton("全部ON")
         self.btn_all_off = QPushButton("全部OFF")
+        self.btn_rose_only = QPushButton("軽量: バラ花びらだけ")
         self.btn_mouse_only = QPushButton("マウス系だけON")
         self.btn_ambient_only = QPushButton("環境系だけON")
         self.btn_all_on.clicked.connect(self.set_all_on)
         self.btn_all_off.clicked.connect(self.set_all_off)
+        self.btn_rose_only.clicked.connect(self.set_rose_petals_only)
         self.btn_mouse_only.clicked.connect(self.set_mouse_only)
         self.btn_ambient_only.clicked.connect(self.set_ambient_only)
-        quick.addWidget(self.btn_all_on)
-        quick.addWidget(self.btn_all_off)
-        quick.addWidget(self.btn_mouse_only)
-        quick.addWidget(self.btn_ambient_only)
+        for b in [self.btn_all_on, self.btn_all_off, self.btn_rose_only, self.btn_mouse_only, self.btn_ambient_only]:
+            quick.addWidget(b)
         outer.addLayout(quick)
+
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs, 1)
+
+        self.basic_form = self._create_tab("基本")
+        self.rose_form = self._create_tab("バラ花びら")
+        self.rose_flower_form = self._create_tab("バラ花・開花")
+        self.rain_form = self._create_tab("雨・粒子")
+        self.sakura_form = self._create_tab("桜花びら")
+        self.ripple_form = self._create_tab("波紋・全体")
+        self.color_form = self._create_tab("色")
+
+        # 旧コード互換: _color_row などが self.form を参照しても動くようにする。
+        self.form = self.basic_form
+
+        self._build_basic_tab()
+        self._build_rose_tab()
+        self._build_rose_flower_tab()
+        self._build_rain_particle_tab()
+        self._build_sakura_tab()
+        self._build_ripple_global_tab()
+        self._build_color_tab()
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)
@@ -329,10 +216,32 @@ class EffectsOverlayEditorDialog(QDialog):
         bottom.addWidget(self.btn_cancel)
         outer.addLayout(bottom)
 
-    def _add_separator(self, root, text):
+    def _create_tab(self, title):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(scroll)
+
+        content = QWidget()
+        scroll.setWidget(content)
+        form = QFormLayout(content)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        form.setVerticalSpacing(8)
+        self.tabs.addTab(page, title)
+        return form
+
+    def _section(self, form, text):
         label = QLabel(text)
-        label.setStyleSheet("font-weight: 700; color: #80FFCC; margin-top: 8px;")
-        root.addWidget(label)
+        label.setStyleSheet("font-weight: 700; color: #80FFCC; margin-top: 10px;")
+        form.addRow(label)
+        return label
 
     def _double_spin(self, minimum, maximum, value, step):
         spin = QDoubleSpinBox()
@@ -342,15 +251,21 @@ class EffectsOverlayEditorDialog(QDialog):
         spin.setValue(float(value))
         return spin
 
-    def _color_row(self, label, value):
-        edit = QLineEdit(value)
+    def _int_spin(self, minimum, maximum, value):
+        spin = QSpinBox()
+        spin.setRange(int(minimum), int(maximum))
+        spin.setValue(int(value))
+        return spin
+
+    def _color_row_on(self, form, label, value):
+        edit = QLineEdit(str(value or ""))
         button = QPushButton("選択")
         row_widget = QWidget()
         row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(edit, 1)
         row.addWidget(button)
-        self.form.addRow(label, row_widget)
+        form.addRow(label, row_widget)
 
         def pick():
             color = QColorDialog.getColor(QColor(edit.text() or "#FFFFFF"), self, label)
@@ -359,6 +274,251 @@ class EffectsOverlayEditorDialog(QDialog):
 
         button.clicked.connect(pick)
         return edit
+
+    def _color_row(self, label, value):
+        return self._color_row_on(self.form, label, value)
+
+    def _build_basic_tab(self):
+        f = self.basic_form
+        self._section(f, "表示するエフェクト")
+        self.rain_enabled = QCheckBox("雨粒")
+        self.particles_enabled = QCheckBox("パーティクル")
+        self.noise_enabled = QCheckBox("ノイズ")
+        self.glow_enabled = QCheckBox("グロー")
+        self.ripple_enabled = QCheckBox("自動/通常 波紋")
+        self.rose_petals_enabled = QCheckBox("バラの花びら")
+        self.rose_flowers_enabled = QCheckBox("中くらいのバラの花")
+        self.blooming_roses_enabled = QCheckBox("大きな咲いた花が散る")
+        self.sakura_petals_enabled = QCheckBox("桜の花びら")
+        self.rain_ripple_enabled = QCheckBox("雨粒が水面に当たったら波紋")
+        self.mouse_ripple_enabled = QCheckBox("マウスクリック波紋")
+        self.mouse_flee_enabled = QCheckBox("マウス周辺から微粒子が逃げる")
+        self.mouse_glow_enabled = QCheckBox("マウス周辺だけ光る")
+
+        self.rain_enabled.setChecked(self.settings.rain_enabled)
+        self.particles_enabled.setChecked(self.settings.particles_enabled)
+        self.noise_enabled.setChecked(self.settings.noise_enabled)
+        self.glow_enabled.setChecked(self.settings.glow_enabled)
+        self.ripple_enabled.setChecked(self.settings.ripple_enabled)
+        self.rose_petals_enabled.setChecked(getattr(self.settings, "rose_petals_enabled", True))
+        self.rose_flowers_enabled.setChecked(getattr(self.settings, "rose_flowers_enabled", False))
+        self.blooming_roses_enabled.setChecked(getattr(self.settings, "blooming_roses_enabled", False))
+        self.sakura_petals_enabled.setChecked(getattr(self.settings, "sakura_petals_enabled", False))
+        self.rain_ripple_enabled.setChecked(getattr(self.settings, "rain_ripple_enabled", False))
+        self.mouse_ripple_enabled.setChecked(self.settings.mouse_ripple_enabled)
+        self.mouse_flee_enabled.setChecked(self.settings.mouse_flee_enabled)
+        self.mouse_glow_enabled.setChecked(self.settings.mouse_glow_enabled)
+
+        f.addRow("バラ", self.rose_petals_enabled)
+        f.addRow("バラ花", self.rose_flowers_enabled)
+        f.addRow("開花バラ", self.blooming_roses_enabled)
+        f.addRow("桜", self.sakura_petals_enabled)
+        f.addRow("雨", self.rain_enabled)
+        f.addRow("粒子", self.particles_enabled)
+        f.addRow("ノイズ", self.noise_enabled)
+        f.addRow("グロー", self.glow_enabled)
+        f.addRow("波紋", self.ripple_enabled)
+        f.addRow("雨×波紋", self.rain_ripple_enabled)
+
+        self._section(f, "マウス連動")
+        f.addRow("クリック", self.mouse_ripple_enabled)
+        f.addRow("粒子逃避", self.mouse_flee_enabled)
+        f.addRow("マウス光", self.mouse_glow_enabled)
+
+        self._section(f, "軽量プリセット")
+        note = QLabel("重い場合は『軽量: バラ花びらだけ』を押すと、バラ花びら以外をOFFにします。")
+        note.setWordWrap(True)
+        f.addRow(note)
+
+    def _build_rose_tab(self):
+        f = self.rose_form
+        self._section(f, "バラ花びら: 数量・動き")
+        self.rose_petal_count = self._int_spin(0, 500, getattr(self.settings, "rose_petal_count", 24))
+        self.rose_petal_speed = self._double_spin(0.01, 5.0, getattr(self.settings, "rose_petal_speed", 0.35), 0.01)
+        self.rose_petal_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_petal_sway", 1.0), 0.05)
+        self.rose_petal_size = self._double_spin(2.0, 80.0, getattr(self.settings, "rose_petal_size", 16.0), 0.5)
+        self.rose_petal_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_alpha", 210))
+        f.addRow("花びら数", self.rose_petal_count)
+        f.addRow("落下速度", self.rose_petal_speed)
+        f.addRow("揺れ", self.rose_petal_sway)
+        f.addRow("サイズ", self.rose_petal_size)
+        f.addRow("透明度", self.rose_petal_alpha)
+
+        self._section(f, "立体感")
+        self.rose_petal_roundness = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_roundness", 0.72), 0.01)
+        self.rose_petal_curl = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_curl", 0.42), 0.01)
+        self.rose_petal_shadow_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_shadow_alpha", 0))
+        self.rose_petal_highlight_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_highlight_alpha", 115))
+        self.rose_petal_vein_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_vein_alpha", 95))
+        f.addRow("丸み", self.rose_petal_roundness)
+        f.addRow("カール", self.rose_petal_curl)
+        f.addRow("影", self.rose_petal_shadow_alpha)
+        f.addRow("ハイライト", self.rose_petal_highlight_alpha)
+        f.addRow("葉脈", self.rose_petal_vein_alpha)
+
+        self._section(f, "水面・消え方")
+        self.rose_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_surface_y", 0.84), 0.01)
+        self.rose_petal_ripple_enabled = QCheckBox("花びらが水面に落ちたら波紋")
+        self.rose_petal_ripple_enabled.setChecked(getattr(self.settings, "rose_petal_ripple_enabled", True))
+        self.rose_petal_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_chance", 0.9), 0.05)
+        self.rose_petal_ripple_min_radius = self._double_spin(1.0, 400.0, getattr(self.settings, "rose_petal_ripple_min_radius", 36.0), 1.0)
+        self.rose_petal_ripple_max_radius = self._double_spin(1.0, 700.0, getattr(self.settings, "rose_petal_ripple_max_radius", 130.0), 1.0)
+        self.rose_petal_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_cooldown", 0.04), 0.005)
+        self.rose_petal_rest_on_surface = QCheckBox("水面に少し浮かべる")
+        self.rose_petal_rest_on_surface.setChecked(getattr(self.settings, "rose_petal_rest_on_surface", False))
+        self.rose_petal_fade_on_surface = QCheckBox("水面で花びらをフェードアウト")
+        self.rose_petal_fade_on_surface.setChecked(getattr(self.settings, "rose_petal_fade_on_surface", True))
+        self.rose_petal_fade_duration = self._double_spin(0.05, 5.0, getattr(self.settings, "rose_petal_fade_duration", 0.85), 0.05)
+        self.rose_petal_fade_sink_distance = self._double_spin(0.0, 80.0, getattr(self.settings, "rose_petal_fade_sink_distance", 10.0), 1.0)
+        self.rose_petal_fade_spin = self._double_spin(0.0, 2.0, getattr(self.settings, "rose_petal_fade_spin", 0.35), 0.05)
+        f.addRow("水面Y", self.rose_petal_surface_y)
+        f.addRow("花びら×波紋", self.rose_petal_ripple_enabled)
+        f.addRow("波紋発生率", self.rose_petal_ripple_chance)
+        f.addRow("波紋最小半径", self.rose_petal_ripple_min_radius)
+        f.addRow("波紋最大半径", self.rose_petal_ripple_max_radius)
+        f.addRow("波紋間隔", self.rose_petal_ripple_cooldown)
+        f.addRow("浮かべる", self.rose_petal_rest_on_surface)
+        f.addRow("フェード", self.rose_petal_fade_on_surface)
+        f.addRow("フェード時間", self.rose_petal_fade_duration)
+        f.addRow("沈む距離", self.rose_petal_fade_sink_distance)
+        f.addRow("フェード中の回転", self.rose_petal_fade_spin)
+
+    def _build_rose_flower_tab(self):
+        f = self.rose_flower_form
+        self._section(f, "中くらいのバラ花")
+        self.rose_flower_count = self._int_spin(0, 100, getattr(self.settings, "rose_flower_count", 5))
+        self.rose_flower_size = self._double_spin(8.0, 160.0, getattr(self.settings, "rose_flower_size", 42.0), 1.0)
+        self.rose_flower_speed = self._double_spin(0.01, 3.0, getattr(self.settings, "rose_flower_speed", 0.22), 0.01)
+        self.rose_flower_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_flower_sway", 0.85), 0.05)
+        self.rose_flower_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_flower_surface_y", 0.84), 0.01)
+        self.rose_flower_ripple_enabled = QCheckBox("バラ花が水面に落ちたら波紋")
+        self.rose_flower_ripple_enabled.setChecked(getattr(self.settings, "rose_flower_ripple_enabled", True))
+        self.rose_flower_ripple_min_radius = self._double_spin(1.0, 600.0, getattr(self.settings, "rose_flower_ripple_min_radius", 80.0), 1.0)
+        self.rose_flower_ripple_max_radius = self._double_spin(1.0, 900.0, getattr(self.settings, "rose_flower_ripple_max_radius", 220.0), 1.0)
+        f.addRow("バラ花数", self.rose_flower_count)
+        f.addRow("サイズ", self.rose_flower_size)
+        f.addRow("落下速度", self.rose_flower_speed)
+        f.addRow("揺れ", self.rose_flower_sway)
+        f.addRow("水面Y", self.rose_flower_surface_y)
+        f.addRow("波紋", self.rose_flower_ripple_enabled)
+        f.addRow("波紋最小半径", self.rose_flower_ripple_min_radius)
+        f.addRow("波紋最大半径", self.rose_flower_ripple_max_radius)
+
+        self._section(f, "咲いたバラ")
+        self.blooming_rose_count = self._int_spin(0, 20, getattr(self.settings, "blooming_rose_count", 2))
+        self.blooming_rose_size = self._double_spin(20.0, 260.0, getattr(self.settings, "blooming_rose_size", 86.0), 1.0)
+        self.blooming_rose_scatter_after = self._double_spin(0.1, 30.0, getattr(self.settings, "blooming_rose_scatter_after", 3.0), 0.1)
+        self.blooming_rose_life = self._double_spin(0.2, 60.0, getattr(self.settings, "blooming_rose_life", 7.5), 0.1)
+        self.blooming_rose_petal_count = self._int_spin(0, 300, getattr(self.settings, "blooming_rose_petal_count", 34))
+        self.blooming_rose_respawn = QCheckBox("咲いた花を再生成")
+        self.blooming_rose_respawn.setChecked(getattr(self.settings, "blooming_rose_respawn", True))
+        f.addRow("咲いた花数", self.blooming_rose_count)
+        f.addRow("咲いた花サイズ", self.blooming_rose_size)
+        f.addRow("散り始め", self.blooming_rose_scatter_after)
+        f.addRow("寿命", self.blooming_rose_life)
+        f.addRow("散る花びら数", self.blooming_rose_petal_count)
+        f.addRow("再生成", self.blooming_rose_respawn)
+
+    def _build_rain_particle_tab(self):
+        f = self.rain_form
+        self._section(f, "数量")
+        self.particle_count = self._int_spin(0, 2000, self.settings.particle_count)
+        self.rain_count = self._int_spin(0, 2000, self.settings.rain_count)
+        self.glow_count = self._int_spin(0, 32, self.settings.glow_count)
+        f.addRow("パーティクル数", self.particle_count)
+        f.addRow("雨粒数", self.rain_count)
+        f.addRow("グロー数", self.glow_count)
+
+        self._section(f, "速度・サイズ")
+        self.particle_speed = self._double_spin(0.0, 10.0, self.settings.particle_speed, 0.05)
+        self.rain_speed = self._double_spin(0.0, 10.0, self.settings.rain_speed, 0.05)
+        self.rain_drop_min_size = self._double_spin(0.2, 20.0, getattr(self.settings, "rain_drop_min_size", 1.0), 0.1)
+        self.rain_drop_max_size = self._double_spin(0.2, 30.0, getattr(self.settings, "rain_drop_max_size", 2.4), 0.1)
+        self.rain_drop_length_randomness = self._double_spin(0.0, 2.0, getattr(self.settings, "rain_drop_length_randomness", 0.55), 0.05)
+        self.particle_size = self._double_spin(0.1, 20.0, self.settings.particle_size, 0.1)
+        self.rain_length = self._double_spin(1.0, 120.0, self.settings.rain_length, 1.0)
+        self.glow_speed = self._double_spin(0.0, 10.0, self.settings.glow_speed, 0.05)
+        self.glow_radius = self._double_spin(10.0, 600.0, self.settings.glow_radius, 5.0)
+        f.addRow("粒子速度", self.particle_speed)
+        f.addRow("粒子サイズ", self.particle_size)
+        f.addRow("雨速度", self.rain_speed)
+        f.addRow("雨粒の最小太さ", self.rain_drop_min_size)
+        f.addRow("雨粒の最大太さ", self.rain_drop_max_size)
+        f.addRow("雨粒の長さランダム", self.rain_drop_length_randomness)
+        f.addRow("雨の長さ", self.rain_length)
+        f.addRow("グロー速度", self.glow_speed)
+        f.addRow("グロー半径", self.glow_radius)
+
+    def _build_sakura_tab(self):
+        f = self.sakura_form
+        self._section(f, "桜花びら")
+        self.sakura_petal_count = self._int_spin(0, 2000, getattr(self.settings, "sakura_petal_count", 80))
+        self.sakura_petal_speed = self._double_spin(0.01, 5.0, getattr(self.settings, "sakura_petal_speed", 0.32), 0.01)
+        self.sakura_petal_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "sakura_petal_sway", 1.15), 0.05)
+        self.sakura_petal_size = self._double_spin(1.0, 60.0, getattr(self.settings, "sakura_petal_size", 9.0), 0.5)
+        self.sakura_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "sakura_petal_surface_y", 0.84), 0.01)
+        self.sakura_petal_ripple_enabled = QCheckBox("桜花びらが水面で波紋")
+        self.sakura_petal_ripple_enabled.setChecked(getattr(self.settings, "sakura_petal_ripple_enabled", True))
+        self.sakura_petal_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "sakura_petal_ripple_chance", 0.65), 0.05)
+        self.sakura_petal_ripple_min_radius = self._double_spin(1.0, 300.0, getattr(self.settings, "sakura_petal_ripple_min_radius", 22.0), 1.0)
+        self.sakura_petal_ripple_max_radius = self._double_spin(1.0, 500.0, getattr(self.settings, "sakura_petal_ripple_max_radius", 88.0), 1.0)
+        f.addRow("桜花びら数", self.sakura_petal_count)
+        f.addRow("速度", self.sakura_petal_speed)
+        f.addRow("揺れ", self.sakura_petal_sway)
+        f.addRow("サイズ", self.sakura_petal_size)
+        f.addRow("水面Y", self.sakura_petal_surface_y)
+        f.addRow("波紋", self.sakura_petal_ripple_enabled)
+        f.addRow("波紋発生率", self.sakura_petal_ripple_chance)
+        f.addRow("波紋最小半径", self.sakura_petal_ripple_min_radius)
+        f.addRow("波紋最大半径", self.sakura_petal_ripple_max_radius)
+
+    def _build_ripple_global_tab(self):
+        f = self.ripple_form
+        self._section(f, "雨波紋")
+        self.rain_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_chance", 0.55), 0.05)
+        self.rain_ripple_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_surface_y", 0.82), 0.01)
+        self.rain_ripple_min_radius = self._double_spin(1.0, 300.0, getattr(self.settings, "rain_ripple_min_radius", 24.0), 1.0)
+        self.rain_ripple_max_radius_linked = self._double_spin(1.0, 500.0, getattr(self.settings, "rain_ripple_max_radius_linked", 92.0), 1.0)
+        self.rain_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_cooldown", 0.025), 0.005)
+        f.addRow("雨波紋の発生率", self.rain_ripple_chance)
+        f.addRow("水面Y位置", self.rain_ripple_surface_y)
+        f.addRow("雨波紋の最小半径", self.rain_ripple_min_radius)
+        f.addRow("雨波紋の最大半径", self.rain_ripple_max_radius_linked)
+        f.addRow("雨波紋の間隔", self.rain_ripple_cooldown)
+
+        self._section(f, "全体")
+        self.ripple_speed = self._double_spin(0.05, 10.0, self.settings.ripple_speed, 0.05)
+        self.ripple_max_radius = self._double_spin(10.0, 800.0, self.settings.ripple_max_radius, 5.0)
+        self.mouse_glow_radius = self._double_spin(10.0, 600.0, self.settings.mouse_glow_radius, 5.0)
+        self.intensity = self._double_spin(0.0, 5.0, self.settings.intensity, 0.05)
+        self.noise_alpha = self._int_spin(0, 255, self.settings.noise_alpha)
+        self.background_alpha = self._int_spin(0, 255, self.settings.background_alpha)
+        f.addRow("波紋速度", self.ripple_speed)
+        f.addRow("波紋最大半径", self.ripple_max_radius)
+        f.addRow("マウスグロー半径", self.mouse_glow_radius)
+        f.addRow("全体強度", self.intensity)
+        f.addRow("ノイズ濃度", self.noise_alpha)
+        f.addRow("背景不透明度", self.background_alpha)
+
+    def _build_color_tab(self):
+        f = self.color_form
+        self._section(f, "バラ")
+        self.rose_petal_color = self._color_row_on(f, "花びら色", getattr(self.settings, "rose_petal_color", "#FF7AAE"))
+        self.rose_petal_edge_color = self._color_row_on(f, "花びら縁色", getattr(self.settings, "rose_petal_edge_color", "#FFD1E3"))
+        self.blooming_rose_color = self._color_row_on(f, "咲いた花色", getattr(self.settings, "blooming_rose_color", "#FF6FAE"))
+        self.blooming_rose_edge_color = self._color_row_on(f, "咲いた花縁色", getattr(self.settings, "blooming_rose_edge_color", "#FFD5E8"))
+
+        self._section(f, "桜")
+        self.sakura_petal_color = self._color_row_on(f, "桜花びら色", getattr(self.settings, "sakura_petal_color", "#FFD1E8"))
+        self.sakura_petal_edge_color = self._color_row_on(f, "桜花びら縁色", getattr(self.settings, "sakura_petal_edge_color", "#FF8FC7"))
+
+        self._section(f, "環境")
+        self.particle_color = self._color_row_on(f, "粒子色", self.settings.particle_color)
+        self.rain_color = self._color_row_on(f, "雨色", self.settings.rain_color)
+        self.glow_color = self._color_row_on(f, "グロー色", self.settings.glow_color)
+        self.ripple_color = self._color_row_on(f, "波紋色", self.settings.ripple_color)
+        self.noise_color = self._color_row_on(f, "ノイズ色", self.settings.noise_color)
+        self.mouse_glow_color = self._color_row_on(f, "マウスグロー色", self.settings.mouse_glow_color)
 
     def _set_toggle_values(self, rain, particles, noise, glow, ripple, mouse_ripple, mouse_flee, mouse_glow):
         self.rain_enabled.setChecked(bool(rain))
@@ -372,16 +532,49 @@ class EffectsOverlayEditorDialog(QDialog):
 
     def set_all_on(self):
         self._set_toggle_values(True, True, True, True, True, True, True, True)
+        self.rain_ripple_enabled.setChecked(True)
+        self.rose_petals_enabled.setChecked(True)
+        self.rose_flowers_enabled.setChecked(True)
+        self.blooming_roses_enabled.setChecked(True)
+        self.sakura_petals_enabled.setChecked(True)
 
     def set_all_off(self):
         self._set_toggle_values(False, False, False, False, False, False, False, False)
+        self.rain_ripple_enabled.setChecked(False)
+        self.rose_petals_enabled.setChecked(False)
+        self.rose_flowers_enabled.setChecked(False)
+        self.blooming_roses_enabled.setChecked(False)
+        self.sakura_petals_enabled.setChecked(False)
 
     def set_mouse_only(self):
         self._set_toggle_values(False, False, False, False, False, True, True, True)
+        self.rain_ripple_enabled.setChecked(False)
+        self.rose_petals_enabled.setChecked(False)
+        self.rose_flowers_enabled.setChecked(False)
+        self.blooming_roses_enabled.setChecked(False)
+        self.sakura_petals_enabled.setChecked(False)
 
     def set_ambient_only(self):
         self._set_toggle_values(True, True, True, True, True, False, False, False)
+        self.rain_ripple_enabled.setChecked(True)
+        self.rose_petals_enabled.setChecked(True)
+        self.rose_flowers_enabled.setChecked(False)
+        self.blooming_roses_enabled.setChecked(False)
+        self.sakura_petals_enabled.setChecked(False)
 
+    def set_rose_petals_only(self):
+        self._set_toggle_values(False, False, False, False, False, False, False, False)
+        self.rain_ripple_enabled.setChecked(False)
+        self.rose_petals_enabled.setChecked(True)
+        self.rose_flowers_enabled.setChecked(False)
+        self.blooming_roses_enabled.setChecked(False)
+        self.sakura_petals_enabled.setChecked(False)
+        self.rose_petal_ripple_enabled.setChecked(False)
+        self.rose_petal_count.setValue(24)
+        self.rose_petal_speed.setValue(0.25)
+        self.rose_petal_sway.setValue(1.15)
+        self.rose_petal_size.setValue(18.0)
+        self.rose_petal_alpha.setValue(215)
     def build_settings(self):
         return EffectOverlaySettings(
             rain_enabled=self.rain_enabled.isChecked(),
@@ -398,6 +591,18 @@ class EffectsOverlayEditorDialog(QDialog):
             particle_color=self.particle_color.text().strip() or "#DDEBFF",
             rain_color=self.rain_color.text().strip() or "#9FD7FF",
             glow_color=self.glow_color.text().strip() or "#80FFCC",
+            sakura_petals_enabled=self.sakura_petals_enabled.isChecked(),
+            sakura_petal_count=self.sakura_petal_count.value(),
+            sakura_petal_color=self.sakura_petal_color.text().strip() or "#FFD1E8",
+            sakura_petal_edge_color=self.sakura_petal_edge_color.text().strip() or "#FF8FC7",
+            sakura_petal_speed=self.sakura_petal_speed.value(),
+            sakura_petal_sway=self.sakura_petal_sway.value(),
+            sakura_petal_size=self.sakura_petal_size.value(),
+            sakura_petal_surface_y=self.sakura_petal_surface_y.value(),
+            sakura_petal_ripple_enabled=self.sakura_petal_ripple_enabled.isChecked(),
+            sakura_petal_ripple_chance=self.sakura_petal_ripple_chance.value(),
+            sakura_petal_ripple_min_radius=self.sakura_petal_ripple_min_radius.value(),
+            sakura_petal_ripple_max_radius=self.sakura_petal_ripple_max_radius.value(),
             ripple_color=self.ripple_color.text().strip() or "#A8EFFF",
             rain_ripple_enabled=self.rain_ripple_enabled.isChecked(),
             rain_ripple_chance=self.rain_ripple_chance.value(),
@@ -428,6 +633,28 @@ class EffectsOverlayEditorDialog(QDialog):
             rose_petal_shadow_alpha=self.rose_petal_shadow_alpha.value(),
             rose_petal_highlight_alpha=self.rose_petal_highlight_alpha.value(),
             rose_petal_vein_alpha=self.rose_petal_vein_alpha.value(),
+            rose_flowers_enabled=self.rose_flowers_enabled.isChecked(),
+            rose_flower_count=self.rose_flower_count.value(),
+            rose_flower_size=self.rose_flower_size.value(),
+            rose_flower_speed=self.rose_flower_speed.value(),
+            rose_flower_sway=self.rose_flower_sway.value(),
+            rose_flower_surface_y=self.rose_flower_surface_y.value(),
+            rose_flower_ripple_enabled=self.rose_flower_ripple_enabled.isChecked(),
+            rose_flower_ripple_min_radius=self.rose_flower_ripple_min_radius.value(),
+            rose_flower_ripple_max_radius=self.rose_flower_ripple_max_radius.value(),
+            rose_petal_fade_on_surface=self.rose_petal_fade_on_surface.isChecked(),
+            rose_petal_fade_duration=self.rose_petal_fade_duration.value(),
+            rose_petal_fade_sink_distance=self.rose_petal_fade_sink_distance.value(),
+            rose_petal_fade_spin=self.rose_petal_fade_spin.value(),
+            blooming_roses_enabled=self.blooming_roses_enabled.isChecked(),
+            blooming_rose_count=self.blooming_rose_count.value(),
+            blooming_rose_size=self.blooming_rose_size.value(),
+            blooming_rose_scatter_after=self.blooming_rose_scatter_after.value(),
+            blooming_rose_life=self.blooming_rose_life.value(),
+            blooming_rose_petal_count=self.blooming_rose_petal_count.value(),
+            blooming_rose_respawn=self.blooming_rose_respawn.isChecked(),
+            blooming_rose_color=self.blooming_rose_color.text().strip() or "#FF6FAE",
+            blooming_rose_edge_color=self.blooming_rose_edge_color.text().strip() or "#FFD5E8",
             noise_color=self.noise_color.text().strip() or "#FFFFFF",
             mouse_glow_color=self.mouse_glow_color.text().strip() or "#80FFCC",
             particle_speed=self.particle_speed.value(),
@@ -469,7 +696,31 @@ class EffectsOverlayEditorDialog(QDialog):
             self.widget._last_petal_ripple_time = 0.0
         except Exception:
             pass
-
+        try:
+            self.widget._rose_flowers.clear()
+        except Exception:
+            pass
+        try:
+            self.widget._blooming_roses.clear()
+        except Exception:
+            pass
+        try:
+            self.widget._rose_petals.clear()
+        except Exception:
+            pass
+        try:
+            self.widget._last_flower_ripple_time = 0.0
+        except Exception:
+            pass
+        try:
+            self.widget._sakura_petals.clear()
+        except Exception:
+            pass
+        try:
+            self.widget._last_sakura_ripple_time = 0.0
+            self.widget._last_sakura_tree_emit_time = 0.0
+        except Exception:
+            pass
         try:
             parent = self.parent()
             if parent is not None and hasattr(parent, "canvas"):
@@ -554,9 +805,112 @@ class EffectOverlaySettings:
     rose_petal_highlight_alpha: int = 115
     rose_petal_vein_alpha: int = 95
 
+    rose_flowers_enabled: bool = True
+    rose_flower_count: int = 5
+    rose_flower_size: float = 42.0
+    rose_flower_speed: float = 0.22
+    rose_flower_sway: float = 0.85
+    rose_flower_alpha: int = 220
+    rose_flower_surface_y: float = 0.84
+    rose_flower_ripple_enabled: bool = True
+    rose_flower_ripple_chance: float = 1.0
+    rose_flower_ripple_min_radius: float = 80.0
+    rose_flower_ripple_max_radius: float = 220.0
+    rose_flower_ripple_cooldown: float = 0.12
+
+    blooming_roses_enabled: bool = True
+    blooming_rose_count: int = 2
+    blooming_rose_size: float = 86.0
+    blooming_rose_life: float = 7.5
+    blooming_rose_scatter_after: float = 3.0
+    blooming_rose_petal_count: int = 34
+    blooming_rose_respawn: bool = True
+    blooming_rose_alpha: int = 230
+    blooming_rose_color: str = "#FF6FAE"
+    blooming_rose_edge_color: str = "#FFD5E8"
+
+    sakura_petals_enabled: bool = True
+    sakura_petal_count: int = 80
+    sakura_petal_color: str = "#FFD1E8"
+    sakura_petal_edge_color: str = "#FF8FC7"
+    sakura_petal_speed: float = 0.32
+    sakura_petal_sway: float = 1.15
+    sakura_petal_size: float = 9.0
+    sakura_petal_alpha: int = 210
+    sakura_petal_surface_y: float = 0.84
+    sakura_petal_ripple_enabled: bool = True
+    sakura_petal_ripple_chance: float = 0.65
+    sakura_petal_ripple_min_radius: float = 22.0
+    sakura_petal_ripple_max_radius: float = 88.0
+    sakura_petal_ripple_cooldown: float = 0.025
+
+    sakura_tree_enabled: bool = True
+    sakura_tree_x: float = 0.15
+    sakura_tree_ground_y: float = 0.92
+    sakura_tree_scale: float = 1.0
+    sakura_tree_alpha: int = 225
+    sakura_tree_trunk_color: str = "#5B342E"
+    sakura_tree_branch_color: str = "#7B4A42"
+    sakura_tree_blossom_color: str = "#FFD1E8"
+    sakura_tree_blossom_edge_color: str = "#FF9FCC"
+    sakura_tree_petal_emit_enabled: bool = True
+    sakura_tree_petal_emit_rate: float = 0.55
+    sakura_tree_petal_emit_burst: int = 2
+
+    sakura_tree_grand_mode: bool = True
+    sakura_tree_height_ratio: float = 0.88
+    sakura_tree_width_ratio: float = 0.68
+    sakura_tree_trunk_thickness: float = 2.25
+    sakura_tree_root_spread: float = 1.45
+    sakura_tree_bark_detail: float = 0.85
+    sakura_tree_branch_spread: float = 1.35
+    sakura_tree_canopy_density: int = 12
+    sakura_tree_canopy_opacity: float = 0.78
+    sakura_tree_canopy_layering: float = 1.0
+    sakura_tree_fine_branch_alpha: int = 150
+
+    sakura_tree_realistic_blossoms: bool = True
+    sakura_tree_blossom_rosette_count: int = 90
+    sakura_tree_blossom_rosette_size: float = 13.0
+    sakura_tree_blossom_rosette_layers: int = 3
+    sakura_tree_blossom_rosette_opacity: float = 0.86
+    sakura_tree_blossom_center_color: str = "#FFF2A8"
+    sakura_tree_blossom_shadow_color: str = "#D96A9A"
+    sakura_tree_blossom_highlight_alpha: int = 105
+
+    rose_petal_fade_on_surface: bool = True
+    rose_petal_fade_duration: float = 0.85
+    rose_petal_fade_sink_distance: float = 10.0
+    rose_petal_fade_spin: float = 0.35
+
     def to_dict(self):
         return asdict(self)
 
+@dataclass
+class FallingRoseFlower:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    size: float
+    rotation: float
+    rotation_speed: float
+    sway_phase: float
+    alpha: float
+    seed: float
+
+
+@dataclass
+class BloomingRose:
+    x: float
+    y: float
+    size: float
+    created_at: float
+    scatter_after: float
+    life: float
+    petal_count: int
+    seed: float
+    scattered: bool = False
 
 @dataclass
 class EffectParticle:
@@ -578,13 +932,26 @@ class EffectRipple:
     color: str
     speed: float = 1.0
 
+@dataclass
+class SakuraPetal:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    size: float
+    rotation: float
+    rotation_speed: float
+    sway_phase: float
+    alpha: float
+    seed: float
+    from_tree: bool = False
 
-DEFAULT_EFFECT_OVERLAY_SETTINGS = EffectOverlaySettings().to_dict()
+DEFAULT_EFFECT_OVERLAY_SETTINGS = LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS.copy()
 
 
 def ensure_effect_overlay_fields(cfg):
-    if not hasattr(cfg, "effects_json"):
-        cfg.effects_json = json.dumps(DEFAULT_EFFECT_OVERLAY_SETTINGS, ensure_ascii=False)
+    if not hasattr(cfg, "effects_json") or not getattr(cfg, "effects_json", ""):
+        cfg.effects_json = json.dumps(LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS, ensure_ascii=False)
     if not hasattr(cfg, "effects_follow_mouse"):
         cfg.effects_follow_mouse = True
 
@@ -663,6 +1030,77 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         rose_petal_shadow_alpha=max(0, min(255, int(defaults.get("rose_petal_shadow_alpha", 72)))),
         rose_petal_highlight_alpha=max(0, min(255, int(defaults.get("rose_petal_highlight_alpha", 115)))),
         rose_petal_vein_alpha=max(0, min(255, int(defaults.get("rose_petal_vein_alpha", 95)))),
+        rose_flowers_enabled=bool(defaults.get("rose_flowers_enabled", True)),
+        rose_flower_count=max(0, int(defaults.get("rose_flower_count", 5))),
+        rose_flower_size=float(defaults.get("rose_flower_size", 42.0)),
+        rose_flower_speed=float(defaults.get("rose_flower_speed", 0.22)),
+        rose_flower_sway=float(defaults.get("rose_flower_sway", 0.85)),
+        rose_flower_alpha=max(0, min(255, int(defaults.get("rose_flower_alpha", 220)))),
+        rose_flower_surface_y=float(defaults.get("rose_flower_surface_y", 0.84)),
+        rose_flower_ripple_enabled=bool(defaults.get("rose_flower_ripple_enabled", True)),
+        rose_flower_ripple_chance=float(defaults.get("rose_flower_ripple_chance", 1.0)),
+        rose_flower_ripple_min_radius=float(defaults.get("rose_flower_ripple_min_radius", 80.0)),
+        rose_flower_ripple_max_radius=float(defaults.get("rose_flower_ripple_max_radius", 220.0)),
+        rose_flower_ripple_cooldown=float(defaults.get("rose_flower_ripple_cooldown", 0.12)),
+        blooming_roses_enabled=bool(defaults.get("blooming_roses_enabled", True)),
+        blooming_rose_count=max(0, int(defaults.get("blooming_rose_count", 2))),
+        blooming_rose_size=float(defaults.get("blooming_rose_size", 86.0)),
+        blooming_rose_life=float(defaults.get("blooming_rose_life", 7.5)),
+        blooming_rose_scatter_after=float(defaults.get("blooming_rose_scatter_after", 3.0)),
+        blooming_rose_petal_count=max(0, int(defaults.get("blooming_rose_petal_count", 34))),
+        blooming_rose_respawn=bool(defaults.get("blooming_rose_respawn", True)),
+        blooming_rose_alpha=max(0, min(255, int(defaults.get("blooming_rose_alpha", 230)))),
+        blooming_rose_color=str(defaults.get("blooming_rose_color", "#FF6FAE")),
+        blooming_rose_edge_color=str(defaults.get("blooming_rose_edge_color", "#FFD5E8")),
+        sakura_petals_enabled=bool(defaults.get("sakura_petals_enabled", True)),
+        sakura_petal_count=max(0, int(defaults.get("sakura_petal_count", 80))),
+        sakura_petal_color=str(defaults.get("sakura_petal_color", "#FFD1E8")),
+        sakura_petal_edge_color=str(defaults.get("sakura_petal_edge_color", "#FF8FC7")),
+        sakura_petal_speed=float(defaults.get("sakura_petal_speed", 0.32)),
+        sakura_petal_sway=float(defaults.get("sakura_petal_sway", 1.15)),
+        sakura_petal_size=float(defaults.get("sakura_petal_size", 9.0)),
+        sakura_petal_alpha=max(0, min(255, int(defaults.get("sakura_petal_alpha", 210)))),
+        sakura_petal_surface_y=float(defaults.get("sakura_petal_surface_y", 0.84)),
+        sakura_petal_ripple_enabled=bool(defaults.get("sakura_petal_ripple_enabled", True)),
+        sakura_petal_ripple_chance=float(defaults.get("sakura_petal_ripple_chance", 0.65)),
+        sakura_petal_ripple_min_radius=float(defaults.get("sakura_petal_ripple_min_radius", 22.0)),
+        sakura_petal_ripple_max_radius=float(defaults.get("sakura_petal_ripple_max_radius", 88.0)),
+        sakura_petal_ripple_cooldown=float(defaults.get("sakura_petal_ripple_cooldown", 0.025)),
+        sakura_tree_enabled=bool(defaults.get("sakura_tree_enabled", True)),
+        sakura_tree_x=float(defaults.get("sakura_tree_x", 0.15)),
+        sakura_tree_ground_y=float(defaults.get("sakura_tree_ground_y", 0.92)),
+        sakura_tree_scale=float(defaults.get("sakura_tree_scale", 1.0)),
+        sakura_tree_alpha=max(0, min(255, int(defaults.get("sakura_tree_alpha", 225)))),
+        sakura_tree_trunk_color=str(defaults.get("sakura_tree_trunk_color", "#5B342E")),
+        sakura_tree_branch_color=str(defaults.get("sakura_tree_branch_color", "#7B4A42")),
+        sakura_tree_blossom_color=str(defaults.get("sakura_tree_blossom_color", "#FFD1E8")),
+        sakura_tree_blossom_edge_color=str(defaults.get("sakura_tree_blossom_edge_color", "#FF9FCC")),
+        sakura_tree_petal_emit_enabled=bool(defaults.get("sakura_tree_petal_emit_enabled", True)),
+        sakura_tree_petal_emit_rate=float(defaults.get("sakura_tree_petal_emit_rate", 0.55)),
+        sakura_tree_petal_emit_burst=max(0, int(defaults.get("sakura_tree_petal_emit_burst", 2))),
+        sakura_tree_grand_mode=bool(defaults.get("sakura_tree_grand_mode", True)),
+        sakura_tree_height_ratio=float(defaults.get("sakura_tree_height_ratio", 0.88)),
+        sakura_tree_width_ratio=float(defaults.get("sakura_tree_width_ratio", 0.68)),
+        sakura_tree_trunk_thickness=float(defaults.get("sakura_tree_trunk_thickness", 2.25)),
+        sakura_tree_root_spread=float(defaults.get("sakura_tree_root_spread", 1.45)),
+        sakura_tree_bark_detail=float(defaults.get("sakura_tree_bark_detail", 0.85)),
+        sakura_tree_branch_spread=float(defaults.get("sakura_tree_branch_spread", 1.35)),
+        sakura_tree_canopy_density=max(4, int(defaults.get("sakura_tree_canopy_density", 12))),
+        sakura_tree_canopy_opacity=float(defaults.get("sakura_tree_canopy_opacity", 0.78)),
+        sakura_tree_canopy_layering=float(defaults.get("sakura_tree_canopy_layering", 1.0)),
+        sakura_tree_fine_branch_alpha=max(0, min(255, int(defaults.get("sakura_tree_fine_branch_alpha", 150)))),
+        sakura_tree_realistic_blossoms=bool(defaults.get("sakura_tree_realistic_blossoms", True)),
+        sakura_tree_blossom_rosette_count=max(0, int(defaults.get("sakura_tree_blossom_rosette_count", 90))),
+        sakura_tree_blossom_rosette_size=float(defaults.get("sakura_tree_blossom_rosette_size", 13.0)),
+        sakura_tree_blossom_rosette_layers=max(1, int(defaults.get("sakura_tree_blossom_rosette_layers", 3))),
+        sakura_tree_blossom_rosette_opacity=float(defaults.get("sakura_tree_blossom_rosette_opacity", 0.86)),
+        sakura_tree_blossom_center_color=str(defaults.get("sakura_tree_blossom_center_color", "#FFF2A8")),
+        sakura_tree_blossom_shadow_color=str(defaults.get("sakura_tree_blossom_shadow_color", "#D96A9A")),
+        sakura_tree_blossom_highlight_alpha=max(0, min(255, int(defaults.get("sakura_tree_blossom_highlight_alpha", 105)))),
+        rose_petal_fade_on_surface=bool(defaults.get("rose_petal_fade_on_surface", True)),
+        rose_petal_fade_duration=float(defaults.get("rose_petal_fade_duration", 0.85)),
+        rose_petal_fade_sink_distance=float(defaults.get("rose_petal_fade_sink_distance", 10.0)),
+        rose_petal_fade_spin=float(defaults.get("rose_petal_fade_spin", 0.35)),
     )
 
 @dataclass
@@ -679,6 +1117,11 @@ class RosePetal:
     seed: float
     resting: bool = False
     rest_created_at: float = 0.0
+    fading: bool = False
+    fade_started_at: float = 0.0
+    fade_duration: float = 0.85
+    fade_start_y: float = 0.0
+    fade_sink_distance: float = 10.0
 
 def set_effect_overlay_settings(cfg, settings: EffectOverlaySettings):
     ensure_effect_overlay_fields(cfg)
@@ -1824,6 +2267,12 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_rain_ripple_time = 0.0
         self._rose_petals: List[RosePetal] = []
         self._last_petal_ripple_time = 0.0
+        self._rose_flowers: List[FallingRoseFlower] = []
+        self._blooming_roses: List[BloomingRose] = []
+        self._last_flower_ripple_time = 0.0
+        self._sakura_petals: List[SakuraPetal] = []
+        self._last_sakura_ripple_time = 0.0
+        self._last_sakura_tree_emit_time = 0.0
 
     def paint(self, p: QPainter, ctx: Dict):
         settings = get_effect_overlay_settings(self.cfg)
@@ -1850,13 +2299,24 @@ class EffectsOverlayWidget(BaseWidget):
         if settings.noise_enabled:
             self._draw_noise(p, r, settings, now)
 
-        if getattr(settings, "rose_petals_enabled", False):
+        has_existing_rose_petals = len(getattr(self, "_rose_petals", [])) > 0
+        rose_petals_enabled = bool(getattr(settings, "rose_petals_enabled", False))
+
+        if rose_petals_enabled:
             self._ensure_rose_petals(r, settings)
+
+        if rose_petals_enabled or has_existing_rose_petals:
             self._update_rose_petals(r, settings, dt, now)
             self._draw_rose_petals(p, r, settings, now)
 
         if settings.glow_enabled:
             self._draw_glow_orbs(p, r, settings, now)
+
+        if getattr(settings, "sakura_petals_enabled", False) or len(getattr(self, "_sakura_petals", [])) > 0:
+            if getattr(settings, "sakura_petals_enabled", False):
+                self._ensure_sakura_petals(r, settings)
+            self._update_sakura_petals(r, settings, dt, now)
+            self._draw_sakura_petals(p, r, settings, now)
 
         if settings.mouse_glow_enabled and self._mouse_pos is not None and now <= self._mouse_active_until:
             self._draw_mouse_glow(p, r, settings, now)
@@ -1867,11 +2327,266 @@ class EffectsOverlayWidget(BaseWidget):
         if settings.rain_enabled:
             self._draw_rain(p, r, settings)
 
-        if settings.ripple_enabled or settings.mouse_ripple_enabled:
+        if settings.ripple_enabled or settings.mouse_ripple_enabled or len(getattr(self, "_ripples", [])) > 0:
             self._draw_ripples(p, r, settings, now)
+
+        if getattr(settings, "rose_flowers_enabled", False):
+            self._ensure_rose_flowers(r, settings)
+            self._update_rose_flowers(r, settings, dt, now)
+            self._draw_rose_flowers(p, r, settings, now)
+
+        if getattr(settings, "blooming_roses_enabled", False):
+            self._ensure_blooming_roses(r, settings, now)
+            self._update_blooming_roses(r, settings, dt, now)
+            self._draw_blooming_roses(p, r, settings, now)
 
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
+
+        p.restore()
+
+    def _ensure_sakura_petals(self, r: QRectF, settings: EffectOverlaySettings):
+        if not hasattr(self, "_sakura_petals"):
+            self._sakura_petals = []
+
+        target = max(0, int(getattr(settings, "sakura_petal_count", 80)))
+        ambient_count = len([p for p in self._sakura_petals if not getattr(p, "from_tree", False)])
+
+        while ambient_count < target:
+            self._sakura_petals.append(self._new_sakura_petal(r, settings, from_top=True, from_tree=False))
+            ambient_count += 1
+
+    def _new_sakura_petal(self, r: QRectF, settings: EffectOverlaySettings, from_top: bool = True,
+                          from_tree: bool = False, origin=None):
+        base_size = max(2.0, float(getattr(settings, "sakura_petal_size", 9.0)))
+        speed = max(0.02, float(getattr(settings, "sakura_petal_speed", 0.32)))
+
+        if origin is not None:
+            x = float(origin[0])
+            y = float(origin[1])
+        else:
+            x = r.left() + self._random.random() * max(1.0, r.width())
+            if from_top:
+                y = r.top() - self._random.random() * max(80.0, r.height() * 0.35)
+            else:
+                y = r.top() + self._random.random() * max(1.0, r.height())
+
+        return SakuraPetal(
+            x=float(x),
+            y=float(y),
+            vx=(-18.0 + self._random.random() * 36.0) * speed,
+            vy=(18.0 + self._random.random() * 38.0) * speed,
+            size=base_size * (0.65 + self._random.random() * 0.85),
+            rotation=self._random.random() * math.tau,
+            rotation_speed=(-2.0 + self._random.random() * 4.0) * speed,
+            sway_phase=self._random.random() * math.tau,
+            alpha=0.55 + self._random.random() * 0.45,
+            seed=self._random.random() * 10000.0,
+            from_tree=from_tree,
+        )
+
+    def _update_sakura_petals(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
+        if not hasattr(self, "_sakura_petals"):
+            self._sakura_petals = []
+
+        surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, "sakura_petal_surface_y", 0.84))))
+        sway = float(getattr(settings, "sakura_petal_sway", 1.15))
+        ambient_enabled = bool(getattr(settings, "sakura_petals_enabled", False))
+        to_remove = []
+
+        for petal in list(self._sakura_petals):
+            prev_y = petal.y
+            petal.x += (petal.vx + math.sin(now * 1.3 + petal.sway_phase) * 34.0 * sway) * dt
+            petal.y += petal.vy * dt
+            petal.rotation += petal.rotation_speed * dt
+
+            hit_surface = prev_y < surface_y <= petal.y
+            out_of_bounds = (
+                    petal.y > r.bottom() + 80 or
+                    petal.x < r.left() - 140 or
+                    petal.x > r.right() + 140
+            )
+
+            if hit_surface:
+                self._maybe_spawn_sakura_ripple(petal, surface_y, settings, now)
+                if ambient_enabled and not getattr(petal, "from_tree", False):
+                    fresh = self._new_sakura_petal(r, settings, from_top=True, from_tree=False)
+                    petal.__dict__.update(fresh.__dict__)
+                else:
+                    to_remove.append(petal)
+                continue
+
+            if out_of_bounds:
+                if ambient_enabled and not getattr(petal, "from_tree", False):
+                    fresh = self._new_sakura_petal(r, settings, from_top=True, from_tree=False)
+                    petal.__dict__.update(fresh.__dict__)
+                else:
+                    to_remove.append(petal)
+
+        if to_remove:
+            remove_ids = {id(p) for p in to_remove}
+            self._sakura_petals = [p for p in self._sakura_petals if id(p) not in remove_ids]
+
+    def _maybe_spawn_sakura_ripple(self, petal, surface_y: float, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "sakura_petal_ripple_enabled", True)):
+            return
+
+        cooldown = max(0.0, float(getattr(settings, "sakura_petal_ripple_cooldown", 0.025)))
+        if now - getattr(self, "_last_sakura_ripple_time", 0.0) < cooldown:
+            return
+
+        chance = max(0.0, min(1.0, float(getattr(settings, "sakura_petal_ripple_chance", 0.65))))
+        if self._random.random() > chance:
+            return
+
+        min_radius = max(1.0, float(getattr(settings, "sakura_petal_ripple_min_radius", 22.0)))
+        max_radius = max(min_radius, float(getattr(settings, "sakura_petal_ripple_max_radius", 88.0)))
+        size_factor = max(0.2,
+                          min(1.4, float(petal.size) / max(1.0, float(getattr(settings, "sakura_petal_size", 9.0)))))
+        radius = min_radius + (max_radius - min_radius) * min(1.0, size_factor)
+
+        self._ripples.append(
+            EffectRipple(
+                x=float(petal.x),
+                y=float(surface_y),
+                created_at=now,
+                max_radius=radius,
+                color=getattr(settings, "ripple_color", "#A8EFFF"),
+                speed=max(0.05, float(getattr(settings, "ripple_speed", 1.0))) * 0.82,
+            )
+        )
+        self._last_sakura_ripple_time = now
+
+    def _draw_sakura_petals(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        base = QColor(getattr(settings, "sakura_petal_color", "#FFD1E8"))
+        edge = QColor(getattr(settings, "sakura_petal_edge_color", "#FF8FC7"))
+        alpha_base = max(0, min(255, int(getattr(settings, "sakura_petal_alpha", 210))))
+        intensity = max(0.0, float(getattr(settings, "intensity", 1.0)))
+
+        for petal in list(getattr(self, "_sakura_petals", [])):
+            flutter = 0.72 + 0.28 * math.sin(now * 2.4 + petal.seed)
+            alpha = int(alpha_base * petal.alpha * flutter * intensity)
+            if alpha <= 0:
+                continue
+
+            c = QColor(base)
+            c.setAlpha(max(0, min(255, alpha)))
+            ec = QColor(edge)
+            ec.setAlpha(max(0, min(255, int(alpha * 0.72))))
+            self._draw_single_sakura_petal(p, petal.x, petal.y, petal.size, petal.rotation, c, ec)
+
+    def _draw_single_sakura_petal(self, p: QPainter, x: float, y: float, size: float, rotation: float, color: QColor,
+                                  edge_color: QColor):
+        p.save()
+        p.translate(x, y)
+        p.rotate(math.degrees(rotation))
+
+        w = size * 0.72
+        h = size * 1.05
+
+        path = QPainterPath()
+        path.moveTo(0.0, -h * 0.55)
+        path.cubicTo(w * 0.62, -h * 0.38, w * 0.56, h * 0.18, 0.0, h * 0.55)
+        path.cubicTo(-w * 0.56, h * 0.18, -w * 0.62, -h * 0.38, 0.0, -h * 0.55)
+        path.closeSubpath()
+
+        grad = QRadialGradient(QPointF(-w * 0.12, -h * 0.18), max(w, h))
+        c0 = QColor(255, 255, 255, max(0, min(255, int(color.alpha() * 0.65))))
+        c1 = QColor(color)
+        c2 = QColor(edge_color)
+        c2.setAlpha(max(0, min(255, int(color.alpha() * 0.8))))
+        grad.setColorAt(0.0, c0)
+        grad.setColorAt(0.42, c1)
+        grad.setColorAt(1.0, c2)
+
+        p.setBrush(QBrush(grad))
+        p.setPen(QPen(edge_color, max(1, int(size * 0.055))))
+        p.drawPath(path)
+
+        notch_pen = QPen(edge_color, max(1, int(size * 0.035)))
+        notch_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(notch_pen)
+        p.drawLine(0, int(-h * 0.52), int(w * 0.12), int(-h * 0.28))
+        p.drawLine(0, int(-h * 0.52), int(-w * 0.12), int(-h * 0.28))
+
+        p.restore()
+
+    def _draw_sakura_rosette_blossom(self, p: QPainter, x: float, y: float, size: float, rotation: float, color: QColor, edge_color: QColor, settings: EffectOverlaySettings):
+        layers = max(1, int(getattr(settings, "sakura_tree_blossom_rosette_layers", 3)))
+        center_color = QColor(getattr(settings, "sakura_tree_blossom_center_color", "#FFF2A8"))
+        shadow_color = QColor(getattr(settings, "sakura_tree_blossom_shadow_color", "#D96A9A"))
+        highlight_alpha = max(0, min(255, int(getattr(settings, "sakura_tree_blossom_highlight_alpha", 105))))
+
+        p.save()
+        p.translate(x, y)
+        p.rotate(math.degrees(rotation))
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        for layer in range(layers):
+            count = 7 - min(layer, 3)
+            radius = size * (0.34 - layer * 0.075)
+            petal_size = size * (0.52 - layer * 0.08)
+            angle_offset = layer * 0.47
+            shade = 0.86 + layer * 0.055
+
+            for i in range(max(3, count)):
+                angle = math.tau * i / max(3, count) + angle_offset
+                px = math.cos(angle) * radius
+                py = math.sin(angle) * radius * 0.72
+                petal_rot = angle + math.pi / 2.0
+
+                c = QColor(
+                    max(0, min(255, int(color.red() * shade))),
+                    max(0, min(255, int(color.green() * shade))),
+                    max(0, min(255, int(color.blue() * shade))),
+                    color.alpha(),
+                )
+                ec = QColor(edge_color)
+                ec.setAlpha(max(0, min(255, int(edge_color.alpha() * (0.70 + layer * 0.08)))))
+                self._draw_single_sakura_rosette_petal(p, px, py, petal_size, petal_rot, c, ec, shadow_color,
+                                                       highlight_alpha)
+
+        center = QColor(center_color)
+        center.setAlpha(max(0, min(255, int(color.alpha() * 0.86))))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(center))
+        p.drawEllipse(QPointF(0, 0), max(1.0, size * 0.09), max(1.0, size * 0.075))
+
+        p.restore()
+
+    def _draw_single_sakura_rosette_petal(self, p: QPainter, x: float, y: float, size: float, rotation: float, color: QColor, edge_color: QColor, shadow_color: QColor, highlight_alpha: int):
+        p.save()
+        p.translate(x, y)
+        p.rotate(math.degrees(rotation))
+
+        w = size * 0.62
+        h = size * 0.92
+
+        path = QPainterPath()
+        path.moveTo(0.0, -h * 0.50)
+        path.cubicTo(w * 0.56, -h * 0.38, w * 0.62, h * 0.14, 0.0, h * 0.52)
+        path.cubicTo(-w * 0.62, h * 0.14, -w * 0.56, -h * 0.38, 0.0, -h * 0.50)
+        path.closeSubpath()
+
+        grad = QRadialGradient(QPointF(-w * 0.15, -h * 0.20), max(1.0, size * 0.90))
+        c0 = QColor(255, 255, 255, max(0, min(255, int(highlight_alpha * color.alpha() / 255))))
+        c1 = QColor(color)
+        c2 = QColor(shadow_color)
+        c2.setAlpha(max(0, min(255, int(color.alpha() * 0.55))))
+        grad.setColorAt(0.0, c0)
+        grad.setColorAt(0.40, c1)
+        grad.setColorAt(1.0, c2)
+
+        p.setBrush(QBrush(grad))
+        p.setPen(QPen(edge_color, max(1, int(size * 0.045))))
+        p.drawPath(path)
+
+        vein = QColor(edge_color)
+        vein.setAlpha(max(0, min(255, int(edge_color.alpha() * 0.38))))
+        pen = QPen(vein, max(1, int(size * 0.025)))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.drawLine(0, int(-h * 0.28), 0, int(h * 0.25))
 
         p.restore()
 
@@ -1886,6 +2601,245 @@ class EffectsOverlayWidget(BaseWidget):
 
         if len(self._rose_petals) > target:
             self._rose_petals = self._rose_petals[:target]
+
+    def _ensure_rose_flowers(self, r: QRectF, settings: EffectOverlaySettings):
+        if not hasattr(self, "_rose_flowers"):
+            self._rose_flowers = []
+
+        target = max(0, int(getattr(settings, "rose_flower_count", 5)))
+        while len(self._rose_flowers) < target:
+            self._rose_flowers.append(self._new_rose_flower(r, settings, from_top=True))
+        if len(self._rose_flowers) > target:
+            self._rose_flowers = self._rose_flowers[:target]
+
+    def _new_rose_flower(self, r: QRectF, settings: EffectOverlaySettings, from_top: bool = False):
+        size = max(8.0, float(getattr(settings, "rose_flower_size", 42.0)))
+        speed = max(0.02, float(getattr(settings, "rose_flower_speed", 0.22)))
+        x = r.left() + self._random.random() * max(1.0, r.width())
+        if from_top:
+            y = r.top() - self._random.random() * max(120.0, r.height() * 0.45)
+        else:
+            y = r.top() + self._random.random() * max(1.0, r.height())
+
+        return FallingRoseFlower(
+            x=float(x),
+            y=float(y),
+            vx=(-10.0 + self._random.random() * 20.0) * speed,
+            vy=(16.0 + self._random.random() * 22.0) * speed,
+            size=size * (0.82 + self._random.random() * 0.36),
+            rotation=self._random.random() * math.tau,
+            rotation_speed=(-0.65 + self._random.random() * 1.3) * speed,
+            sway_phase=self._random.random() * math.tau,
+            alpha=0.7 + self._random.random() * 0.3,
+            seed=self._random.random() * 10000.0,
+        )
+
+    def _update_rose_flowers(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
+        surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, "rose_flower_surface_y", 0.84))))
+        sway = float(getattr(settings, "rose_flower_sway", 0.85))
+
+        for flower in self._rose_flowers:
+            prev_y = flower.y
+            side_sway = math.sin(now * 0.9 + flower.sway_phase) * 28.0 * sway
+            flower.x += (flower.vx + side_sway) * dt
+            flower.y += flower.vy * dt
+            flower.rotation += flower.rotation_speed * dt
+
+            hit_surface = prev_y < surface_y <= flower.y
+            out_of_bounds = (
+                    flower.y > r.bottom() + 120 or
+                    flower.x < r.left() - 160 or
+                    flower.x > r.right() + 160
+            )
+
+            if hit_surface:
+                self._maybe_spawn_rose_flower_ripple(flower, surface_y, settings, now)
+                fresh = self._new_rose_flower(r, settings, from_top=True)
+                flower.__dict__.update(fresh.__dict__)
+                continue
+
+            if out_of_bounds:
+                fresh = self._new_rose_flower(r, settings, from_top=True)
+                flower.__dict__.update(fresh.__dict__)
+
+    def _maybe_spawn_rose_flower_ripple(self, flower, surface_y: float, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "rose_flower_ripple_enabled", True)):
+            return
+        if not bool(getattr(settings, "ripple_enabled", True)):
+            return
+
+        cooldown = max(0.0, float(getattr(settings, "rose_flower_ripple_cooldown", 0.12)))
+        if now - getattr(self, "_last_flower_ripple_time", 0.0) < cooldown:
+            return
+
+        chance = max(0.0, min(1.0, float(getattr(settings, "rose_flower_ripple_chance", 1.0))))
+        if self._random.random() > chance:
+            return
+
+        min_radius = max(1.0, float(getattr(settings, "rose_flower_ripple_min_radius", 80.0)))
+        max_radius = max(min_radius, float(getattr(settings, "rose_flower_ripple_max_radius", 220.0)))
+        size_factor = max(0.35,
+                          min(1.8, float(flower.size) / max(1.0, float(getattr(settings, "rose_flower_size", 42.0)))))
+        radius = min_radius + (max_radius - min_radius) * min(1.0, size_factor)
+
+        self._ripples.append(
+            EffectRipple(
+                x=float(flower.x),
+                y=float(surface_y),
+                created_at=now,
+                max_radius=radius,
+                color=getattr(settings, "ripple_color", "#A8EFFF"),
+                speed=max(0.05, float(getattr(settings, "ripple_speed", 1.0))) * 0.75,
+            )
+        )
+        self._last_flower_ripple_time = now
+
+    def _draw_rose_flowers(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        base = QColor(getattr(settings, "blooming_rose_color", "#FF6FAE"))
+        edge = QColor(getattr(settings, "blooming_rose_edge_color", "#FFD5E8"))
+        alpha_base = max(0, min(255, int(getattr(settings, "rose_flower_alpha", 220))))
+        intensity = max(0.0, float(getattr(settings, "intensity", 1.0)))
+
+        for flower in list(getattr(self, "_rose_flowers", [])):
+            pulse = 0.92 + 0.08 * math.sin(now * 1.4 + flower.seed)
+            alpha = int(alpha_base * flower.alpha * pulse * intensity)
+            if alpha <= 0:
+                continue
+            c = QColor(base)
+            c.setAlpha(max(0, min(255, alpha)))
+            ec = QColor(edge)
+            ec.setAlpha(max(0, min(255, int(alpha * 0.85))))
+            self._draw_single_rose_flower(p, flower.x, flower.y, flower.size, flower.rotation, c, ec, open_amount=0.68)
+
+    def _draw_single_rose_flower(self, p: QPainter, x: float, y: float, size: float, rotation: float, color: QColor,
+                                 edge_color: QColor, open_amount: float = 0.8):
+        p.save()
+        p.translate(x, y)
+        p.rotate(math.degrees(rotation))
+
+        # 中くらいの花: 複数の丸い花びらを重ねて一輪のバラっぽく見せる。
+        layers = [
+            (8, size * 0.32, size * 0.54, 0.0),
+            (7, size * 0.22, size * 0.42, 0.45),
+            (5, size * 0.11, size * 0.30, 0.2),
+        ]
+
+        for count, radius, petal_size, angle_offset in layers:
+            for i in range(count):
+                angle = math.tau * i / max(1, count) + angle_offset
+                px = math.cos(angle) * radius * open_amount
+                py = math.sin(angle) * radius * open_amount * 0.72
+                petal_rot = angle + math.pi / 2.0
+                shade = 0.86 + 0.14 * math.sin(i + count)
+                c = QColor(
+                    max(0, min(255, int(color.red() * shade))),
+                    max(0, min(255, int(color.green() * shade))),
+                    max(0, min(255, int(color.blue() * shade))),
+                    color.alpha(),
+                )
+                self._draw_single_rose_petal(p, px, py, petal_size, petal_rot, c, edge_color)
+
+        center = QColor(color)
+        center.setAlpha(max(0, min(255, int(color.alpha() * 0.95))))
+        p.setPen(QPen(edge_color, max(1, int(size * 0.025))))
+        p.setBrush(QBrush(center))
+        p.drawEllipse(QPointF(0, 0), size * 0.10, size * 0.10)
+        p.restore()
+
+    def _ensure_blooming_roses(self, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if not hasattr(self, "_blooming_roses"):
+            self._blooming_roses = []
+
+        target = max(0, int(getattr(settings, "blooming_rose_count", 2)))
+        while len(self._blooming_roses) < target:
+            self._blooming_roses.append(self._new_blooming_rose(r, settings, now))
+        if len(self._blooming_roses) > target:
+            self._blooming_roses = self._blooming_roses[:target]
+
+    def _new_blooming_rose(self, r: QRectF, settings: EffectOverlaySettings, now: float):
+        size = max(12.0, float(getattr(settings, "blooming_rose_size", 86.0)))
+        margin = size * 0.8
+        return BloomingRose(
+            x=float(r.left() + margin + self._random.random() * max(1.0, r.width() - margin * 2.0)),
+            y=float(r.top() + margin + self._random.random() * max(1.0, r.height() * 0.45)),
+            size=size * (0.82 + self._random.random() * 0.28),
+            created_at=now,
+            scatter_after=max(0.1, float(getattr(settings, "blooming_rose_scatter_after", 3.0))),
+            life=max(0.2, float(getattr(settings, "blooming_rose_life", 7.5))),
+            petal_count=max(0, int(getattr(settings, "blooming_rose_petal_count", 34))),
+            seed=self._random.random() * 10000.0,
+            scattered=False,
+        )
+
+    def _update_blooming_roses(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
+        respawn = bool(getattr(settings, "blooming_rose_respawn", True))
+
+        for rose in list(getattr(self, "_blooming_roses", [])):
+            age = now - rose.created_at
+            if not rose.scattered and age >= rose.scatter_after:
+                self._scatter_blooming_rose(rose, settings, now)
+                rose.scattered = True
+
+            if age >= rose.life:
+                if respawn:
+                    fresh = self._new_blooming_rose(r, settings, now)
+                    rose.__dict__.update(fresh.__dict__)
+                else:
+                    try:
+                        self._blooming_roses.remove(rose)
+                    except ValueError:
+                        pass
+
+    def _scatter_blooming_rose(self, rose: BloomingRose, settings: EffectOverlaySettings, now: float):
+        if not hasattr(self, "_rose_petals"):
+            self._rose_petals = []
+
+        base_petal_size = max(4.0, rose.size * 0.18)
+        for i in range(max(0, int(rose.petal_count))):
+            angle = math.tau * i / max(1, rose.petal_count) + self._random.random() * 0.45
+            burst = 18.0 + self._random.random() * 54.0
+            downward = 18.0 + self._random.random() * 32.0
+            px = rose.x + math.cos(angle) * rose.size * 0.18
+            py = rose.y + math.sin(angle) * rose.size * 0.12
+            self._rose_petals.append(
+                RosePetal(
+                    x=float(px),
+                    y=float(py),
+                    vx=math.cos(angle) * burst,
+                    vy=downward + max(0.0, math.sin(angle)) * burst * 0.25,
+                    size=base_petal_size * (0.72 + self._random.random() * 0.75),
+                    rotation=self._random.random() * math.tau,
+                    rotation_speed=(-1.8 + self._random.random() * 3.6) * max(0.1, float(
+                        getattr(settings, "rose_petal_speed", 0.35))),
+                    sway_phase=self._random.random() * math.tau,
+                    alpha=0.68 + self._random.random() * 0.32,
+                    seed=self._random.random() * 10000.0,
+                    resting=False,
+                    rest_created_at=0.0,
+                )
+            )
+
+    def _draw_blooming_roses(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        base = QColor(getattr(settings, "blooming_rose_color", "#FF6FAE"))
+        edge = QColor(getattr(settings, "blooming_rose_edge_color", "#FFD5E8"))
+        alpha_base = max(0, min(255, int(getattr(settings, "blooming_rose_alpha", 230))))
+        intensity = max(0.0, float(getattr(settings, "intensity", 1.0)))
+
+        for rose in list(getattr(self, "_blooming_roses", [])):
+            if rose.scattered:
+                continue
+            age = now - rose.created_at
+            open_t = max(0.0, min(1.0, age / max(0.1, rose.scatter_after)))
+            open_amount = 0.35 + 0.65 * (1.0 - pow(1.0 - open_t, 3.0))
+            alpha = int(alpha_base * intensity)
+            if alpha <= 0:
+                continue
+            c = QColor(base)
+            c.setAlpha(alpha)
+            ec = QColor(edge)
+            ec.setAlpha(max(0, min(255, int(alpha * 0.85))))
+            rotation = math.sin(now * 0.25 + rose.seed) * 0.08
+            self._draw_single_rose_flower(p, rose.x, rose.y, rose.size, rotation, c, ec, open_amount=open_amount)
 
     def _new_rose_petal(self, r: QRectF, settings: EffectOverlaySettings, from_top: bool = False):
         base_size = max(2.0, float(getattr(settings, "rose_petal_size", 16.0)))
@@ -1913,18 +2867,67 @@ class EffectsOverlayWidget(BaseWidget):
         )
 
     def _update_rose_petals(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
-        surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, "rose_petal_surface_y", 0.84))))
+        if not hasattr(self, "_rose_petals"):
+            self._rose_petals = []
+
+        surface_y = r.top() + r.height() * max(
+            0.0,
+            min(1.0, float(getattr(settings, "rose_petal_surface_y", 0.84)))
+        )
         sway = float(getattr(settings, "rose_petal_sway", 1.0))
         rest_on_surface = bool(getattr(settings, "rose_petal_rest_on_surface", False))
+        ambient_petals_enabled = bool(getattr(settings, "rose_petals_enabled", False))
 
-        for petal in self._rose_petals:
+        fade_on_surface = bool(getattr(settings, "rose_petal_fade_on_surface", True))
+        fade_duration_default = max(0.05, float(getattr(settings, "rose_petal_fade_duration", 0.85)))
+        fade_sink_distance_default = float(getattr(settings, "rose_petal_fade_sink_distance", 10.0))
+        fade_spin = float(getattr(settings, "rose_petal_fade_spin", 0.35))
+
+        to_remove = []
+
+        for petal in list(self._rose_petals):
+            if not hasattr(petal, "fading"):
+                petal.fading = False
+            if not hasattr(petal, "fade_started_at"):
+                petal.fade_started_at = 0.0
+            if not hasattr(petal, "fade_duration"):
+                petal.fade_duration = fade_duration_default
+            if not hasattr(petal, "fade_start_y"):
+                petal.fade_start_y = petal.y
+            if not hasattr(petal, "fade_sink_distance"):
+                petal.fade_sink_distance = fade_sink_distance_default
+
+            if petal.fading:
+                t = (now - petal.fade_started_at) / max(0.05, float(petal.fade_duration))
+                if t >= 1.0:
+                    if ambient_petals_enabled:
+                        fresh = self._new_rose_petal(r, settings, from_top=True)
+                        petal.__dict__.update(fresh.__dict__)
+                    else:
+                        to_remove.append(petal)
+                    continue
+
+                eased = 1.0 - pow(1.0 - max(0.0, min(1.0, t)), 3.0)
+                petal.y = petal.fade_start_y + petal.fade_sink_distance * eased
+                petal.rotation += petal.rotation_speed * fade_spin * dt
+                continue
+
             if petal.resting:
                 petal.x += math.sin(now * 0.8 + petal.seed) * 2.0 * dt
                 petal.rotation += petal.rotation_speed * 0.15 * dt
 
                 if now - petal.rest_created_at > 4.0:
-                    fresh = self._new_rose_petal(r, settings, from_top=True)
-                    petal.__dict__.update(fresh.__dict__)
+                    if fade_on_surface:
+                        petal.fading = True
+                        petal.fade_started_at = now
+                        petal.fade_duration = fade_duration_default
+                        petal.fade_start_y = petal.y
+                        petal.fade_sink_distance = fade_sink_distance_default
+                    elif ambient_petals_enabled:
+                        fresh = self._new_rose_petal(r, settings, from_top=True)
+                        petal.__dict__.update(fresh.__dict__)
+                    else:
+                        to_remove.append(petal)
                 continue
 
             prev_y = petal.y
@@ -1942,20 +2945,39 @@ class EffectsOverlayWidget(BaseWidget):
 
             if hit_surface:
                 self._maybe_spawn_petal_ripple(petal, surface_y, settings, now)
+                petal.y = surface_y
+
                 if rest_on_surface:
-                    petal.y = surface_y
                     petal.vy = 0.0
                     petal.vx *= 0.2
                     petal.resting = True
                     petal.rest_created_at = now
+                elif fade_on_surface:
+                    petal.fading = True
+                    petal.fade_started_at = now
+                    petal.fade_duration = fade_duration_default
+                    petal.fade_start_y = surface_y
+                    petal.fade_sink_distance = fade_sink_distance_default
+                    petal.vx *= 0.12
+                    petal.vy = 0.0
                 else:
-                    fresh = self._new_rose_petal(r, settings, from_top=True)
-                    petal.__dict__.update(fresh.__dict__)
+                    if ambient_petals_enabled:
+                        fresh = self._new_rose_petal(r, settings, from_top=True)
+                        petal.__dict__.update(fresh.__dict__)
+                    else:
+                        to_remove.append(petal)
                 continue
 
             if out_of_bounds:
-                fresh = self._new_rose_petal(r, settings, from_top=True)
-                petal.__dict__.update(fresh.__dict__)
+                if ambient_petals_enabled:
+                    fresh = self._new_rose_petal(r, settings, from_top=True)
+                    petal.__dict__.update(fresh.__dict__)
+                else:
+                    to_remove.append(petal)
+
+        if to_remove:
+            remove_ids = {id(p) for p in to_remove}
+            self._rose_petals = [p for p in self._rose_petals if id(p) not in remove_ids]
 
     def _maybe_spawn_petal_ripple(self, petal, surface_y: float, settings: EffectOverlaySettings, now: float):
         if not bool(getattr(settings, "rose_petal_ripple_enabled", True)):
@@ -1991,7 +3013,7 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_petal_ripple_time = now
 
     def _draw_rose_petals(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
-        # 花びら描画はここで一回だけ行う。
+        # fading=True の花びらは透明度を徐々に下げて描画する版。
         base = QColor(getattr(settings, "rose_petal_color", "#FF7AAE"))
         edge = QColor(getattr(settings, "rose_petal_edge_color", "#FFD1E3"))
         alpha_base = max(0, min(255, int(getattr(settings, "rose_petal_alpha", 210))))
@@ -1999,8 +3021,15 @@ class EffectsOverlayWidget(BaseWidget):
 
         for petal in list(getattr(self, "_rose_petals", [])):
             flutter = 0.75 + 0.25 * math.sin(now * 2.0 + petal.seed)
-            alpha = int(alpha_base * petal.alpha * flutter * intensity)
+            fade_multiplier = 1.0
 
+            if getattr(petal, "fading", False):
+                duration = max(0.05, float(getattr(petal, "fade_duration", 0.85)))
+                t = max(0.0, min(1.0, (now - getattr(petal, "fade_started_at", now)) / duration))
+                # 最初は少し残り、後半でふっと消えるイージング。
+                fade_multiplier = pow(1.0 - t, 1.7)
+
+            alpha = int(alpha_base * petal.alpha * flutter * intensity * fade_multiplier)
             if alpha <= 0:
                 continue
 
@@ -2010,8 +3039,6 @@ class EffectsOverlayWidget(BaseWidget):
             ec = QColor(edge)
             ec.setAlpha(max(0, min(255, int(alpha * 0.75))))
 
-            # 重要:
-            # ここで3D版 _draw_single_rose_petal を一回だけ呼ぶ。
             self._draw_single_rose_petal(
                 p,
                 petal.x,
@@ -2019,7 +3046,7 @@ class EffectsOverlayWidget(BaseWidget):
                 petal.size,
                 petal.rotation,
                 c,
-                ec
+                ec,
             )
 
     def _draw_single_rose_petal(self, p: QPainter, x: float, y: float, size: float, rotation: float, color: QColor, edge_color: QColor):
@@ -4684,7 +5711,6 @@ class LiteDeskStudio(QMainWindow):
         self.btn_export = QPushButton("エクスポート")
         self.btn_import = QPushButton("インポート")
         self.btn_close_canvas = QPushButton("アプリ終了")
-
         self.btn_save.clicked.connect(self.save)
         self.btn_reload.clicked.connect(self.reload_ui)
         self.btn_duplicate.clicked.connect(self.duplicate)
@@ -4994,6 +6020,32 @@ class LiteDeskStudio(QMainWindow):
 
         self.canvas.select_widget_by_index(row)
         self.load_selected_to_editor()
+
+    def apply_lightweight_rose_petal_preset(self):
+        widget = getattr(self.canvas, "selected", None)
+        if widget is None or widget.cfg.type != "effects_overlay":
+            QMessageBox.information(
+                self,
+                "エフェクト設定",
+                "Effects Overlay ウィジェットを選択してください。"
+            )
+            return
+
+        widget.cfg.effects_json = json.dumps(LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS, ensure_ascii=False)
+
+        try:
+            widget._particles.clear()
+            widget._rain.clear()
+            widget._ripples.clear()
+            widget._rose_petals.clear()
+            widget._rose_flowers.clear()
+            widget._blooming_roses.clear()
+            widget._sakura_petals.clear()
+        except Exception:
+            pass
+
+        self.canvas.save_config()
+        self.canvas.update()
 
     def set_system_color_controls_visible(self, visible: bool):
         widgets = getattr(self, "system_only_property_widgets", [])
@@ -6095,12 +7147,13 @@ class DesktopCanvas(QWidget):
                 y=0,
                 w=QApplication.primaryScreen().geometry().width(),
                 h=QApplication.primaryScreen().geometry().height(),
-                title="Effects Overlay",
-                color="#80FFCC",
+                title="Rose Petal Overlay",
+                color="#FF7AAE",
                 bg="#000000",
                 bg_alpha=0,
             )
             ensure_effect_overlay_fields(cfg)
+            cfg.effects_json = json.dumps(LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS, ensure_ascii=False)
         elif kind == "system":
             cfg = WidgetConfig(
                 type="system",
