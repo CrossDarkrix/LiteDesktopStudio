@@ -7800,7 +7800,7 @@ class DesktopCanvas(QWidget):
                 y=0,
                 w=QApplication.primaryScreen().geometry().width(),
                 h=QApplication.primaryScreen().geometry().height(),
-                title="Rose Petal Overlay",
+                title="Overlay Widget",
                 color="#FF7AAE",
                 bg="#000000",
                 bg_alpha=0,
