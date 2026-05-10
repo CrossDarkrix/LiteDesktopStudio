@@ -138,6 +138,72 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "glow_count": 0,
     "intensity": 1.0,
     "background_alpha": 0,
+
+    # New lightweight visual effects
+    "snow_enabled": False,
+    "snow_count": 90,
+    "snow_speed": 0.18,
+    "snow_size": 4.5,
+    "snow_alpha": 210,
+    "snow_color": "#F5FCFF",
+    "snow_ripple_enabled": True,
+    "snow_ripple_chance": 0.38,
+    "snow_surface_y": 0.86,
+    "snow_crystal_enabled": False,
+    "snow_crystal_count": 22,
+    "snow_crystal_speed": 0.12,
+    "snow_crystal_size": 15.0,
+    "snow_crystal_alpha": 220,
+    "snow_crystal_color": "#EBFAFF",
+    "snow_crystal_ripple_enabled": True,
+    "snow_crystal_ripple_chance": 0.55,
+    "snow_crystal_surface_y": 0.86,
+    "bubble_enabled": False,
+    "bubble_count": 42,
+    "bubble_speed": 0.26,
+    "bubble_size": 12.0,
+    "bubble_alpha": 150,
+    "flame_enabled": False,
+    "flame_count": 60,
+    "flame_speed": 0.55,
+    "flame_size": 22.0,
+    "flame_alpha": 210,
+    "water_spray_enabled": False,
+    "water_spray_count": 64,
+    "water_spray_speed": 0.75,
+    "water_spray_size": 6.0,
+    "water_spray_alpha": 190,
+    "fireball_enabled": False,
+    "fireball_count": 10,
+    "fireball_speed": 0.34,
+    "fireball_size": 20.0,
+    "fireball_alpha": 225,
+    "shooting_star_enabled": False,
+    "shooting_star_count": 3,
+    "shooting_star_speed": 0.8,
+    "shooting_star_size": 18.0,
+    "shooting_star_alpha": 230,
+    "meteor_shower_enabled": False,
+    "meteor_shower_count": 18,
+    "meteor_shower_speed": 0.9,
+    "meteor_shower_size": 12.0,
+    "meteor_shower_alpha": 220,
+    "balloon_enabled": False,
+    "balloon_count": 12,
+    "balloon_speed": 0.20,
+    "balloon_size": 34.0,
+    "balloon_alpha": 220,
+    "water_drop_enabled": False,
+    "water_drop_count": 55,
+    "water_drop_speed": 0.48,
+    "water_drop_size": 8.0,
+    "water_drop_alpha": 210,
+    "water_drop_color": "#7DDCFF",
+    "water_drop_highlight_color": "#FFFFFF",
+    "water_drop_edge_color": "#D2F5FF",
+    "water_drop_ripple_enabled": True,
+    "water_drop_ripple_chance": 0.75,
+    "water_drop_surface_y": 0.86,
 }
 
 
@@ -186,6 +252,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self.sakura_form = self._create_tab("桜花びら")
         self.ripple_form = self._create_tab("波紋・全体")
         self.color_form = self._create_tab("色")
+        self.extra_weather_form = self._create_tab("雪・水・火")
+        self.extra_sky_form = self._create_tab("空・その他")
 
         # 旧コード互換: _color_row などが self.form を参照しても動くようにする。
         self.form = self.basic_form
@@ -197,6 +265,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self._build_sakura_tab()
         self._build_ripple_global_tab()
         self._build_color_tab()
+        self._build_extra_weather_tab()
+        self._build_extra_sky_tab()
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)
@@ -515,6 +585,68 @@ class EffectsOverlayEditorDialog(QDialog):
         self.noise_color = self._color_row_on(f, "ノイズ色", self.settings.noise_color)
         self.mouse_glow_color = self._color_row_on(f, "マウスグロー色", self.settings.mouse_glow_color)
 
+
+    def _add_effect_block(self, form, title, prefix, label, count_default, speed_default, size_default, alpha_default, ripple=False, surface_default=0.86, chance_default=0.5):
+        self._section(form, title)
+        enabled = QCheckBox(label)
+        enabled.setChecked(bool(getattr(self.settings, f"{prefix}_enabled", False)))
+        count = self._int_spin(0, 500, getattr(self.settings, f"{prefix}_count", count_default))
+        speed = self._double_spin(0.01, 5.0, getattr(self.settings, f"{prefix}_speed", speed_default), 0.01)
+        size = self._double_spin(1.0, 160.0, getattr(self.settings, f"{prefix}_size", size_default), 0.5)
+        alpha = self._int_spin(0, 255, getattr(self.settings, f"{prefix}_alpha", alpha_default))
+        setattr(self, f"{prefix}_enabled", enabled)
+        setattr(self, f"{prefix}_count", count)
+        setattr(self, f"{prefix}_speed", speed)
+        setattr(self, f"{prefix}_size", size)
+        setattr(self, f"{prefix}_alpha", alpha)
+        form.addRow("ON/OFF", enabled)
+        form.addRow("数", count)
+        form.addRow("速度", speed)
+        form.addRow("サイズ", size)
+        form.addRow("透明度", alpha)
+        if ripple:
+            ripple_enabled = QCheckBox("下に落ちた時に波紋")
+            ripple_enabled.setChecked(bool(getattr(self.settings, f"{prefix}_ripple_enabled", True)))
+            chance = self._double_spin(0.0, 1.0, getattr(self.settings, f"{prefix}_ripple_chance", chance_default), 0.05)
+            surface = self._double_spin(0.0, 1.0, getattr(self.settings, f"{prefix}_surface_y", surface_default), 0.01)
+            setattr(self, f"{prefix}_ripple_enabled", ripple_enabled)
+            setattr(self, f"{prefix}_ripple_chance", chance)
+            setattr(self, f"{prefix}_surface_y", surface)
+            form.addRow("波紋", ripple_enabled)
+            form.addRow("波紋発生率", chance)
+            form.addRow("水面Y", surface)
+
+    def _build_extra_weather_tab(self):
+        f = self.extra_weather_form
+        self._add_effect_block(f, "雪", "snow", "小さな雪がゆっくり落ちる", 90, 0.18, 4.5, 210, ripple=True, surface_default=0.86, chance_default=0.38)
+        self.snow_color = self._color_row_on(f, "雪 色", getattr(self.settings, "snow_color", "#F5FCFF"))
+        self._add_effect_block(f, "中くらいの雪の結晶", "snow_crystal", "雪の結晶がゆっくり落ちる", 22, 0.12, 15.0, 220, ripple=True, surface_default=0.86, chance_default=0.55)
+        self.snow_crystal_color = self._color_row_on(f, "雪の結晶 色", getattr(self.settings, "snow_crystal_color", "#EBFAFF"))
+        self._add_effect_block(f, "水玉", "water_drop", "水玉が上から落ちる", 55, 0.48, 8.0, 210, ripple=True, surface_default=0.86, chance_default=0.75)
+        self.water_drop_color = self._color_row_on(f, "水玉 色", getattr(self.settings, "water_drop_color", "#7DDCFF"))
+        self.water_drop_highlight_color = self._color_row_on(f, "水玉 ハイライト色", getattr(self.settings, "water_drop_highlight_color", "#FFFFFF"))
+        self.water_drop_edge_color = self._color_row_on(f, "水玉 縁色", getattr(self.settings, "water_drop_edge_color", "#D2F5FF"))
+        self._add_effect_block(f, "泡", "bubble", "泡が下からポコポコ登る", 42, 0.26, 12.0, 150, ripple=False)
+        self._add_effect_block(f, "炎", "flame", "下から炎がゆらめく", 60, 0.55, 22.0, 210, ripple=False)
+        self._add_effect_block(f, "水が吹き出る", "water_spray", "下から水が噴き上がる", 64, 0.75, 6.0, 190, ripple=False)
+
+    def _build_extra_sky_tab(self):
+        f = self.extra_sky_form
+        self._add_effect_block(f, "火の玉", "fireball", "火の玉がゆらゆら上から降りる", 10, 0.34, 20.0, 225, ripple=False)
+        self._add_effect_block(f, "流れ星", "shooting_star", "流れ星が斜めに走る", 3, 0.8, 18.0, 230, ripple=False)
+        self._add_effect_block(f, "流星群", "meteor_shower", "流星群が連続して流れる", 18, 0.9, 12.0, 220, ripple=False)
+        self._add_effect_block(f, "バルーン", "balloon", "バルーンがゆっくり登る", 12, 0.20, 34.0, 220, ripple=False)
+
+
+    def _set_extra_effect_toggles(self, value):
+        for name in [
+            "snow", "snow_crystal", "water_drop", "bubble", "flame", "water_spray",
+            "fireball", "shooting_star", "meteor_shower", "balloon",
+        ]:
+            widget = getattr(self, f"{name}_enabled", None)
+            if widget is not None:
+                widget.setChecked(bool(value))
+
     def _set_toggle_values(self, rain, particles, noise, glow, ripple, mouse_ripple, mouse_flee, mouse_glow):
         self.rain_enabled.setChecked(bool(rain))
         self.particles_enabled.setChecked(bool(particles))
@@ -532,6 +664,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(True)
         self.blooming_roses_enabled.setChecked(True)
         self.sakura_petals_enabled.setChecked(True)
+        self._set_extra_effect_toggles(True)
 
     def set_all_off(self):
         self._set_toggle_values(False, False, False, False, False, False, False, False)
@@ -540,6 +673,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self._set_extra_effect_toggles(False)
 
     def set_mouse_only(self):
         self._set_toggle_values(False, False, False, False, False, True, True, True)
@@ -548,6 +682,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self._set_extra_effect_toggles(False)
 
     def set_ambient_only(self):
         self._set_toggle_values(True, True, True, True, True, False, False, False)
@@ -556,6 +691,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self._set_extra_effect_toggles(False)
 
     def set_rose_petals_only(self):
         self._set_toggle_values(False, False, False, False, False, False, False, False)
@@ -664,6 +800,71 @@ class EffectsOverlayEditorDialog(QDialog):
             intensity=self.intensity.value(),
             noise_alpha=self.noise_alpha.value(),
             background_alpha=self.background_alpha.value(),
+
+            snow_enabled=self.snow_enabled.isChecked(),
+            snow_count=self.snow_count.value(),
+            snow_speed=self.snow_speed.value(),
+            snow_size=self.snow_size.value(),
+            snow_alpha=self.snow_alpha.value(),
+            snow_color=self.snow_color.text().strip() or "#F5FCFF",
+            snow_ripple_enabled=self.snow_ripple_enabled.isChecked(),
+            snow_ripple_chance=self.snow_ripple_chance.value(),
+            snow_surface_y=self.snow_surface_y.value(),
+            snow_crystal_enabled=self.snow_crystal_enabled.isChecked(),
+            snow_crystal_count=self.snow_crystal_count.value(),
+            snow_crystal_speed=self.snow_crystal_speed.value(),
+            snow_crystal_size=self.snow_crystal_size.value(),
+            snow_crystal_alpha=self.snow_crystal_alpha.value(),
+            snow_crystal_color=self.snow_crystal_color.text().strip() or "#EBFAFF",
+            snow_crystal_ripple_enabled=self.snow_crystal_ripple_enabled.isChecked(),
+            snow_crystal_ripple_chance=self.snow_crystal_ripple_chance.value(),
+            snow_crystal_surface_y=self.snow_crystal_surface_y.value(),
+            bubble_enabled=self.bubble_enabled.isChecked(),
+            bubble_count=self.bubble_count.value(),
+            bubble_speed=self.bubble_speed.value(),
+            bubble_size=self.bubble_size.value(),
+            bubble_alpha=self.bubble_alpha.value(),
+            flame_enabled=self.flame_enabled.isChecked(),
+            flame_count=self.flame_count.value(),
+            flame_speed=self.flame_speed.value(),
+            flame_size=self.flame_size.value(),
+            flame_alpha=self.flame_alpha.value(),
+            water_spray_enabled=self.water_spray_enabled.isChecked(),
+            water_spray_count=self.water_spray_count.value(),
+            water_spray_speed=self.water_spray_speed.value(),
+            water_spray_size=self.water_spray_size.value(),
+            water_spray_alpha=self.water_spray_alpha.value(),
+            fireball_enabled=self.fireball_enabled.isChecked(),
+            fireball_count=self.fireball_count.value(),
+            fireball_speed=self.fireball_speed.value(),
+            fireball_size=self.fireball_size.value(),
+            fireball_alpha=self.fireball_alpha.value(),
+            shooting_star_enabled=self.shooting_star_enabled.isChecked(),
+            shooting_star_count=self.shooting_star_count.value(),
+            shooting_star_speed=self.shooting_star_speed.value(),
+            shooting_star_size=self.shooting_star_size.value(),
+            shooting_star_alpha=self.shooting_star_alpha.value(),
+            meteor_shower_enabled=self.meteor_shower_enabled.isChecked(),
+            meteor_shower_count=self.meteor_shower_count.value(),
+            meteor_shower_speed=self.meteor_shower_speed.value(),
+            meteor_shower_size=self.meteor_shower_size.value(),
+            meteor_shower_alpha=self.meteor_shower_alpha.value(),
+            balloon_enabled=self.balloon_enabled.isChecked(),
+            balloon_count=self.balloon_count.value(),
+            balloon_speed=self.balloon_speed.value(),
+            balloon_size=self.balloon_size.value(),
+            balloon_alpha=self.balloon_alpha.value(),
+            water_drop_enabled=self.water_drop_enabled.isChecked(),
+            water_drop_count=self.water_drop_count.value(),
+            water_drop_speed=self.water_drop_speed.value(),
+            water_drop_size=self.water_drop_size.value(),
+            water_drop_alpha=self.water_drop_alpha.value(),
+            water_drop_color=self.water_drop_color.text().strip() or "#7DDCFF",
+            water_drop_highlight_color=self.water_drop_highlight_color.text().strip() or "#FFFFFF",
+            water_drop_edge_color=self.water_drop_edge_color.text().strip() or "#D2F5FF",
+            water_drop_ripple_enabled=self.water_drop_ripple_enabled.isChecked(),
+            water_drop_ripple_chance=self.water_drop_ripple_chance.value(),
+            water_drop_surface_y=self.water_drop_surface_y.value(),
         )
 
     def apply_to_config(self):
@@ -675,6 +876,7 @@ class EffectsOverlayEditorDialog(QDialog):
             self.widget._rain.clear()
             self.widget._ripples.clear()
             self.widget._rose_petals.clear()
+            self.widget._extra_effects.clear()
         except Exception:
             pass
 
@@ -714,6 +916,12 @@ class EffectsOverlayEditorDialog(QDialog):
         try:
             self.widget._last_sakura_ripple_time = 0.0
             self.widget._last_sakura_tree_emit_time = 0.0
+        except Exception:
+            pass
+        try:
+            if hasattr(self.widget, "_extra_effects"):
+                self.widget._extra_effects.clear()
+            self.widget._last_extra_ripple_time = 0.0
         except Exception:
             pass
         try:
@@ -878,6 +1086,71 @@ class EffectOverlaySettings:
     rose_petal_fade_sink_distance: float = 10.0
     rose_petal_fade_spin: float = 0.35
 
+
+    snow_enabled: bool = False
+    snow_count: int = 90
+    snow_speed: float = 0.18
+    snow_size: float = 4.5
+    snow_alpha: int = 210
+    snow_color: str = "#F5FCFF"
+    snow_ripple_enabled: bool = True
+    snow_ripple_chance: float = 0.38
+    snow_surface_y: float = 0.86
+    snow_crystal_enabled: bool = False
+    snow_crystal_count: int = 22
+    snow_crystal_speed: float = 0.12
+    snow_crystal_size: float = 15.0
+    snow_crystal_alpha: int = 220
+    snow_crystal_color: str = "#EBFAFF"
+    snow_crystal_ripple_enabled: bool = True
+    snow_crystal_ripple_chance: float = 0.55
+    snow_crystal_surface_y: float = 0.86
+    bubble_enabled: bool = False
+    bubble_count: int = 42
+    bubble_speed: float = 0.26
+    bubble_size: float = 12.0
+    bubble_alpha: int = 150
+    flame_enabled: bool = False
+    flame_count: int = 60
+    flame_speed: float = 0.55
+    flame_size: float = 22.0
+    flame_alpha: int = 210
+    water_spray_enabled: bool = False
+    water_spray_count: int = 64
+    water_spray_speed: float = 0.75
+    water_spray_size: float = 6.0
+    water_spray_alpha: int = 190
+    fireball_enabled: bool = False
+    fireball_count: int = 10
+    fireball_speed: float = 0.34
+    fireball_size: float = 20.0
+    fireball_alpha: int = 225
+    shooting_star_enabled: bool = False
+    shooting_star_count: int = 3
+    shooting_star_speed: float = 0.8
+    shooting_star_size: float = 18.0
+    shooting_star_alpha: int = 230
+    meteor_shower_enabled: bool = False
+    meteor_shower_count: int = 18
+    meteor_shower_speed: float = 0.9
+    meteor_shower_size: float = 12.0
+    meteor_shower_alpha: int = 220
+    balloon_enabled: bool = False
+    balloon_count: int = 12
+    balloon_speed: float = 0.20
+    balloon_size: float = 34.0
+    balloon_alpha: int = 220
+    water_drop_enabled: bool = False
+    water_drop_count: int = 55
+    water_drop_speed: float = 0.48
+    water_drop_size: float = 8.0
+    water_drop_alpha: int = 210
+    water_drop_color: str = "#7DDCFF"
+    water_drop_highlight_color: str = "#FFFFFF"
+    water_drop_edge_color: str = "#D2F5FF"
+    water_drop_ripple_enabled: bool = True
+    water_drop_ripple_chance: float = 0.75
+    water_drop_surface_y: float = 0.86
     def to_dict(self):
         return asdict(self)
 
@@ -1092,12 +1365,92 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         sakura_tree_blossom_center_color=str(defaults.get("sakura_tree_blossom_center_color", "#FFF2A8")),
         sakura_tree_blossom_shadow_color=str(defaults.get("sakura_tree_blossom_shadow_color", "#D96A9A")),
         sakura_tree_blossom_highlight_alpha=max(0, min(255, int(defaults.get("sakura_tree_blossom_highlight_alpha", 105)))),
+
+        snow_enabled=bool(defaults.get("snow_enabled", False)),
+        snow_count=max(0, int(defaults.get("snow_count", 90))),
+        snow_speed=float(defaults.get("snow_speed", 0.18)),
+        snow_size=float(defaults.get("snow_size", 4.5)),
+        snow_alpha=max(0, min(255, int(defaults.get("snow_alpha", 210)))),
+        snow_color=str(defaults.get("snow_color", "#F5FCFF")),
+        snow_ripple_enabled=bool(defaults.get("snow_ripple_enabled", True)),
+        snow_ripple_chance=float(defaults.get("snow_ripple_chance", 0.38)),
+        snow_surface_y=float(defaults.get("snow_surface_y", 0.86)),
+        snow_crystal_enabled=bool(defaults.get("snow_crystal_enabled", False)),
+        snow_crystal_count=max(0, int(defaults.get("snow_crystal_count", 22))),
+        snow_crystal_speed=float(defaults.get("snow_crystal_speed", 0.12)),
+        snow_crystal_size=float(defaults.get("snow_crystal_size", 15.0)),
+        snow_crystal_alpha=max(0, min(255, int(defaults.get("snow_crystal_alpha", 220)))),
+        snow_crystal_color=str(defaults.get("snow_crystal_color", "#EBFAFF")),
+        snow_crystal_ripple_enabled=bool(defaults.get("snow_crystal_ripple_enabled", True)),
+        snow_crystal_ripple_chance=float(defaults.get("snow_crystal_ripple_chance", 0.55)),
+        snow_crystal_surface_y=float(defaults.get("snow_crystal_surface_y", 0.86)),
+        bubble_enabled=bool(defaults.get("bubble_enabled", False)),
+        bubble_count=max(0, int(defaults.get("bubble_count", 42))),
+        bubble_speed=float(defaults.get("bubble_speed", 0.26)),
+        bubble_size=float(defaults.get("bubble_size", 12.0)),
+        bubble_alpha=max(0, min(255, int(defaults.get("bubble_alpha", 150)))),
+        flame_enabled=bool(defaults.get("flame_enabled", False)),
+        flame_count=max(0, int(defaults.get("flame_count", 60))),
+        flame_speed=float(defaults.get("flame_speed", 0.55)),
+        flame_size=float(defaults.get("flame_size", 22.0)),
+        flame_alpha=max(0, min(255, int(defaults.get("flame_alpha", 210)))),
+        water_spray_enabled=bool(defaults.get("water_spray_enabled", False)),
+        water_spray_count=max(0, int(defaults.get("water_spray_count", 64))),
+        water_spray_speed=float(defaults.get("water_spray_speed", 0.75)),
+        water_spray_size=float(defaults.get("water_spray_size", 6.0)),
+        water_spray_alpha=max(0, min(255, int(defaults.get("water_spray_alpha", 190)))),
+        fireball_enabled=bool(defaults.get("fireball_enabled", False)),
+        fireball_count=max(0, int(defaults.get("fireball_count", 10))),
+        fireball_speed=float(defaults.get("fireball_speed", 0.34)),
+        fireball_size=float(defaults.get("fireball_size", 20.0)),
+        fireball_alpha=max(0, min(255, int(defaults.get("fireball_alpha", 225)))),
+        shooting_star_enabled=bool(defaults.get("shooting_star_enabled", False)),
+        shooting_star_count=max(0, int(defaults.get("shooting_star_count", 3))),
+        shooting_star_speed=float(defaults.get("shooting_star_speed", 0.8)),
+        shooting_star_size=float(defaults.get("shooting_star_size", 18.0)),
+        shooting_star_alpha=max(0, min(255, int(defaults.get("shooting_star_alpha", 230)))),
+        meteor_shower_enabled=bool(defaults.get("meteor_shower_enabled", False)),
+        meteor_shower_count=max(0, int(defaults.get("meteor_shower_count", 18))),
+        meteor_shower_speed=float(defaults.get("meteor_shower_speed", 0.9)),
+        meteor_shower_size=float(defaults.get("meteor_shower_size", 12.0)),
+        meteor_shower_alpha=max(0, min(255, int(defaults.get("meteor_shower_alpha", 220)))),
+        balloon_enabled=bool(defaults.get("balloon_enabled", False)),
+        balloon_count=max(0, int(defaults.get("balloon_count", 12))),
+        balloon_speed=float(defaults.get("balloon_speed", 0.20)),
+        balloon_size=float(defaults.get("balloon_size", 34.0)),
+        balloon_alpha=max(0, min(255, int(defaults.get("balloon_alpha", 220)))),
+        water_drop_enabled=bool(defaults.get("water_drop_enabled", False)),
+        water_drop_count=max(0, int(defaults.get("water_drop_count", 55))),
+        water_drop_speed=float(defaults.get("water_drop_speed", 0.48)),
+        water_drop_size=float(defaults.get("water_drop_size", 8.0)),
+        water_drop_alpha=max(0, min(255, int(defaults.get("water_drop_alpha", 210)))),
+        water_drop_color=str(defaults.get("water_drop_color", "#7DDCFF")),
+        water_drop_highlight_color=str(defaults.get("water_drop_highlight_color", "#FFFFFF")),
+        water_drop_edge_color=str(defaults.get("water_drop_edge_color", "#D2F5FF")),
+        water_drop_ripple_enabled=bool(defaults.get("water_drop_ripple_enabled", True)),
+        water_drop_ripple_chance=float(defaults.get("water_drop_ripple_chance", 0.75)),
+        water_drop_surface_y=float(defaults.get("water_drop_surface_y", 0.86)),
         rose_petal_fade_on_surface=bool(defaults.get("rose_petal_fade_on_surface", True)),
         rose_petal_fade_duration=float(defaults.get("rose_petal_fade_duration", 0.85)),
         rose_petal_fade_sink_distance=float(defaults.get("rose_petal_fade_sink_distance", 10.0)),
         rose_petal_fade_spin=float(defaults.get("rose_petal_fade_spin", 0.35)),
     )
 
+
+@dataclass
+class ExtraEffectParticle:
+    kind: str
+    x: float
+    y: float
+    vx: float
+    vy: float
+    size: float
+    alpha: float
+    seed: float
+    rotation: float = 0.0
+    rotation_speed: float = 0.0
+    life: float = 6.0
+    created_at: float = 0.0
 @dataclass
 class RosePetal:
     x: float
@@ -2268,6 +2621,8 @@ class EffectsOverlayWidget(BaseWidget):
         self._sakura_petals: List[SakuraPetal] = []
         self._last_sakura_ripple_time = 0.0
         self._last_sakura_tree_emit_time = 0.0
+        self._extra_effects: Dict[str, List[ExtraEffectParticle]] = {}
+        self._last_extra_ripple_time = 0.0
 
     def paint(self, p: QPainter, ctx: Dict):
         settings = get_effect_overlay_settings(self.cfg)
@@ -2293,6 +2648,10 @@ class EffectsOverlayWidget(BaseWidget):
 
         if settings.noise_enabled:
             self._draw_noise(p, r, settings, now)
+
+        self._ensure_extra_effects(r, settings, now)
+        self._update_extra_effects(r, settings, dt, now)
+        self._draw_extra_effects(p, r, settings, now)
 
         has_existing_rose_petals = len(getattr(self, "_rose_petals", [])) > 0
         rose_petals_enabled = bool(getattr(settings, "rose_petals_enabled", False))
@@ -2338,6 +2697,333 @@ class EffectsOverlayWidget(BaseWidget):
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
 
+        p.restore()
+
+
+    def _extra_kind_specs(self):
+        return {
+            "snow": ("snow_enabled", "snow_count"),
+            "snow_crystal": ("snow_crystal_enabled", "snow_crystal_count"),
+            "bubble": ("bubble_enabled", "bubble_count"),
+            "flame": ("flame_enabled", "flame_count"),
+            "water_spray": ("water_spray_enabled", "water_spray_count"),
+            "fireball": ("fireball_enabled", "fireball_count"),
+            "shooting_star": ("shooting_star_enabled", "shooting_star_count"),
+            "meteor_shower": ("meteor_shower_enabled", "meteor_shower_count"),
+            "balloon": ("balloon_enabled", "balloon_count"),
+            "water_drop": ("water_drop_enabled", "water_drop_count"),
+        }
+
+    def _ensure_extra_effects(self, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if not hasattr(self, "_extra_effects"):
+            self._extra_effects = {}
+        for kind, (enabled_attr, count_attr) in self._extra_kind_specs().items():
+            enabled = bool(getattr(settings, enabled_attr, False))
+            target = max(0, int(getattr(settings, count_attr, 0))) if enabled else 0
+            items = self._extra_effects.setdefault(kind, [])
+            while len(items) < target:
+                items.append(self._new_extra_particle(kind, r, settings, now))
+            if len(items) > target:
+                self._extra_effects[kind] = items[:target]
+
+    def _new_extra_particle(self, kind: str, r: QRectF, settings: EffectOverlaySettings, now: float):
+        rnd = self._random
+        w = max(1.0, r.width())
+        h = max(1.0, r.height())
+        def top_y(extra=0.35):
+            return r.top() - rnd.random() * max(80.0, h * extra)
+        def random_x():
+            return r.left() + rnd.random() * w
+        if kind == "snow":
+            speed = max(0.01, float(getattr(settings, "snow_speed", 0.18)))
+            size = max(1.0, float(getattr(settings, "snow_size", 4.5))) * (0.55 + rnd.random() * 0.9)
+            return ExtraEffectParticle(kind, random_x(), top_y(), (-12 + rnd.random()*24)*speed, (20+rnd.random()*28)*speed, size, 0.55+rnd.random()*0.45, rnd.random()*10000, rnd.random()*math.tau, (-1+rnd.random()*2)*speed, 12, now)
+        if kind == "snow_crystal":
+            speed = max(0.01, float(getattr(settings, "snow_crystal_speed", 0.12)))
+            size = max(3.0, float(getattr(settings, "snow_crystal_size", 15.0))) * (0.75 + rnd.random()*0.55)
+            return ExtraEffectParticle(kind, random_x(), top_y(0.55), (-10+rnd.random()*20)*speed, (16+rnd.random()*20)*speed, size, 0.60+rnd.random()*0.40, rnd.random()*10000, rnd.random()*math.tau, (-0.9+rnd.random()*1.8)*speed, 16, now)
+        if kind == "water_drop":
+            speed = max(0.01, float(getattr(settings, "water_drop_speed", 0.48)))
+            size = max(1.0, float(getattr(settings, "water_drop_size", 8.0))) * (0.65 + rnd.random()*0.75)
+            return ExtraEffectParticle(kind, random_x(), top_y(0.45), (-7+rnd.random()*14)*speed, (90+rnd.random()*80)*speed, size, 0.65+rnd.random()*0.35, rnd.random()*10000, 0.0, 0.0, 8, now)
+        if kind == "bubble":
+            speed = max(0.01, float(getattr(settings, "bubble_speed", 0.26)))
+            size = max(2.0, float(getattr(settings, "bubble_size", 12.0))) * (0.55 + rnd.random()*1.15)
+            return ExtraEffectParticle(kind, random_x(), r.bottom()+rnd.random()*h*0.25, (-12+rnd.random()*24)*speed, -(22+rnd.random()*42)*speed, size, 0.45+rnd.random()*0.45, rnd.random()*10000, 0.0, 0.0, 14, now)
+        if kind == "flame":
+            speed = max(0.01, float(getattr(settings, "flame_speed", 0.55)))
+            size = max(3.0, float(getattr(settings, "flame_size", 22.0))) * (0.45 + rnd.random()*1.05)
+            x = r.left() + w * (0.38 + rnd.random()*0.24)
+            return ExtraEffectParticle(kind, x, r.bottom()+rnd.random()*32, (-18+rnd.random()*36)*speed, -(70+rnd.random()*90)*speed, size, 0.55+rnd.random()*0.45, rnd.random()*10000, rnd.random()*math.tau, (-2+rnd.random()*4)*speed, 2.0+rnd.random()*1.5, now)
+        if kind == "water_spray":
+            speed = max(0.01, float(getattr(settings, "water_spray_speed", 0.75)))
+            size = max(1.0, float(getattr(settings, "water_spray_size", 6.0))) * (0.5 + rnd.random()*1.0)
+            x = r.center().x() + (-w*0.08 + rnd.random()*w*0.16)
+            return ExtraEffectParticle(kind, x, r.bottom()+rnd.random()*16, (-90+rnd.random()*180)*speed, -(160+rnd.random()*210)*speed, size, 0.55+rnd.random()*0.45, rnd.random()*10000, 0.0, 0.0, 1.8+rnd.random()*1.2, now)
+        if kind == "fireball":
+            speed = max(0.01, float(getattr(settings, "fireball_speed", 0.34)))
+            size = max(4.0, float(getattr(settings, "fireball_size", 20.0))) * (0.75 + rnd.random()*0.8)
+            return ExtraEffectParticle(kind, random_x(), top_y(0.65), (-24+rnd.random()*48)*speed, (55+rnd.random()*55)*speed, size, 0.70+rnd.random()*0.30, rnd.random()*10000, rnd.random()*math.tau, (-1.5+rnd.random()*3)*speed, 12, now)
+        if kind in ("shooting_star", "meteor_shower"):
+            speed = max(0.01, float(getattr(settings, f"{kind}_speed", 0.85)))
+            size = max(3.0, float(getattr(settings, f"{kind}_size", 14.0))) * (0.70 + rnd.random()*0.75)
+            x = r.left() - rnd.random()*w*0.35
+            y = r.top() + rnd.random()*h*0.55 - h*0.12
+            return ExtraEffectParticle(kind, x, y, (280+rnd.random()*260)*speed, (120+rnd.random()*180)*speed, size, 0.65+rnd.random()*0.35, rnd.random()*10000, -0.65, 0.0, 2.8+rnd.random()*2.2, now)
+        if kind == "balloon":
+            speed = max(0.01, float(getattr(settings, "balloon_speed", 0.20)))
+            size = max(8.0, float(getattr(settings, "balloon_size", 34.0))) * (0.75 + rnd.random()*0.65)
+            return ExtraEffectParticle(kind, random_x(), r.bottom()+rnd.random()*h*0.45, (-10+rnd.random()*20)*speed, -(25+rnd.random()*35)*speed, size, 0.75+rnd.random()*0.25, rnd.random()*10000, rnd.random()*math.tau, (-0.4+rnd.random()*0.8)*speed, 24, now)
+        return ExtraEffectParticle(kind, random_x(), top_y(), 0.0, 20.0, 8.0, 1.0, rnd.random()*10000, 0.0, 0.0, 6, now)
+
+    def _update_extra_effects(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
+        if not hasattr(self, "_extra_effects"):
+            return
+        for kind, items in list(self._extra_effects.items()):
+            enabled = bool(getattr(settings, f"{kind}_enabled", False))
+            if not enabled:
+                self._extra_effects[kind] = []
+                continue
+            surface_attr = f"{kind}_surface_y"
+            surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, surface_attr, 0.86))))
+            for item in list(items):
+                prev_y = item.y
+                item.x += (item.vx + math.sin(now * 1.2 + item.seed) * 10.0) * dt
+                item.y += item.vy * dt
+                item.rotation += item.rotation_speed * dt
+                # gravity for spray
+                if kind == "water_spray":
+                    item.vy += 280.0 * dt
+                if kind in ("flame", "water_spray") and now - item.created_at > item.life:
+                    item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
+                    continue
+                hit_surface = kind in ("snow", "snow_crystal", "water_drop") and prev_y < surface_y <= item.y
+                out = (item.y > r.bottom()+120 or item.y < r.top()-220 or item.x < r.left()-220 or item.x > r.right()+220)
+                if hit_surface:
+                    self._maybe_spawn_extra_ripple(kind, item, surface_y, settings, now)
+                    item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
+                    continue
+                if out:
+                    item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
+
+    def _maybe_spawn_extra_ripple(self, kind: str, item, surface_y: float, settings: EffectOverlaySettings, now: float):
+        ripple_enabled = bool(getattr(settings, f"{kind}_ripple_enabled", False))
+        if not ripple_enabled:
+            return
+        chance = max(0.0, min(1.0, float(getattr(settings, f"{kind}_ripple_chance", 0.5))))
+        if self._random.random() > chance:
+            return
+        if now - getattr(self, "_last_extra_ripple_time", 0.0) < 0.018:
+            return
+        base = max(12.0, float(item.size) * (4.2 if kind == "snow_crystal" else 3.2))
+        color = "#DFFBFF" if kind != "water_drop" else "#9FE7FF"
+        self._ripples.append(EffectRipple(float(item.x), float(surface_y), now, base, color, max(0.05, float(getattr(settings, "ripple_speed", 1.0))) * 0.85))
+        self._last_extra_ripple_time = now
+
+    def _draw_extra_effects(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if not hasattr(self, "_extra_effects"):
+            return
+        for kind, items in self._extra_effects.items():
+            alpha_base = max(0, min(255, int(getattr(settings, f"{kind}_alpha", 210))))
+            for item in list(items):
+                alpha = max(0, min(255, int(alpha_base * item.alpha * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+                if alpha <= 0:
+                    continue
+                if kind == "snow":
+                    self._draw_snow_dot(p, item, alpha)
+                elif kind == "snow_crystal":
+                    self._draw_snow_crystal(p, item, alpha)
+                elif kind == "water_drop":
+                    self._draw_water_drop(p, item, alpha)
+                elif kind == "bubble":
+                    self._draw_bubble(p, item, alpha)
+                elif kind == "flame":
+                    self._draw_flame_particle(p, item, alpha)
+                elif kind == "water_spray":
+                    self._draw_water_spray_particle(p, item, alpha)
+                elif kind == "fireball":
+                    self._draw_fireball(p, item, alpha)
+                elif kind in ("shooting_star", "meteor_shower"):
+                    self._draw_shooting_star(p, item, alpha)
+                elif kind == "balloon":
+                    self._draw_balloon(p, item, alpha)
+
+    def _draw_snow_dot(self, p: QPainter, item, alpha: int):
+        settings = get_effect_overlay_settings(self.cfg)
+        c = QColor(getattr(settings, "snow_color", "#F5FCFF"))
+        c.setAlpha(max(0, min(255, alpha)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(c))
+        p.drawEllipse(QPointF(item.x, item.y), max(1.0, item.size), max(1.0, item.size))
+    def _draw_snow_crystal(self, p: QPainter, item, alpha: int):
+        settings = get_effect_overlay_settings(self.cfg)
+        p.save()
+        p.translate(item.x, item.y)
+        p.rotate(math.degrees(item.rotation))
+        c = QColor(getattr(settings, "snow_crystal_color", "#EBFAFF"))
+        c.setAlpha(max(0, min(255, alpha)))
+        pen = QPen(c, max(1, int(item.size * 0.08)))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        for i in range(6):
+            a = math.tau * i / 6.0
+            x = math.cos(a) * item.size
+            y = math.sin(a) * item.size
+            p.drawLine(0, 0, int(x), int(y))
+            bx = math.cos(a) * item.size * 0.58
+            by = math.sin(a) * item.size * 0.58
+            for sign in (-1, 1):
+                ba = a + sign * 0.65
+                p.drawLine(
+                    int(bx),
+                    int(by),
+                    int(bx + math.cos(ba) * item.size * 0.25),
+                    int(by + math.sin(ba) * item.size * 0.25),
+                )
+        p.restore()
+    def _draw_water_drop(self, p: QPainter, item, alpha: int):
+        settings = get_effect_overlay_settings(self.cfg)
+        base_color = QColor(getattr(settings, "water_drop_color", "#7DDCFF"))
+        highlight_color = QColor(getattr(settings, "water_drop_highlight_color", "#FFFFFF"))
+        edge_color = QColor(getattr(settings, "water_drop_edge_color", "#D2F5FF"))
+        p.save()
+        p.translate(item.x, item.y)
+        path = QPainterPath()
+        s = item.size
+        path.moveTo(0, -s * 1.25)
+        path.cubicTo(s * 0.85, -s * 0.25, s * 0.65, s * 0.85, 0, s * 1.0)
+        path.cubicTo(-s * 0.65, s * 0.85, -s * 0.85, -s * 0.25, 0, -s * 1.25)
+
+        h = QColor(highlight_color)
+        h.setAlpha(max(0, min(255, alpha)))
+        b = QColor(base_color)
+        b.setAlpha(max(0, min(255, alpha)))
+        dark = QColor(base_color)
+        dark.setAlpha(max(0, min(255, int(alpha * 0.72))))
+        dark = QColor(
+            max(0, int(dark.red() * 0.48)),
+            max(0, int(dark.green() * 0.62)),
+            max(0, int(dark.blue() * 0.80)),
+            dark.alpha(),
+        )
+
+        grad = QRadialGradient(QPointF(-s * 0.25, -s * 0.35), max(1.0, s * 1.6))
+        grad.setColorAt(0.0, h)
+        grad.setColorAt(0.45, b)
+        grad.setColorAt(1.0, dark)
+        p.setBrush(QBrush(grad))
+        e = QColor(edge_color)
+        e.setAlpha(max(0, min(255, int(alpha * 0.75))))
+        p.setPen(QPen(e, max(1, int(s * 0.08))))
+        p.drawPath(path)
+        p.restore()
+    def _draw_bubble(self, p: QPainter, item, alpha: int):
+        c = QColor(170, 235, 255, max(20, int(alpha*0.55)))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(c, max(1, int(item.size*0.08))))
+        p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(255,255,255, int(alpha*0.35))))
+        p.drawEllipse(QPointF(item.x-item.size*0.35, item.y-item.size*0.35), max(1.0,item.size*0.18), max(1.0,item.size*0.18))
+
+    def _draw_flame_particle(self, p: QPainter, item, alpha: int):
+        radius = max(2.0, item.size)
+        grad = QRadialGradient(QPointF(item.x, item.y), radius)
+        grad.setColorAt(0.0, QColor(255, 245, 140, alpha))
+        grad.setColorAt(0.45, QColor(255, 120, 35, int(alpha*0.82)))
+        grad.setColorAt(1.0, QColor(255, 30, 0, 0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(item.x, item.y), radius*0.75, radius*1.25)
+
+    def _draw_water_spray_particle(self, p: QPainter, item, alpha: int):
+        c = QColor(130, 225, 255, alpha)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(c))
+        p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
+
+    def _draw_fireball(self, p: QPainter, item, alpha: int):
+        for i in range(4, 0, -1):
+            trail_alpha = int(alpha * 0.12 * i)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(255, 90, 20, trail_alpha)))
+            p.drawEllipse(QPointF(item.x - item.vx*0.012*i, item.y - item.vy*0.012*i), item.size*(0.7+i*0.22), item.size*(0.7+i*0.22))
+        grad = QRadialGradient(QPointF(item.x, item.y), item.size*1.5)
+        grad.setColorAt(0.0, QColor(255, 255, 190, alpha))
+        grad.setColorAt(0.45, QColor(255, 120, 40, alpha))
+        grad.setColorAt(1.0, QColor(170, 20, 0, 0))
+        p.setBrush(QBrush(grad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
+
+    def _draw_shooting_star(self, p: QPainter, item, alpha: int):
+        # 流れ星 / 流星群: 尻尾が流れながら徐々に消える版。
+        # item.vx / item.vy の逆方向に尾を伸ばし、複数の残像ラインを薄く重ねます。
+        vx = float(getattr(item, "vx", 1.0))
+        vy = float(getattr(item, "vy", 0.48))
+        speed_len = max(1.0, math.hypot(vx, vy))
+        dir_x = vx / speed_len
+        dir_y = vy / speed_len
+        tail_x = -dir_x
+        tail_y = -dir_y
+        base_size = max(1.0, float(getattr(item, "size", 12.0)))
+        tail_length = base_size * (9.0 if getattr(item, "kind", "") == "shooting_star" else 6.5)
+        flow = 0.72 + 0.28 * math.sin(time.time() * 9.0 + getattr(item, "seed", 0.0))
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        segments = 9
+        for i in range(segments, 0, -1):
+            t0 = i / segments
+            t1 = (i - 1) / segments
+            x0 = item.x + tail_x * tail_length * t0
+            y0 = item.y + tail_y * tail_length * t0
+            x1 = item.x + tail_x * tail_length * t1
+            y1 = item.y + tail_y * tail_length * t1
+            fade = pow(1.0 - t0, 1.45) * flow
+            seg_alpha = max(0, min(255, int(alpha * fade * 0.95)))
+            if seg_alpha <= 0:
+                continue
+            width = max(1.0, base_size * (0.045 + 0.20 * (1.0 - t0)))
+            c = QColor(210, 240, 255, seg_alpha)
+            pen = QPen(c, width)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+        core_alpha = max(0, min(255, int(alpha * 0.72)))
+        core_pen = QPen(QColor(255, 255, 255, core_alpha), max(1.0, base_size * 0.075))
+        core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(core_pen)
+        p.drawLine(
+            QPointF(item.x + tail_x * tail_length * 0.92, item.y + tail_y * tail_length * 0.92),
+            QPointF(item.x, item.y),
+        )
+        glow_radius = max(4.0, base_size * 1.35)
+        grad = QRadialGradient(QPointF(item.x, item.y), glow_radius)
+        grad.setColorAt(0.0, QColor(255, 255, 255, alpha))
+        grad.setColorAt(0.35, QColor(190, 235, 255, int(alpha * 0.72)))
+        grad.setColorAt(1.0, QColor(120, 190, 255, 0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(item.x, item.y), glow_radius, glow_radius)
+        p.setBrush(QBrush(QColor(255, 255, 255, max(0, min(255, alpha)))))
+        p.drawEllipse(QPointF(item.x, item.y), max(1.0, base_size * 0.26), max(1.0, base_size * 0.26))
+        p.restore()
+
+    def _draw_balloon(self, p: QPainter, item, alpha: int):
+        p.save()
+        p.translate(item.x, item.y)
+        p.rotate(math.sin(time.time()+item.seed)*4.0)
+        palette = [QColor(255, 100, 145, alpha), QColor(255, 210, 80, alpha), QColor(100, 210, 255, alpha), QColor(150, 255, 150, alpha)]
+        c = palette[int(item.seed) % len(palette)]
+        grad = QRadialGradient(QPointF(-item.size*0.25, -item.size*0.25), item.size*1.2)
+        grad.setColorAt(0.0, QColor(255,255,255, int(alpha*0.9)))
+        grad.setColorAt(0.36, c)
+        grad.setColorAt(1.0, QColor(max(0,c.red()-80), max(0,c.green()-80), max(0,c.blue()-80), alpha))
+        p.setPen(QPen(QColor(255,255,255,int(alpha*0.55)), max(1, int(item.size*0.035))))
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(0, 0), item.size*0.72, item.size)
+        p.setPen(QPen(QColor(230,230,230,int(alpha*0.7)), 1))
+        p.drawLine(0, int(item.size), 0, int(item.size*1.9))
         p.restore()
 
     def _ensure_sakura_petals(self, r: QRectF, settings: EffectOverlaySettings):
