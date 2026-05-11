@@ -303,11 +303,11 @@ class EffectsOverlayEditorDialog(QDialog):
 
     def _pictogram_text(self, text):
         s = str(text or "")
-        # すでに絵文字/記号つきなら重複させない。
+        
         if s[:1] in "⚙️🌹🌺🌧️🌸💧🎨❄️🌌✨✅⛔🖱️🌿🌨️💦🫧🔥🚿☄️🌠🎈🔘🔢⚡📏🪟〰️🌊🎵📊🔊🕒📡📅🎧🧪🌐🌤️📚⬇⬆📌✏️🛠️💾✖🎚️🖌️🧊🌫️💡🧲🖱🎯🧩➕🪄🗂️🧭🔎📐↔️↕️🔤🖼️🧠💽🌍📶⬇️⬆️🧾":
             return s
         mapping = {
-            # Effects settings tabs
+            
             "基本": "⚙️",
             "バラ花びら": "🌹",
             "バラ花・開花": "🌺",
@@ -318,7 +318,7 @@ class EffectsOverlayEditorDialog(QDialog):
             "雪・水・火": "❄️",
             "空・その他": "🌌",
 
-            # Effects sections / kinds
+            
             "雨粒": "🌧️",
             "パーティクル": "✨",
             "ノイズ": "🌫️",
@@ -339,7 +339,7 @@ class EffectsOverlayEditorDialog(QDialog):
             "流星群": "🌠",
             "バルーン": "🎈",
 
-            # Effect descriptions / checkboxes
+            
             "雨粒が水面に当たったら波紋": "🌧️",
             "マウスクリック波紋": "🖱️",
             "マウス周辺から微粒子が逃げる": "🧲",
@@ -352,7 +352,7 @@ class EffectsOverlayEditorDialog(QDialog):
             "桜花びらが水面で波紋": "🌸",
             "下に落ちた時に波紋": "〰️",
 
-            # Generic rows
+            
             "ON/OFF": "🔘",
             "数": "🔢",
             "速度": "⚡",
@@ -4326,7 +4326,7 @@ class VisualizerWidget(BaseWidget):
         self._last_peak_update = now
         self._ensure_peak_levels(len(bars))
 
-        # ピークバーはゆっくり落ちるので、音楽バーが押し上げているように見える。
+        
         peak_decay = 1.15 * dt
 
         for i, v in enumerate(bars):
@@ -4402,7 +4402,7 @@ class VisualizerWidget(BaseWidget):
         p.setBrush(QBrush(glow))
         p.drawRoundedRect(halo, 5, 5)
 
-        # 上端/下端に近いところをさらに淡く光らせる。
+        
         edge_alpha = max(20, min(120, int(30 + value * 100)))
         edge = QColor(color)
         edge.setAlpha(edge_alpha)
@@ -4433,7 +4433,7 @@ class VisualizerWidget(BaseWidget):
         p.setBrush(QBrush(peak_color))
         p.drawRoundedRect(cap_rect, 1.5, 1.5)
 
-        # 細いハイライトを重ねて、横バーが光っているようにする。
+        
         p.setBrush(QBrush(shine))
         p.drawRoundedRect(QRectF(cap_rect.left(), cap_rect.top(), cap_rect.width(), 1.0), 0.8, 0.8)
         p.restore()
@@ -6249,7 +6249,7 @@ class LiteDeskStudio(QMainWindow):
             QScrollBar::handle:vertical { background: rgba(255,190,190,86); border-radius: 5px; min-height: 34px; }
         """
 
-        # Dark / Material は背景を黒めにし、アクセントだけ薄い赤で残します。
+        
         self.STUDIO_DARK_STYLESHEET = """
             QMainWindow { background: rgba(7, 10, 16, 218); color: #FFF7F7; }
             QWidget { font-family: "Segoe UI", "Yu Gothic UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; color: #FFF7F7; background: transparent; }
