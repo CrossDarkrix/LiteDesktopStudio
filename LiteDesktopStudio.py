@@ -244,15 +244,15 @@ class EffectsOverlayEditorDialog(QDialog):
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(8)
 
-        title = QLabel("Effects Overlay")
+        title = QLabel("✨ Effects Overlay")
         title.setStyleSheet("font-size: 18px; font-weight: 700;")
         outer.addWidget(title)
         quick = QHBoxLayout()
-        self.btn_all_on = QPushButton("全部ON")
-        self.btn_all_off = QPushButton("全部OFF")
-        self.btn_rose_only = QPushButton("軽量: バラ花びらだけ")
-        self.btn_mouse_only = QPushButton("マウス系だけON")
-        self.btn_ambient_only = QPushButton("環境系だけON")
+        self.btn_all_on = QPushButton("✅ 全部ON")
+        self.btn_all_off = QPushButton("⛔ 全部OFF")
+        self.btn_rose_only = QPushButton("🌹 軽量: バラ花びらだけ")
+        self.btn_mouse_only = QPushButton("🖱️ マウス系だけON")
+        self.btn_ambient_only = QPushButton("🌿 環境系だけON")
         self.btn_all_on.clicked.connect(self.set_all_on)
         self.btn_all_off.clicked.connect(self.set_all_off)
         self.btn_rose_only.clicked.connect(self.set_rose_petals_only)
@@ -290,9 +290,9 @@ class EffectsOverlayEditorDialog(QDialog):
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)
-        self.btn_apply = QPushButton("適用")
-        self.btn_ok = QPushButton("OK")
-        self.btn_cancel = QPushButton("キャンセル")
+        self.btn_apply = QPushButton("💾 適用")
+        self.btn_ok = QPushButton("✅ OK")
+        self.btn_cancel = QPushButton("✖ キャンセル")
         self.btn_apply.clicked.connect(self.apply_to_config)
         self.btn_ok.clicked.connect(self.accept_with_apply)
         self.btn_cancel.clicked.connect(self.reject)
@@ -300,6 +300,74 @@ class EffectsOverlayEditorDialog(QDialog):
         bottom.addWidget(self.btn_ok)
         bottom.addWidget(self.btn_cancel)
         outer.addLayout(bottom)
+
+    def _pictogram_text(self, text):
+        s = str(text or "")
+        # すでに絵文字/記号つきなら重複させない。
+        if s[:1] in "⚙️🌹🌺🌧️🌸💧🎨❄️🌌✨✅⛔🖱️🌿🌨️💦🫧🔥🚿☄️🌠🎈🔘🔢⚡📏🪟〰️🌊🎵📊🔊🕒📡📅🎧🧪🌐🌤️📚⬇⬆📌✏️🛠️💾✖🎚️🖌️🧊🌫️💡🧲🖱🎯🧩➕🪄🗂️🧭🔎📐↔️↕️🔤🖼️🧠💽🌍📶⬇️⬆️🧾":
+            return s
+        mapping = {
+            # Effects settings tabs
+            "基本": "⚙️",
+            "バラ花びら": "🌹",
+            "バラ花・開花": "🌺",
+            "雨・粒子": "🌧️",
+            "桜花びら": "🌸",
+            "波紋・全体": "💧",
+            "色": "🎨",
+            "雪・水・火": "❄️",
+            "空・その他": "🌌",
+
+            # Effects sections / kinds
+            "雨粒": "🌧️",
+            "パーティクル": "✨",
+            "ノイズ": "🌫️",
+            "グロー": "💡",
+            "自動/通常 波紋": "〰️",
+            "バラの花びら": "🌹",
+            "中くらいのバラの花": "🌺",
+            "大きな咲いた花が散る": "🌺",
+            "桜の花びら": "🌸",
+            "雪": "🌨️",
+            "中くらいの雪の結晶": "❄️",
+            "水玉": "💧",
+            "泡": "🫧",
+            "炎": "🔥",
+            "水が吹き出る": "🚿",
+            "火の玉": "🔥",
+            "流れ星": "☄️",
+            "流星群": "🌠",
+            "バルーン": "🎈",
+
+            # Effect descriptions / checkboxes
+            "雨粒が水面に当たったら波紋": "🌧️",
+            "マウスクリック波紋": "🖱️",
+            "マウス周辺から微粒子が逃げる": "🧲",
+            "マウス周辺だけ光る": "💡",
+            "花びらが水面に落ちたら波紋": "🌹",
+            "水面に少し浮かべる": "🌊",
+            "水面で花びらをフェードアウト": "🌊",
+            "バラ花が水面に落ちたら波紋": "🌺",
+            "咲いた花を再生成": "🔄",
+            "桜花びらが水面で波紋": "🌸",
+            "下に落ちた時に波紋": "〰️",
+
+            # Generic rows
+            "ON/OFF": "🔘",
+            "数": "🔢",
+            "速度": "⚡",
+            "サイズ": "📏",
+            "透明度": "🪟",
+            "波紋": "〰️",
+            "波紋発生率": "💧",
+            "水面Y": "🌊",
+            "色": "🎨",
+            "波紋色": "💧",
+            "ノイズ色": "🌫️",
+            "マウスグロー色": "💡",
+        }
+        icon = mapping.get(s)
+        return f"{icon} {s}" if icon else s
 
     def _create_tab(self, title):
         page = QWidget()
@@ -319,11 +387,11 @@ class EffectsOverlayEditorDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
         form.setVerticalSpacing(8)
-        self.tabs.addTab(page, title)
+        self.tabs.addTab(page, self._pictogram_text(title))
         return form
 
     def _section(self, form, text):
-        label = QLabel(text)
+        label = QLabel(self._pictogram_text(text))
         label.setStyleSheet("font-weight: 700; color: #80FFCC; margin-top: 10px;")
         form.addRow(label)
         return label
@@ -344,7 +412,7 @@ class EffectsOverlayEditorDialog(QDialog):
 
     def _color_row_on(self, form, label, value):
         edit = QLineEdit(str(value or ""))
-        button = QPushButton("選択")
+        button = QPushButton("🎨 選択")
         row_widget = QWidget()
         row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
@@ -411,7 +479,7 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("マウス光", self.mouse_glow_enabled)
 
         self._section(f, "軽量プリセット")
-        note = QLabel("重い場合は『軽量: バラ花びらだけ』を押すと、バラ花びら以外をOFFにします。")
+        note = QLabel("💡 重い場合は『🌹 軽量: バラ花びらだけ』を押すと、バラ花びら以外をOFFにします。")
         note.setWordWrap(True)
         f.addRow(note)
 
@@ -601,14 +669,14 @@ class EffectsOverlayEditorDialog(QDialog):
         self.particle_color = self._color_row_on(f, "粒子色", self.settings.particle_color)
         self.rain_color = self._color_row_on(f, "雨色", self.settings.rain_color)
         self.glow_color = self._color_row_on(f, "グロー色", self.settings.glow_color)
-        self.ripple_color = self._color_row_on(f, "波紋色", self.settings.ripple_color)
-        self.noise_color = self._color_row_on(f, "ノイズ色", self.settings.noise_color)
-        self.mouse_glow_color = self._color_row_on(f, "マウスグロー色", self.settings.mouse_glow_color)
+        self.ripple_color = self._color_row_on(f, self._pictogram_text("波紋色"), self.settings.ripple_color)
+        self.noise_color = self._color_row_on(f, self._pictogram_text("ノイズ色"), self.settings.noise_color)
+        self.mouse_glow_color = self._color_row_on(f, self._pictogram_text("マウスグロー色"), self.settings.mouse_glow_color)
 
 
     def _add_effect_block(self, form, title, prefix, label, count_default, speed_default, size_default, alpha_default, ripple=False, surface_default=0.86, chance_default=0.5):
         self._section(form, title)
-        enabled = QCheckBox(label)
+        enabled = QCheckBox(self._pictogram_text(label))
         enabled.setChecked(bool(getattr(self.settings, f"{prefix}_enabled", False)))
         count = self._int_spin(0, 500, getattr(self.settings, f"{prefix}_count", count_default))
         speed = self._double_spin(0.01, 5.0, getattr(self.settings, f"{prefix}_speed", speed_default), 0.01)
@@ -619,11 +687,11 @@ class EffectsOverlayEditorDialog(QDialog):
         setattr(self, f"{prefix}_speed", speed)
         setattr(self, f"{prefix}_size", size)
         setattr(self, f"{prefix}_alpha", alpha)
-        form.addRow("ON/OFF", enabled)
-        form.addRow("数", count)
-        form.addRow("速度", speed)
-        form.addRow("サイズ", size)
-        form.addRow("透明度", alpha)
+        form.addRow(self._pictogram_text("ON/OFF"), enabled)
+        form.addRow(self._pictogram_text("数"), count)
+        form.addRow(self._pictogram_text("速度"), speed)
+        form.addRow(self._pictogram_text("サイズ"), size)
+        form.addRow(self._pictogram_text("透明度"), alpha)
         if ripple:
             ripple_enabled = QCheckBox("下に落ちた時に波紋")
             ripple_enabled.setChecked(bool(getattr(self.settings, f"{prefix}_ripple_enabled", True)))
@@ -632,9 +700,9 @@ class EffectsOverlayEditorDialog(QDialog):
             setattr(self, f"{prefix}_ripple_enabled", ripple_enabled)
             setattr(self, f"{prefix}_ripple_chance", chance)
             setattr(self, f"{prefix}_surface_y", surface)
-            form.addRow("波紋", ripple_enabled)
-            form.addRow("波紋発生率", chance)
-            form.addRow("水面Y", surface)
+            form.addRow(self._pictogram_text("波紋"), ripple_enabled)
+            form.addRow(self._pictogram_text("波紋発生率"), chance)
+            form.addRow(self._pictogram_text("水面Y"), surface)
 
     def _build_extra_weather_tab(self):
         f = self.extra_weather_form
@@ -4744,7 +4812,7 @@ class NetworkWidget(BaseWidget):
             content_x,
             r.top() + 42,
             content_w,
-            "UP",
+            "up",
             format_bytes_per_sec(getattr(monitor, "net_up", 0.0)),
             up_color
         )
@@ -4754,7 +4822,7 @@ class NetworkWidget(BaseWidget):
             content_x,
             r.top() + 68,
             content_w,
-            "DOWN",
+            "down",
             format_bytes_per_sec(getattr(monitor, "net_down", 0.0)),
             down_color
         )
@@ -4792,12 +4860,13 @@ class NetworkWidget(BaseWidget):
             getattr(monitor, "net_sent_total", 0)
         )
 
-        p.setFont(QFont("Segoe UI", 8))
-        p.setPen(QColor(210, 218, 230, 160))
-        p.drawText(
+        self._draw_network_totals(
+            p,
             QRectF(r.left() + 16, r.bottom() - 26, r.width() - 32, 18),
-            Qt.AlignCenter,
-            f"Total ↓ {total_down}   ↑ {total_up}"
+            total_down,
+            total_up,
+            down_color,
+            up_color
         )
 
         if self.selected and ctx.get("edit_mode", True):
@@ -4805,16 +4874,36 @@ class NetworkWidget(BaseWidget):
 
         p.restore()
 
-    def _draw_net_row(self, p: QPainter, x, y, w, label, value, color):
-        label_rect = QRectF(x, y, 64, 20)
-        value_rect = QRectF(x + 70, y, w - 70, 20)
+    def _network_direction_label(self, direction):
+        direction = str(direction or "").lower()
+        if direction in ("up", "upload", "sent"):
+            return "上り"
+        return "下り"
+
+    def _draw_net_row(self, p: QPainter, x, y, w, direction, value, color):
+        icon_rect = QRectF(x, y, 28, 20)
+        label_text = self._network_direction_label(direction)
+
+        self._draw_network_arrow_icon(
+            p,
+            icon_rect,
+            direction,
+            color,
+            QColor(255, 255, 255, 26)
+        )
 
         p.setFont(QFont("Segoe UI", 9, QFont.Bold))
-        p.setPen(QColor(235, 240, 250))
+        label_metrics = p.fontMetrics()
+        label_w = min(42, max(28, label_metrics.horizontalAdvance(label_text) + 8))
+        label_rect = QRectF(x + 34, y, label_w, 20)
+        value_rect = QRectF(x + 34 + label_w + 6, y, max(20, w - (34 + label_w + 6)), 20)
+
+        label_color = QColor(235, 240, 250, 210)
+        p.setPen(label_color)
         p.drawText(
             label_rect,
             Qt.AlignLeft | Qt.AlignVCenter,
-            label
+            label_text
         )
 
         p.setFont(QFont("Segoe UI", 9))
@@ -4824,6 +4913,103 @@ class NetworkWidget(BaseWidget):
             Qt.AlignRight | Qt.AlignVCenter,
             value
         )
+
+    def _draw_network_arrow_icon(self, p: QPainter, rect: QRectF, direction, color, bg_color=None):
+        """Draw upload/download arrow icon using QPainter primitives, not text glyphs."""
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        if bg_color is not None:
+            bg = QColor(bg_color)
+            p.setPen(QPen(QColor(255, 255, 255, 34), 1))
+            p.setBrush(QBrush(bg))
+            pill = QRectF(rect.left() + 2, rect.top() + 1, min(rect.width() - 4, 22), rect.height() - 2)
+            p.drawRoundedRect(pill, 9, 9)
+
+        c = QColor(color)
+        c.setAlpha(max(150, c.alpha()))
+        pen = QPen(c, 2.3)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+
+        cx = rect.left() + min(rect.width(), 24) / 2.0
+        cy = rect.center().y()
+        top = cy - 6.2
+        bottom = cy + 6.2
+        head = 5.0
+
+        direction = str(direction or "").lower()
+
+        if direction in ("up", "upload", "sent"):
+            p.drawLine(QPointF(cx, bottom), QPointF(cx, top))
+            p.drawLine(QPointF(cx, top), QPointF(cx - head, top + head))
+            p.drawLine(QPointF(cx, top), QPointF(cx + head, top + head))
+        else:
+            p.drawLine(QPointF(cx, top), QPointF(cx, bottom))
+            p.drawLine(QPointF(cx, bottom), QPointF(cx - head, bottom - head))
+            p.drawLine(QPointF(cx, bottom), QPointF(cx + head, bottom - head))
+
+        p.restore()
+
+    def _draw_network_totals(self, p: QPainter, rect: QRectF, total_down, total_up, down_color, up_color):
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setFont(QFont("Segoe UI", 8))
+
+        total_text = "Total"
+        down_label = "下り"
+        up_label = "上り"
+        gap = 5
+        icon_w = 16
+        metric = p.fontMetrics()
+        total_w = metric.horizontalAdvance(total_text)
+        down_label_w = metric.horizontalAdvance(down_label)
+        up_label_w = metric.horizontalAdvance(up_label)
+        down_w = metric.horizontalAdvance(str(total_down))
+        up_w = metric.horizontalAdvance(str(total_up))
+        full_w = (
+            total_w + gap +
+            icon_w + 2 + down_label_w + 4 + down_w +
+            gap * 2 +
+            icon_w + 2 + up_label_w + 4 + up_w
+        )
+        x = rect.left() + max(0, (rect.width() - full_w) / 2.0)
+        y = rect.top()
+
+        p.setPen(QColor(210, 218, 230, 160))
+        p.drawText(QRectF(x, y, total_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, total_text)
+        x += total_w + gap
+
+        self._draw_network_arrow_icon(
+            p,
+            QRectF(x, y, icon_w, rect.height()),
+            "down",
+            down_color,
+            None
+        )
+        x += icon_w + 2
+        p.setPen(QColor(210, 218, 230, 170))
+        p.drawText(QRectF(x, y, down_label_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, down_label)
+        x += down_label_w + 4
+        p.drawText(QRectF(x, y, down_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, str(total_down))
+        x += down_w + gap * 2
+
+        self._draw_network_arrow_icon(
+            p,
+            QRectF(x, y, icon_w, rect.height()),
+            "up",
+            up_color,
+            None
+        )
+        x += icon_w + 2
+        p.setPen(QColor(210, 218, 230, 170))
+        p.drawText(QRectF(x, y, up_label_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, up_label)
+        x += up_label_w + 4
+        p.drawText(QRectF(x, y, up_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, str(total_up))
+
+        p.restore()
 
     def _draw_history_graph(self, p: QPainter, rect: QRectF, down_history, up_history, down_color, up_color):
         if rect.width() <= 4 or rect.height() <= 4:
@@ -5876,15 +6062,15 @@ class WidgetEditor(QDialog):
         self.text = QTextEdit()
         self.text.setPlainText(widget.cfg.text)
 
-        color_btn = QPushButton("色を選択")
+        color_btn = QPushButton("🎨 色を選択")
         color_btn.clicked.connect(self.pick_color)
 
-        bg_btn = QPushButton("背景色を選択")
+        bg_btn = QPushButton("🖼️ 背景色を選択")
         bg_btn.clicked.connect(self.pick_bg)
 
         btns = QHBoxLayout()
-        save = QPushButton("保存")
-        cancel = QPushButton("キャンセル")
+        save = QPushButton("💾 保存")
+        cancel = QPushButton("✖ キャンセル")
         save.clicked.connect(self.accept)
         cancel.clicked.connect(self.reject)
         btns.addWidget(save)
@@ -5921,7 +6107,7 @@ class LiteDeskStudio(QMainWindow):
         super().__init__()
         self.STUDIO_LIQUID_GLASS_STYLESHEET = """
             QMainWindow { background: rgba(8, 14, 24, 92); color: #FFF7F7; }
-            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #FFF7F7; background: transparent; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; color: #FFF7F7; background: transparent; }
             QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog {
                 background: rgba(24, 36, 54, 150); border: 1px solid rgba(255, 214, 214, 82); border-radius: 24px;
             }
@@ -5960,7 +6146,7 @@ class LiteDeskStudio(QMainWindow):
         # Dark / Material は背景を黒めにし、アクセントだけ薄い赤で残します。
         self.STUDIO_DARK_STYLESHEET = """
             QMainWindow { background: rgba(7, 10, 16, 218); color: #FFF7F7; }
-            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #FFF7F7; background: transparent; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; color: #FFF7F7; background: transparent; }
             QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog { background: rgba(13,17,24,224); border: 1px solid rgba(78,86,104,170); border-radius: 18px; }
             QScrollArea#PropertyScrollArea, QScrollArea#SideScrollArea { background: transparent; border: none; }
             QLabel#Title { font-size: 22px; font-weight: 800; color: #FFFFFF; }
@@ -5984,7 +6170,7 @@ class LiteDeskStudio(QMainWindow):
 
         self.STUDIO_MATERIAL_STYLESHEET = """
             QMainWindow { background: rgba(17,19,24,222); color: #FFF7F7; }
-            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #FFF7F7; background: transparent; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; color: #FFF7F7; background: transparent; }
             QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog { background: rgba(27,31,39,224); border: 1px solid rgba(65,75,92,176); border-radius: 12px; }
             QLabel#Title { font-size: 22px; font-weight: 800; color: #FFFFFF; }
             QLabel#SectionTitle { font-size: 13px; font-weight: 800; color: #F2A6A6; margin-top: 8px; }
@@ -6003,7 +6189,7 @@ class LiteDeskStudio(QMainWindow):
 
         self.STUDIO_LIGHT_STYLESHEET = """
             QMainWindow { background: rgba(232,224,226,222); color: #2D2020; }
-            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #2D2020; background: transparent; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; color: #2D2020; background: transparent; }
             QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog { background: rgba(252,247,247,218); border: 1px solid rgba(210,181,181,200); border-radius: 18px; }
             QLabel#Title { font-size: 22px; font-weight: 800; color: #291A1A; }
             QLabel#SectionTitle { font-size: 13px; font-weight: 800; color: #B85E5E; margin-top: 8px; }
@@ -6065,30 +6251,30 @@ class LiteDeskStudio(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("LiteDesk Studio")
+        title = QLabel("🧩 LiteDesk Studio")
         title.setObjectName("Title")
         layout.addWidget(title)
 
-        subtitle = QLabel("ウィジェットを追加して、直感的に編集できます。")
+        subtitle = QLabel("🪄 ウィジェットを追加して、直感的に編集できます。")
         subtitle.setWordWrap(True)
         subtitle.setObjectName("SubText")
         layout.addWidget(subtitle)
 
-        add_label = QLabel("Add Widget")
+        add_label = QLabel("➕ Add Widget")
         add_label.setObjectName("SectionTitle")
         layout.addWidget(add_label)
 
-        self.btn_add_visualizer = QPushButton("音楽ビジュアライザー")
-        self.btn_add_effects_overlay = QPushButton("エフェクトオーバーレイ")
-        self.btn_add_system = QPushButton("CPU / Memory / Disk")
-        self.btn_add_volume = QPushButton("音量操作")
-        self.btn_add_clock = QPushButton("アナログ時計")
-        self.btn_add_network = QPushButton("通信状況")
-        self.btn_add_calendar = QPushButton("カレンダー")
-        self.btn_add_media = QPushButton("音楽プレイヤー操作")
-        self.btn_add_html_js = QPushButton("JavaScript HTML")
-        self.btn_add_html = QPushButton("HTML / CSS 風")
-        self.btn_add_weather = QPushButton("天気")
+        self.btn_add_visualizer = QPushButton("🎵 音楽ビジュアライザー")
+        self.btn_add_effects_overlay = QPushButton("✨ エフェクトオーバーレイ")
+        self.btn_add_system = QPushButton("📊 CPU / Memory / Disk")
+        self.btn_add_volume = QPushButton("🔊 音量操作")
+        self.btn_add_clock = QPushButton("🕒 アナログ時計")
+        self.btn_add_network = QPushButton("📡 通信状況")
+        self.btn_add_calendar = QPushButton("📅 カレンダー")
+        self.btn_add_media = QPushButton("🎧 音楽プレイヤー操作")
+        self.btn_add_html_js = QPushButton("🧪 JavaScript HTML")
+        self.btn_add_html = QPushButton("🌐 HTML / CSS 風")
+        self.btn_add_weather = QPushButton("🌤️ 天気")
 
         self.btn_add_visualizer.clicked.connect(lambda: self.add_widget("visualizer"))
         self.btn_add_effects_overlay.clicked.connect(lambda: self.add_widget("effects_overlay"))
@@ -6119,7 +6305,7 @@ class LiteDeskStudio(QMainWindow):
             button.setMinimumHeight(36)
             layout.addWidget(button)
 
-        layer_label = QLabel("Layers")
+        layer_label = QLabel("📚 Layers")
         layer_label.setObjectName("SectionTitle")
         layout.addWidget(layer_label)
 
@@ -6130,8 +6316,8 @@ class LiteDeskStudio(QMainWindow):
 
         layer_buttons = QHBoxLayout()
 
-        self.btn_layer_down = QPushButton("背面")
-        self.btn_layer_up = QPushButton("前面")
+        self.btn_layer_down = QPushButton("⬇ 背面")
+        self.btn_layer_up = QPushButton("⬆ 前面")
 
         self.btn_layer_down.clicked.connect(self.move_backward)
         self.btn_layer_up.clicked.connect(self.move_forward)
@@ -6181,11 +6367,11 @@ class LiteDeskStudio(QMainWindow):
 
         top = QHBoxLayout()
 
-        self.status_label = QLabel("Status")
+        self.status_label = QLabel("📌 Status")
         self.status_label.setObjectName("StatusText")
         top.addWidget(self.status_label, 1)
 
-        self.edit_mode_check = QCheckBox("編集モード")
+        self.edit_mode_check = QCheckBox("✏️ 編集モード")
         self.edit_mode_check.setChecked(self.canvas.edit_mode)
         self.edit_mode_check.stateChanged.connect(self.on_edit_mode_changed)
         top.addWidget(self.edit_mode_check)
@@ -6211,22 +6397,22 @@ class LiteDeskStudio(QMainWindow):
         )
         layout.addWidget(help_box)
 
-        action_label = QLabel("Actions")
+        action_label = QLabel("⚡ Actions")
         action_label.setObjectName("SectionTitle")
         layout.addWidget(action_label)
 
         action_grid = QGridLayout()
         action_grid.setSpacing(8)
-        self.btn_effects_editor = QPushButton("エフェクト設定")
+        self.btn_effects_editor = QPushButton("✨ エフェクト設定")
         self.btn_effects_editor.clicked.connect(self.open_effects_overlay_editor)
         layout.addWidget(self.btn_effects_editor)
-        self.btn_save = QPushButton("設定を保存")
-        self.btn_reload = QPushButton("UIを再読み込み")
-        self.btn_duplicate = QPushButton("複製")
-        self.btn_delete = QPushButton("削除")
-        self.btn_export = QPushButton("エクスポート")
-        self.btn_import = QPushButton("インポート")
-        self.btn_close_canvas = QPushButton("アプリ終了")
+        self.btn_save = QPushButton("💾 設定を保存")
+        self.btn_reload = QPushButton("🔄 UIを再読み込み")
+        self.btn_duplicate = QPushButton("📄 複製")
+        self.btn_delete = QPushButton("🗑️ 削除")
+        self.btn_export = QPushButton("📤 エクスポート")
+        self.btn_import = QPushButton("📥 インポート")
+        self.btn_close_canvas = QPushButton("🚪 アプリ終了")
         self.btn_save.clicked.connect(self.save)
         self.btn_reload.clicked.connect(self.reload_ui)
         self.btn_duplicate.clicked.connect(self.duplicate)
@@ -6252,7 +6438,7 @@ class LiteDeskStudio(QMainWindow):
         layout.addLayout(action_grid)
         layout.addStretch(1)
 
-        performance_label = QLabel("Performance")
+        performance_label = QLabel("🚀 Performance")
         performance_label.setObjectName("SectionTitle")
         layout.addWidget(performance_label)
 
@@ -6280,11 +6466,11 @@ class LiteDeskStudio(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("Properties")
+        title = QLabel("🛠️ Properties")
         title.setObjectName("Title")
         layout.addWidget(title)
 
-        self.selected_name = QLabel("No widget selected")
+        self.selected_name = QLabel("🔎 No widget selected")
         self.selected_name.setObjectName("SubText")
         layout.addWidget(self.selected_name)
 
@@ -6330,28 +6516,28 @@ class LiteDeskStudio(QMainWindow):
         self.prop_memory_color.textChanged.connect(self.apply_properties_live)
         self.prop_disk_color.textChanged.connect(self.apply_properties_live)
 
-        self.btn_pick_color = QPushButton("アクセント色を選択")
-        self.btn_pick_bg = QPushButton("背景色を選択")
+        self.btn_pick_color = QPushButton("🎯 アクセント色を選択")
+        self.btn_pick_bg = QPushButton("🖼️ 背景色を選択")
 
         self.btn_pick_color.clicked.connect(self.pick_color)
         self.btn_pick_bg.clicked.connect(self.pick_bg)
         self.prop_network_down_color.textChanged.connect(self.apply_properties_live)
         self.prop_network_up_color.textChanged.connect(self.apply_properties_live)
-        self.btn_pick_cpu_color = QPushButton("CPU色を選択")
-        self.btn_pick_memory_color = QPushButton("Memory色を選択")
-        self.btn_pick_disk_color = QPushButton("Disk色を選択")
+        self.btn_pick_cpu_color = QPushButton("🧠 CPU色を選択")
+        self.btn_pick_memory_color = QPushButton("💽 Memory色を選択")
+        self.btn_pick_disk_color = QPushButton("💾 Disk色を選択")
 
         self.btn_pick_cpu_color.clicked.connect(self.pick_cpu_color)
         self.btn_pick_memory_color.clicked.connect(self.pick_memory_color)
         self.btn_pick_disk_color.clicked.connect(self.pick_disk_color)
-        self.btn_pick_network_down_color = QPushButton("DOWN色を選択")
-        self.btn_pick_network_up_color = QPushButton("UP色を選択")
+        self.btn_pick_network_down_color = QPushButton("⬇️ DOWN色を選択")
+        self.btn_pick_network_up_color = QPushButton("⬆️ UP色を選択")
         self.prop_font_size = QSpinBox()
         self.prop_font_size.setRange(8, 72)
         self.prop_font_size.valueChanged.connect(self.apply_properties_live)
-        self.prop_clock_show_digital = QCheckBox("デジタル時刻を表示")
+        self.prop_clock_show_digital = QCheckBox("🕒 デジタル時刻を表示")
         self.prop_clock_show_digital.stateChanged.connect(self.apply_properties_live)
-        self.prop_visualizer_flip_vertical = QCheckBox("ビジュアライザーを上下反転")
+        self.prop_visualizer_flip_vertical = QCheckBox("↕️ ビジュアライザーを上下反転")
         self.prop_visualizer_flip_vertical.stateChanged.connect(self.apply_properties_live)
         self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
         self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
@@ -6359,29 +6545,29 @@ class LiteDeskStudio(QMainWindow):
         self.prop_weather_location.setPlaceholderText("例: Kobe / Tokyo / Osaka")
         self.prop_weather_location.textChanged.connect(self.apply_properties_live)
 
-        form.addRow("Type", self.prop_type)
-        form.addRow("Title", self.prop_title)
-        form.addRow("X", self.prop_x)
-        form.addRow("Y", self.prop_y)
-        form.addRow("Width", self.prop_w)
-        form.addRow("Height", self.prop_h)
-        form.addRow("Color", self.prop_color)
+        form.addRow("🧩 Type", self.prop_type)
+        form.addRow("🔖 Title", self.prop_title)
+        form.addRow("↔️ X", self.prop_x)
+        form.addRow("↕️ Y", self.prop_y)
+        form.addRow("📐 Width", self.prop_w)
+        form.addRow("📏 Height", self.prop_h)
+        form.addRow("🎨 Color", self.prop_color)
         form.addRow("", self.btn_pick_color)
-        form.addRow("Background", self.prop_bg)
+        form.addRow("🖼️ Background", self.prop_bg)
         form.addRow("", self.btn_pick_bg)
         form.addRow("透明度", self.prop_bg_alpha)
-        form.addRow("CPU Color", self.prop_cpu_color)
+        form.addRow("🧠 CPU Color", self.prop_cpu_color)
         form.addRow("", self.btn_pick_cpu_color)
 
-        form.addRow("Memory Color", self.prop_memory_color)
+        form.addRow("💽 Memory Color", self.prop_memory_color)
         form.addRow("", self.btn_pick_memory_color)
 
-        form.addRow("Disk Color", self.prop_disk_color)
+        form.addRow("💾 Disk Color", self.prop_disk_color)
         form.addRow("", self.btn_pick_disk_color)
-        form.addRow("Weather Location", self.prop_weather_location)
-        form.addRow("Network DOWN Color", self.prop_network_down_color)
+        form.addRow("🌍 Weather Location", self.prop_weather_location)
+        form.addRow("⬇️ Network DOWN Color", self.prop_network_down_color)
         form.addRow("", self.btn_pick_network_down_color)
-        form.addRow("Network UP Color", self.prop_network_up_color)
+        form.addRow("⬆️ Network UP Color", self.prop_network_up_color)
         form.addRow("", self.btn_pick_network_up_color)
 
         self.network_only_property_widgets = [
@@ -6403,7 +6589,7 @@ class LiteDeskStudio(QMainWindow):
             self.prop_disk_color,
             self.btn_pick_disk_color,
         ]
-        form.addRow("Font Size", self.prop_font_size)
+        form.addRow("🔤 Font Size", self.prop_font_size)
         form.addRow("", self.prop_clock_show_digital)
         form.addRow("", self.prop_visualizer_flip_vertical)
         self.visualizer_only_property_widgets = [
@@ -6416,7 +6602,7 @@ class LiteDeskStudio(QMainWindow):
 
         layout.addLayout(form)
 
-        html_label = QLabel("HTML / Text")
+        html_label = QLabel("🧾 HTML / Text")
         html_label.setObjectName("SectionTitle")
         layout.addWidget(html_label)
 
@@ -6430,8 +6616,8 @@ class LiteDeskStudio(QMainWindow):
 
         bottom = QHBoxLayout()
 
-        self.btn_apply = QPushButton("反映")
-        self.btn_reset_selection = QPushButton("選択解除")
+        self.btn_apply = QPushButton("✅ 反映")
+        self.btn_reset_selection = QPushButton("🧹 選択解除")
 
         self.btn_apply.clicked.connect(lambda: self.apply_properties(save=True))
         self.btn_reset_selection.clicked.connect(self.clear_selection)
