@@ -64,6 +64,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QScrollArea,
     QDoubleSpinBox,
+    QComboBox,
 )
 
 warnings.filterwarnings(
@@ -72,16 +73,31 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "LiteDeskEngine"
+APP_NAME = "LiteDesktopStudio v1.5.0"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
 DEFAULT_NETWORK_UP_COLOR = "#80FF9F"
 DEFAULT_STUDIO_THEME = "dark"
+STUDIO_THEME_LIQUID_GLASS = "liquid_glass"
 STUDIO_THEME_DARK = "dark"
+STUDIO_THEME_MATERIAL = "material"
 STUDIO_THEME_LIGHT = "light"
+STUDIO_THEME_ORDER = [
+    STUDIO_THEME_LIQUID_GLASS,
+    STUDIO_THEME_DARK,
+    STUDIO_THEME_MATERIAL,
+    STUDIO_THEME_LIGHT,
+]
+STUDIO_THEME_LABELS = {
+    STUDIO_THEME_LIQUID_GLASS: "リキッドグラス",
+    STUDIO_THEME_DARK: "ダーク",
+    STUDIO_THEME_MATERIAL: "マテリアル",
+    STUDIO_THEME_LIGHT: "ライト",
+}
+STUDIO_ACCENT_SOFT_RED = "#FFB3B3"
+STUDIO_ACCENT_SOFT_RED_STRONG = "#FF8F8F"
 THREADS = []
-
 EFFECT_KIND_RAIN = "rain"
 EFFECT_KIND_PARTICLES = "particles"
 EFFECT_KIND_NOISE = "noise"
@@ -205,6 +221,15 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
 class EffectsOverlayEditorDialog(QDialog):
     def __init__(self, widget, parent=None):
         super().__init__(parent)
+        try:
+            canvas = getattr(parent, "canvas", None)
+            theme = get_canvas_studio_theme(canvas) if canvas is not None else DEFAULT_STUDIO_THEME
+            self.setWindowOpacity(get_studio_window_opacity(theme))
+        except Exception:
+            try:
+                self.setWindowOpacity(0.90)
+            except Exception:
+                pass
         from PySide6.QtWidgets import QTabWidget, QGroupBox
 
         self.widget = widget
@@ -212,7 +237,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle("エフェクト設定")
+        self.setWindowTitle("Lite Desktop Studio v1.5.0 - エフェクト設定")
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -1476,27 +1501,55 @@ class Thread:
             pass
 
 def normalize_studio_theme(value):
-    value = (value or "").strip().lower()
-
-    if value in (STUDIO_THEME_DARK, STUDIO_THEME_LIGHT):
-        return value
-
-    return DEFAULT_STUDIO_THEME
+    value = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "glass": STUDIO_THEME_LIQUID_GLASS,
+        "liquid": STUDIO_THEME_LIQUID_GLASS,
+        "liquidglass": STUDIO_THEME_LIQUID_GLASS,
+        "liquid_glass": STUDIO_THEME_LIQUID_GLASS,
+        "dark": STUDIO_THEME_DARK,
+        "material": STUDIO_THEME_MATERIAL,
+        "material_design": STUDIO_THEME_MATERIAL,
+        "light": STUDIO_THEME_LIGHT,
+        "soft_light": STUDIO_THEME_LIGHT,
+    }
+    return aliases.get(value, DEFAULT_STUDIO_THEME)
 
 
 def get_next_studio_theme(value):
     value = normalize_studio_theme(value)
+    try:
+        index = STUDIO_THEME_ORDER.index(value)
+    except ValueError:
+        index = 0
+    return STUDIO_THEME_ORDER[(index + 1) % len(STUDIO_THEME_ORDER)]
 
-    if value == STUDIO_THEME_DARK:
-        return STUDIO_THEME_LIGHT
 
-    return STUDIO_THEME_DARK
+def get_studio_theme_label(value):
+    value = normalize_studio_theme(value)
+    return STUDIO_THEME_LABELS.get(value, STUDIO_THEME_LABELS[DEFAULT_STUDIO_THEME])
+
+
+def get_studio_window_opacity(theme):
+    theme = normalize_studio_theme(theme)
+    if theme == STUDIO_THEME_LIQUID_GLASS:
+        return 0.88
+    if theme == STUDIO_THEME_DARK:
+        return 0.94
+    if theme == STUDIO_THEME_MATERIAL:
+        return 0.94
+    if theme == STUDIO_THEME_LIGHT:
+        return 0.96
+    return 0.92
+
 
 def set_canvas_studio_theme(canvas, theme):
     canvas.studio_theme = normalize_studio_theme(theme)
 
+
 def get_canvas_studio_theme(canvas):
     return normalize_studio_theme(getattr(canvas, "studio_theme", DEFAULT_STUDIO_THEME))
+
 
 class DummyVolumeController:
     def __init__(self):
@@ -5808,7 +5861,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle("ウィジェット編集")
+        self.setWindowTitle("Lite Desktop Studio v1.5.0 - ウィジェット編集")
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -5866,298 +5919,106 @@ class WidgetEditor(QDialog):
 class LiteDeskStudio(QMainWindow):
     def __init__(self, canvas):
         super().__init__()
+        self.STUDIO_LIQUID_GLASS_STYLESHEET = """
+            QMainWindow { background: rgba(8, 14, 24, 92); color: #FFF7F7; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #FFF7F7; background: transparent; }
+            QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog {
+                background: rgba(24, 36, 54, 150); border: 1px solid rgba(255, 214, 214, 82); border-radius: 24px;
+            }
+            QScrollArea#PropertyScrollArea, QScrollArea#SideScrollArea { background: transparent; border: none; }
+            QScrollArea#PropertyScrollArea > QWidget > QWidget, QScrollArea#SideScrollArea > QWidget > QWidget {
+                background: rgba(24, 36, 54, 138); border: 1px solid rgba(255, 214, 214, 66); border-radius: 24px;
+            }
+            QLabel#Title { font-size: 22px; font-weight: 800; color: #FFFFFF; }
+            QLabel#SectionTitle { font-size: 13px; font-weight: 800; color: #FFD0D0; margin-top: 8px; }
+            QLabel#SubText, QLabel#StatusText { color: rgba(245, 232, 232, 210); font-size: 12px; }
+            QPushButton, QComboBox { background: rgba(255,255,255,30); color: #FFF7F7; border: 1px solid rgba(255,210,210,92); border-radius: 15px; padding: 8px 12px; font-weight: 650; }
+            QPushButton:hover, QComboBox:hover { background: rgba(255,160,160,62); border: 1px solid rgba(255,165,165,165); }
+            QPushButton:pressed { background: rgba(220,120,120,96); }
+            QComboBox::drop-down { border: none; width: 28px; }
+            QComboBox QAbstractItemView { background: rgba(30,18,24,242); color: #FFF7F7; selection-background-color: #FFB3B3; selection-color: #1F1010; border: 1px solid rgba(255,210,210,120); outline: 0; }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox { background: rgba(12,8,14,118); color: #FFFFFF; border: 1px solid rgba(255,205,205,86); border-radius: 13px; padding: 7px; selection-background-color: #EFA0A0; selection-color: #241010; }
+            QTextEdit#HelpBox, QListWidget { background: rgba(16,10,16,120); color: #F8E8E8; border: 1px solid rgba(255,214,214,64); border-radius: 17px; }
+            QListWidget { padding: 6px; }
+            QListWidget::item { padding: 9px; border-radius: 12px; }
+            QListWidget::item:selected { background: rgba(239,160,160,160); color: #1F1010; }
+            QListWidget::item:hover { background: rgba(255,255,255,28); }
+            QListWidget#LayerList { background: rgba(255,238,238,58); color: #FFF8F8; border: 1px solid rgba(255,220,220,118); border-radius: 18px; padding: 8px; outline: 0; }
+            QListWidget#LayerList::item { background: rgba(255,255,255,28); color: #FFF8F8; border: 1px solid rgba(255,225,225,46); border-radius: 12px; padding: 9px 10px; margin: 3px 2px; }
+            QListWidget#LayerList::item:hover { background: rgba(255,190,190,86); color: #FFFFFF; border: 1px solid rgba(255,220,220,130); }
+            QListWidget#LayerList::item:selected, QListWidget#LayerList::item:selected:active, QListWidget#LayerList::item:selected:!active { background: rgba(255,188,188,218); color: #241010; border: 1px solid rgba(255,235,235,230); font-weight: 800; }
+            QCheckBox { spacing: 8px; color: #FFF7F7; }
+            QCheckBox::indicator { width: 18px; height: 18px; border-radius: 6px; border: 1px solid rgba(255,205,205,115); background: rgba(255,255,255,24); }
+            QCheckBox::indicator:checked { background: #FFB3B3; border: 1px solid #FFE0E0; }
+            QTabWidget::pane { background: rgba(12,8,16,82); border: 1px solid rgba(255,214,214,56); border-radius: 18px; top: -1px; }
+            QTabBar::tab { background: rgba(255,255,255,22); color: rgba(255,240,240,220); border: 1px solid rgba(255,214,214,52); border-bottom: none; padding: 8px 14px; margin-right: 4px; border-top-left-radius: 12px; border-top-right-radius: 12px; }
+            QTabBar::tab:selected { background: rgba(255,170,170,98); color: #FFFFFF; border: 1px solid rgba(255,210,210,165); }
+            QScrollBar:vertical { background: transparent; width: 11px; margin: 8px 2px 8px 2px; }
+            QScrollBar::handle:vertical { background: rgba(255,190,190,86); border-radius: 5px; min-height: 34px; }
+        """
+
+        # Dark / Material は背景を黒めにし、アクセントだけ薄い赤で残します。
         self.STUDIO_DARK_STYLESHEET = """
-                    QMainWindow {
-                        background: #0F1117;
-                        color: #F5F7FA;
-                    }
+            QMainWindow { background: rgba(7, 10, 16, 218); color: #FFF7F7; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #FFF7F7; background: transparent; }
+            QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog { background: rgba(13,17,24,224); border: 1px solid rgba(78,86,104,170); border-radius: 18px; }
+            QScrollArea#PropertyScrollArea, QScrollArea#SideScrollArea { background: transparent; border: none; }
+            QLabel#Title { font-size: 22px; font-weight: 800; color: #FFFFFF; }
+            QLabel#SectionTitle { font-size: 13px; font-weight: 800; color: #FFB3B3; margin-top: 8px; }
+            QLabel#SubText, QLabel#StatusText { color: #C7B0B0; font-size: 12px; }
+            QPushButton, QComboBox { background: rgba(30,37,49,210); color: #FFFFFF; border: 1px solid rgba(82,92,112,190); border-radius: 12px; padding: 8px 12px; font-weight: 600; }
+            QPushButton:hover, QComboBox:hover { background: rgba(48,42,46,224); border: 1px solid #FF8F8F; }
+            QComboBox::drop-down { border: none; width: 28px; }
+            QComboBox QAbstractItemView { background: rgba(14,19,28,242); color: #FFF7F7; selection-background-color: #E98686; selection-color: #FFFFFF; border: 1px solid rgba(82,92,112,190); outline: 0; }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox { background: rgba(12,17,26,214); color: #FFFFFF; border: 1px solid rgba(70,82,104,190); border-radius: 10px; padding: 7px; selection-background-color: #E98686; }
+            QTextEdit#HelpBox, QListWidget { background: rgba(12,17,26,210); color: #E6D6D6; border: 1px solid rgba(58,68,86,190); border-radius: 14px; }
+            QListWidget::item { padding: 9px; border-radius: 10px; }
+            QListWidget::item:selected { background: #E98686; color: white; }
+            QCheckBox { spacing: 8px; color: #FFF7F7; }
+            QTabWidget::pane { border: 1px solid rgba(58,68,86,190); border-radius: 14px; background: rgba(14,20,30,206); }
+            QTabBar::tab { background: rgba(28,36,48,210); color: #D8C8C8; border: 1px solid rgba(58,68,86,190); padding: 8px 14px; margin-right: 4px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
+            QTabBar::tab:selected { background: rgba(74,44,44,230); color: #FFFFFF; border: 1px solid #FF8F8F; }
+            QScrollBar:vertical { background: transparent; width: 10px; margin: 8px 2px 8px 2px; }
+            QScrollBar::handle:vertical { background: rgba(68,78,96,190); border-radius: 5px; min-height: 34px; }
+        """
 
-                    QWidget {
-                        font-family: "Segoe UI";
-                        color: #F5F7FA;
-                        background: transparent;
-                    }
+        self.STUDIO_MATERIAL_STYLESHEET = """
+            QMainWindow { background: rgba(17,19,24,222); color: #FFF7F7; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #FFF7F7; background: transparent; }
+            QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog { background: rgba(27,31,39,224); border: 1px solid rgba(65,75,92,176); border-radius: 12px; }
+            QLabel#Title { font-size: 22px; font-weight: 800; color: #FFFFFF; }
+            QLabel#SectionTitle { font-size: 13px; font-weight: 800; color: #F2A6A6; margin-top: 8px; }
+            QLabel#SubText, QLabel#StatusText { color: #CDB8B8; font-size: 12px; }
+            QPushButton, QComboBox { background: rgba(42,49,61,222); color: #FFF0F0; border: 1px solid rgba(74,84,104,205); border-radius: 8px; padding: 8px 12px; font-weight: 650; }
+            QPushButton:hover, QComboBox:hover { background: rgba(56,58,68,228); border: 1px solid #F2A6A6; }
+            QComboBox::drop-down { border: none; width: 28px; }
+            QComboBox QAbstractItemView { background: rgba(27,31,39,242); color: #FFF7F7; selection-background-color: #F2A6A6; selection-color: #241010; border: 1px solid #4A5468; outline: 0; }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox { background: rgba(18,22,29,218); color: #FFF7F7; border: 1px solid rgba(74,84,104,205); border-radius: 8px; padding: 7px; selection-background-color: #F2A6A6; }
+            QTextEdit#HelpBox, QListWidget { background: rgba(18,22,29,214); color: #E5D4D4; border: 1px solid rgba(56,64,78,205); border-radius: 10px; }
+            QListWidget::item:selected { background: #F2A6A6; color: #241010; }
+            QTabWidget::pane { border: 1px solid rgba(56,64,78,205); border-radius: 10px; background: rgba(23,27,35,214); }
+            QTabBar::tab { background: rgba(32,38,49,214); color: #DCCACA; border: 1px solid rgba(56,64,78,205); padding: 8px 14px; margin-right: 3px; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+            QTabBar::tab:selected { background: rgba(58,52,58,230); color: #FFFFFF; border: 1px solid #F2A6A6; }
+        """
 
-                    QWidget#SidePanel,
-                    QWidget#CenterPanel,
-                    QWidget#PropertyPanel {
-                        background: #151922;
-                        border: 1px solid #252B38;
-                        border-radius: 16px;
-                    }
-
-                    QLabel#Title {
-                        font-size: 22px;
-                        font-weight: 700;
-                        color: #FFFFFF;
-                    }
-
-                    QLabel#SectionTitle {
-                        font-size: 13px;
-                        font-weight: 700;
-                        color: #80FF9F;
-                        margin-top: 6px;
-                    }
-
-                    QLabel#SubText,
-                    QLabel#StatusText {
-                        color: #AAB2C0;
-                        font-size: 12px;
-                    }
-
-                    QPushButton {
-                        background: #232A38;
-                        color: #FFFFFF;
-                        border: 1px solid #343D50;
-                        border-radius: 10px;
-                        padding: 8px 10px;
-                    }
-
-                    QPushButton:hover {
-                        background: #24382D;
-                        border: 1px solid #3DDC84;
-                    }
-
-                    QPushButton:pressed {
-                        background: #1C2230;
-                    }
-
-                    QPushButton:disabled {
-                        background: #1A1D25;
-                        color: #555C68;
-                        border: 1px solid #242936;
-                    }
-
-                    QLineEdit,
-                    QTextEdit,
-                    QSpinBox {
-                        background: #0F131C;
-                        color: #FFFFFF;
-                        border: 1px solid #30384A;
-                        border-radius: 8px;
-                        padding: 6px;
-                        selection-background-color: #2FA866;
-                    }
-
-                    QTextEdit#HelpBox {
-                        background: #10141C;
-                        color: #BFC7D5;
-                        border: 1px solid #252B38;
-                        border-radius: 12px;
-                    }
-
-                    QListWidget {
-                        background: #0F131C;
-                        border: 1px solid #30384A;
-                        border-radius: 10px;
-                        padding: 4px;
-                    }
-
-                    QListWidget::item {
-                        padding: 8px;
-                        border-radius: 8px;
-                    }
-
-                    QListWidget::item:selected {
-                        background: #2FA866;
-                        color: white;
-                    }
-
-                    QListWidget::item:hover {
-                        background: #222A38;
-                    }
-
-                    QCheckBox {
-                        spacing: 8px;
-                        color: #FFFFFF;
-                    }
-
-                    QCheckBox::indicator {
-                        width: 18px;
-                        height: 18px;
-                    }
-                    QScrollArea#PropertyScrollArea {
-                        background: transparent;
-                        border: none;
-                    }
-
-                    QScrollArea#PropertyScrollArea > QWidget > QWidget {
-                        background: #151922;
-                        border: 1px solid #252B38;
-                        border-radius: 16px;
-                    }
-
-                    QScrollBar:vertical {
-                        background: transparent;
-                        width: 10px;
-                        margin: 8px 2px 8px 2px;
-                    }
-
-                    QScrollBar::handle:vertical {
-                        background: #343D50;
-                        border-radius: 5px;
-                        min-height: 30px;
-                    }
-
-                    QScrollBar::handle:vertical:hover {
-                        background: #51617D;
-                    }
-
-                    QScrollBar::add-line:vertical,
-                    QScrollBar::sub-line:vertical {
-                        height: 0px;
-                    }
-
-                    QScrollBar::add-page:vertical,
-                    QScrollBar::sub-page:vertical {
-                        background: transparent;
-                    }
-                """
         self.STUDIO_LIGHT_STYLESHEET = """
-                    QMainWindow {
-                        background: #F3F5F9;
-                        color: #111318;
-                    }
-
-                    QWidget {
-                        font-family: "Segoe UI";
-                        color: #111318;
-                        background: transparent;
-                    }
-
-                    QWidget#SidePanel,
-                    QWidget#CenterPanel,
-                    QWidget#PropertyPanel {
-                        background: #FFFFFF;
-                        border: 1px solid #DDE2EA;
-                        border-radius: 16px;
-                    }
-
-                    QLabel#Title {
-                        font-size: 22px;
-                        font-weight: 700;
-                        color: #111318;
-                    }
-
-                    QLabel#SectionTitle {
-                        font-size: 13px;
-                        font-weight: 700;
-                        color: #2FA866;
-                        margin-top: 6px;
-                    }
-
-                    QLabel#SubText,
-                    QLabel#StatusText {
-                        color: #5A6475;
-                        font-size: 12px;
-                    }
-
-                    QPushButton {
-                        background: #FFFFFF;
-                        color: #111318;
-                        border: 1px solid #CED5E0;
-                        border-radius: 10px;
-                        padding: 8px 10px;
-                    }
-
-                    QPushButton:hover {
-                        background: #EFFFF4;
-                        border: 1px solid #80FF9F;
-                    }
-
-                    QPushButton:pressed {
-                        background: #D7FFE3;
-                    }
-
-                    QPushButton:disabled {
-                        background: #F1F3F6;
-                        color: #A0A8B5;
-                        border: 1px solid #D8DDE5;
-                    }
-
-                    QLineEdit,
-                    QTextEdit,
-                    QSpinBox {
-                        background: #FFFFFF;
-                        color: #111318;
-                        border: 1px solid #CCD3DD;
-                        border-radius: 8px;
-                        padding: 6px;
-                        selection-background-color: #2FA866;
-                    }
-
-                    QTextEdit#HelpBox {
-                        background: #F8FAFE;
-                        color: #384252;
-                        border: 1px solid #DDE2EA;
-                        border-radius: 12px;
-                    }
-
-                    QListWidget {
-                        background: #FFFFFF;
-                        border: 1px solid #CCD3DD;
-                        border-radius: 10px;
-                        padding: 4px;
-                    }
-
-                    QListWidget::item {
-                        padding: 8px;
-                        border-radius: 8px;
-                    }
-
-                    QListWidget::item:selected {
-                        background: #2FA866;
-                        color: white;
-                    }
-
-                    QListWidget::item:hover {
-                        background: #EFFFF4;
-                    }
-
-                    QCheckBox {
-                        spacing: 8px;
-                        color: #111318;
-                    }
-
-                    QCheckBox::indicator {
-                        width: 18px;
-                        height: 18px;
-                    }
-                    QScrollArea#PropertyScrollArea {
-                        background: transparent;
-                        border: none;
-                    }
-
-                    QScrollArea#PropertyBar::handle:vertical {QScrollArea#PropertyScrollArea > QWidget > QWidget {
-                        background: #C5CDDA;
-                        border-radius: 5px;
-                        min-height: 30px;
-                    }
-
-                    QScrollBar::handle:vertical:hover {
-                        background: #9AA8BB;
-                    }
-
-                    QScrollBar::add-line:vertical,
-                    QScrollBar::sub-line:vertical {
-                        height: 0px;
-                    }
-
-                    QScrollBar::add-page:vertical,
-                    QScrollBar::sub-page:vertical {
-                        background: transparent;
-                    }
-                        background: #FFFFFF;
-                        border: 1px solid #DDE2EA;
-                        border-radius: 16px;
-                    }
-
-                    QScrollBar:vertical {
-                        background: transparent;
-                        width: 10px;
-                        margin: 8px 2px 8px 2px;
-                    }
-                """
+            QMainWindow { background: rgba(232,224,226,222); color: #2D2020; }
+            QWidget { font-family: "Segoe UI", "Yu Gothic UI"; color: #2D2020; background: transparent; }
+            QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog { background: rgba(252,247,247,218); border: 1px solid rgba(210,181,181,200); border-radius: 18px; }
+            QLabel#Title { font-size: 22px; font-weight: 800; color: #291A1A; }
+            QLabel#SectionTitle { font-size: 13px; font-weight: 800; color: #B85E5E; margin-top: 8px; }
+            QLabel#SubText, QLabel#StatusText { color: #755959; font-size: 12px; }
+            QPushButton, QComboBox { background: rgba(248,238,238,220); color: #2D2020; border: 1px solid rgba(204,174,174,205); border-radius: 12px; padding: 8px 12px; font-weight: 650; }
+            QPushButton:hover, QComboBox:hover { background: rgba(244,227,227,230); border: 1px solid #EFA0A0; }
+            QComboBox::drop-down { border: none; width: 28px; }
+            QComboBox QAbstractItemView { background: rgba(252,247,247,245); color: #2D2020; selection-background-color: #F2B6B6; selection-color: #2A1212; border: 1px solid #D8BABA; outline: 0; }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox { background: rgba(255,255,255,226); color: #2D2020; border: 1px solid rgba(219,197,197,205); border-radius: 10px; padding: 7px; selection-background-color: #F2B6B6; selection-color: #2A1212; }
+            QTextEdit#HelpBox, QListWidget { background: rgba(248,242,242,222); color: #513333; border: 1px solid rgba(229,210,210,205); border-radius: 14px; }
+            QListWidget::item:selected { background: #F2B6B6; color: #2A1212; }
+            QTabWidget::pane { border: 1px solid rgba(229,210,210,205); border-radius: 14px; background: rgba(248,242,242,210); }
+            QTabBar::tab { background: rgba(243,231,231,218); color: #684C4C; border: 1px solid rgba(229,210,210,205); padding: 8px 14px; margin-right: 4px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
+            QTabBar::tab:selected { background: rgba(252,247,247,232); color: #2D2020; border: 1px solid #D8BABA; }
+        """
         if os.path.exists(os.path.join(os.getcwd(), 'icon.png')):
             self.setWindowIcon(QIcon(os.path.join(os.getcwd(), 'icon.png')))
         self.updating_ui = False
@@ -6165,7 +6026,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle("LiteDesk Studio")
+        self.setWindowTitle("Lite Desktop Studio v1.5.0")
         self.resize(960, 640)
 
         self.build_ui()
@@ -6263,6 +6124,7 @@ class LiteDeskStudio(QMainWindow):
         layout.addWidget(layer_label)
 
         self.layer_list = QListWidget()
+        self.layer_list.setObjectName("LayerList")
         self.layer_list.currentRowChanged.connect(self.on_layer_selected)
         layout.addWidget(self.layer_list, 1)
 
@@ -6327,10 +6189,11 @@ class LiteDeskStudio(QMainWindow):
         self.edit_mode_check.setChecked(self.canvas.edit_mode)
         self.edit_mode_check.stateChanged.connect(self.on_edit_mode_changed)
         top.addWidget(self.edit_mode_check)
-        self.btn_toggle_studio_theme = QPushButton()
-        self.btn_toggle_studio_theme.setMinimumHeight(32)
-        self.btn_toggle_studio_theme.clicked.connect(self.toggle_studio_theme)
-        top.addWidget(self.btn_toggle_studio_theme)
+        self.theme_combo = QComboBox()
+        self.theme_combo.setMinimumHeight(32)
+        self.populate_studio_theme_combo()
+        self.theme_combo.currentIndexChanged.connect(self.on_studio_theme_combo_changed)
+        top.addWidget(self.theme_combo)
         self.update_studio_theme_button_text()
         layout.addLayout(top)
 
@@ -7225,57 +7088,95 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Audio: {audio_mode} | Volume API: {volume}"
+            f"Theme: {theme} | Lite Desktop Studio v1.5.0 を使用しています。"
         )
 
         self.performance_text.setPlainText(
             "軽量化状態:\n"
             f"・Widget count: {len(self.canvas.widgets)}\n"
             "・Renderer: QPainter direct rendering\n"
-            "・HTML: QTextDocument based, no WebEngine\n"
-            "・System monitor update: throttled\n"
             "・Audio analysis: background thread\n"
             "・Config save: JSON"
         )
 
     def apply_studio_theme_stylesheet(self, studio, theme):
         theme = normalize_studio_theme(theme)
+        stylesheet_map = {
+            STUDIO_THEME_LIQUID_GLASS: self.STUDIO_LIQUID_GLASS_STYLESHEET,
+            STUDIO_THEME_DARK: self.STUDIO_DARK_STYLESHEET,
+            STUDIO_THEME_MATERIAL: self.STUDIO_MATERIAL_STYLESHEET,
+            STUDIO_THEME_LIGHT: self.STUDIO_LIGHT_STYLESHEET,
+        }
+        studio.setStyleSheet(stylesheet_map.get(theme, self.STUDIO_LIQUID_GLASS_STYLESHEET))
 
-        if theme == STUDIO_THEME_LIGHT:
-            studio.setStyleSheet(self.STUDIO_LIGHT_STYLESHEET)
-        else:
-            studio.setStyleSheet(self.STUDIO_DARK_STYLESHEET)
+    def apply_window_opacity(self):
+        try:
+            theme = get_canvas_studio_theme(self.canvas)
+            self.setWindowOpacity(get_studio_window_opacity(theme))
+        except Exception:
+            try:
+                self.setWindowOpacity(0.92)
+            except Exception:
+                pass
 
     def apply_style(self):
         theme = get_canvas_studio_theme(self.canvas)
         self.apply_studio_theme_stylesheet(self, theme)
+        self.apply_window_opacity()
         self.update_studio_theme_button_text()
 
     def init_studio_theme_button(self, parent_layout):
-        self.btn_toggle_studio_theme = QPushButton()
-        self.btn_toggle_studio_theme.setMinimumHeight(32)
-        self.btn_toggle_studio_theme.clicked.connect(self.toggle_studio_theme)
-        parent_layout.addWidget(self.btn_toggle_studio_theme)
+        self.theme_combo = QComboBox()
+        self.theme_combo.setMinimumHeight(32)
+        self.populate_studio_theme_combo()
+        self.theme_combo.currentIndexChanged.connect(self.on_studio_theme_combo_changed)
+        parent_layout.addWidget(self.theme_combo)
         self.update_studio_theme_button_text()
 
-    def update_studio_theme_button_text(self):
-        if not hasattr(self, "btn_toggle_studio_theme"):
+    def populate_studio_theme_combo(self):
+        if not hasattr(self, "theme_combo"):
             return
+        self.theme_combo.blockSignals(True)
+        try:
+            self.theme_combo.clear()
+            for theme in STUDIO_THEME_ORDER:
+                self.theme_combo.addItem(get_studio_theme_label(theme), theme)
+        finally:
+            self.theme_combo.blockSignals(False)
 
+    def update_studio_theme_button_text(self):
+        if not hasattr(self, "theme_combo"):
+            return
         theme = get_canvas_studio_theme(self.canvas)
+        self.theme_combo.blockSignals(True)
+        try:
+            index = self.theme_combo.findData(theme)
+            if index < 0:
+                self.populate_studio_theme_combo()
+                index = self.theme_combo.findData(theme)
+            if index >= 0:
+                self.theme_combo.setCurrentIndex(index)
+        finally:
+            self.theme_combo.blockSignals(False)
 
-        if theme == STUDIO_THEME_DARK:
-            self.btn_toggle_studio_theme.setText("テーマ: ダーク")
-        else:
-            self.btn_toggle_studio_theme.setText("テーマ: ライト")
+    def on_studio_theme_combo_changed(self, index):
+        if not hasattr(self, "theme_combo"):
+            return
+        theme = self.theme_combo.itemData(index)
+        if not theme:
+            return
+        set_canvas_studio_theme(self.canvas, theme)
+        self.apply_style()
+        try:
+            self.canvas.save_config()
+        except Exception:
+            pass
 
     def toggle_studio_theme(self):
         current = get_canvas_studio_theme(self.canvas)
         next_theme = get_next_studio_theme(current)
         set_canvas_studio_theme(self.canvas, next_theme)
-
         self.apply_style()
-
         try:
             self.canvas.save_config()
         except Exception:
