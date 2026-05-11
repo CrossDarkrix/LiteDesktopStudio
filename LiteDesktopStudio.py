@@ -2697,6 +2697,8 @@ class WidgetConfig:
     disk_color: str = "#80FF9F"
     clock_show_digital: bool = True
     visualizer_flip_vertical: bool = False
+    visualizer_peak_bar_enabled: bool = True
+    visualizer_glow_enabled: bool = True
     weather_location: str = ""
     network_down_color: str = "#5BE7FF"
     network_up_color: str = "#80FF9F"
@@ -2704,6 +2706,13 @@ class WidgetConfig:
     effects_json: str = "{}"
     effects_follow_mouse: bool = True
 
+
+def widget_config_from_dict(item):
+    if not isinstance(item, dict):
+        item = {}
+    valid_keys = set(WidgetConfig.__dataclass_fields__.keys())
+    filtered = {k: v for k, v in item.items() if k in valid_keys}
+    return WidgetConfig(**filtered)
 
 class BaseWidget:
     def __init__(self, cfg: WidgetConfig):
@@ -4273,6 +4282,16 @@ class EffectsOverlayWidget(BaseWidget):
         p.drawRoundedRect(self.rect, 16, 16)
 
 class VisualizerWidget(BaseWidget):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self._peak_levels = []
+        self._last_peak_update = time.time()
+
+    def _ensure_peak_levels(self, count):
+        if len(self._peak_levels) != count:
+            self._peak_levels = [0.0 for _ in range(count)]
+            self._last_peak_update = time.time()
+
     def paint(self, p: QPainter, ctx: Dict):
         audio: AudioEngine = ctx["audio"]
         bars = audio.get_spectrum()
@@ -4280,48 +4299,83 @@ class VisualizerWidget(BaseWidget):
         r = self.rect
         radius = 16
 
-        p.setRenderHint(QPainter.Antialiasing, False)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         bg = widget_bg_color(self.cfg)
         p.setBrush(QBrush(bg))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, radius, radius)
 
         margin = 14
-        available_w = r.width() - margin * 2
-        available_h = r.height() - margin * 2 - 18
+        available_w = max(1.0, r.width() - margin * 2)
+        available_h = max(1.0, r.height() - margin * 2 - 18)
         bar_gap = 3
-        bar_w = max(2, (available_w / len(bars)) - bar_gap)
+        bar_w = max(2.0, (available_w / max(1, len(bars))) - bar_gap)
 
         color = QColor(self.cfg.color)
-
-        grad = QLinearGradient(r.left(), r.top(), r.left(), r.bottom())
-        grad.setColorAt(0, QColor(color.red(), color.green(), color.blue(), 240))
-        grad.setColorAt(1, QColor(255, 255, 255, 90))
-
-        p.setBrush(QBrush(grad))
-        p.setPen(Qt.NoPen)
-
         flip_vertical = bool(getattr(self.cfg, "visualizer_flip_vertical", False))
+        peak_bar_enabled = bool(getattr(self.cfg, "visualizer_peak_bar_enabled", True))
+        glow_enabled = bool(getattr(self.cfg, "visualizer_glow_enabled", True))
+
         base_y = r.bottom() - margin
         top_y = r.top() + margin + 18
 
+        now = time.time()
+        dt = max(0.001, min(0.08, now - getattr(self, "_last_peak_update", now)))
+        self._last_peak_update = now
+        self._ensure_peak_levels(len(bars))
+
+        # ピークバーはゆっくり落ちるので、音楽バーが押し上げているように見える。
+        peak_decay = 1.15 * dt
+
         for i, v in enumerate(bars):
-            h = max(2, available_h * float(v))
+            value = max(0.0, min(1.0, float(v)))
+            h = max(2.0, available_h * value)
             x = r.left() + margin + i * (bar_w + bar_gap)
+
+            if peak_bar_enabled:
+                self._peak_levels[i] = max(value, max(0.0, self._peak_levels[i] - peak_decay))
+            else:
+                self._peak_levels[i] = value
 
             if flip_vertical:
                 y = top_y
+                bar_rect = QRectF(x, y, bar_w, h)
+                peak_y = top_y + available_h * self._peak_levels[i]
             else:
                 y = base_y - h
+                bar_rect = QRectF(x, y, bar_w, h)
+                peak_y = base_y - available_h * self._peak_levels[i]
 
-            p.drawRoundedRect(
-                QRectF(x, y, bar_w, h),
-                3,
-                3
-            )
+            if glow_enabled and value > 0.025:
+                self._draw_visualizer_bar_glow(p, bar_rect, color, value, flip_vertical)
 
-        p.setRenderHint(QPainter.Antialiasing, True)
+            grad = QLinearGradient(bar_rect.left(), bar_rect.top(), bar_rect.left(), bar_rect.bottom())
+            if flip_vertical:
+                grad.setColorAt(0.0, QColor(255, 255, 255, 105))
+                grad.setColorAt(0.38, QColor(color.red(), color.green(), color.blue(), 245))
+                grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 165))
+            else:
+                grad.setColorAt(0.0, QColor(255, 255, 255, 110))
+                grad.setColorAt(0.35, QColor(color.red(), color.green(), color.blue(), 245))
+                grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 165))
+
+            p.setBrush(QBrush(grad))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(bar_rect, 3, 3)
+
+            if peak_bar_enabled:
+                self._draw_visualizer_peak_bar(
+                    p,
+                    x,
+                    peak_y,
+                    bar_w,
+                    color,
+                    value,
+                    flip_vertical
+                )
+
         p.setPen(QColor(230, 240, 255, 220))
         p.setFont(QFont("Segoe UI", 9))
         label = ""
@@ -4332,11 +4386,63 @@ class VisualizerWidget(BaseWidget):
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
 
+        p.restore()
+
+    def _draw_visualizer_bar_glow(self, p: QPainter, bar_rect: QRectF, color: QColor, value: float, flip_vertical: bool):
+        glow = QColor(color)
+        glow.setAlpha(max(18, min(145, int(42 + value * 125))))
+        halo = QRectF(
+            bar_rect.left() - max(2.0, bar_rect.width() * 0.45),
+            bar_rect.top() - 5,
+            bar_rect.width() + max(4.0, bar_rect.width() * 0.9),
+            bar_rect.height() + 10,
+        )
+        p.save()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(glow))
+        p.drawRoundedRect(halo, 5, 5)
+
+        # 上端/下端に近いところをさらに淡く光らせる。
+        edge_alpha = max(20, min(120, int(30 + value * 100)))
+        edge = QColor(color)
+        edge.setAlpha(edge_alpha)
+        p.setBrush(QBrush(edge))
+        if flip_vertical:
+            edge_rect = QRectF(bar_rect.left() - 1, bar_rect.bottom() - 3, bar_rect.width() + 2, 6)
+        else:
+            edge_rect = QRectF(bar_rect.left() - 1, bar_rect.top() - 3, bar_rect.width() + 2, 6)
+        p.drawRoundedRect(edge_rect, 3, 3)
+        p.restore()
+
+    def _draw_visualizer_peak_bar(self, p: QPainter, x: float, peak_y: float, bar_w: float, color: QColor, value: float, flip_vertical: bool):
+        p.save()
+        peak_color = QColor(color)
+        peak_color.setAlpha(max(150, min(255, int(165 + value * 90))))
+        shine = QColor(255, 255, 255, max(80, min(210, int(90 + value * 120))))
+
+        cap_h = 3.0
+        cap_w = max(6.0, bar_w + 1.5)
+        cap_x = x - 0.75
+        if flip_vertical:
+            cap_y = peak_y + 2.0
+        else:
+            cap_y = peak_y - cap_h - 2.0
+
+        cap_rect = QRectF(cap_x, cap_y, cap_w, cap_h)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(peak_color))
+        p.drawRoundedRect(cap_rect, 1.5, 1.5)
+
+        # 細いハイライトを重ねて、横バーが光っているようにする。
+        p.setBrush(QBrush(shine))
+        p.drawRoundedRect(QRectF(cap_rect.left(), cap_rect.top(), cap_rect.width(), 1.0), 0.8, 0.8)
+        p.restore()
+
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
 class MediaMetadataEngine:
@@ -6539,6 +6645,10 @@ class LiteDeskStudio(QMainWindow):
         self.prop_clock_show_digital.stateChanged.connect(self.apply_properties_live)
         self.prop_visualizer_flip_vertical = QCheckBox("↕️ ビジュアライザーを上下反転")
         self.prop_visualizer_flip_vertical.stateChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_peak_bar_enabled = QCheckBox("━ スペクトルピークバーを表示")
+        self.prop_visualizer_peak_bar_enabled.stateChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_glow_enabled = QCheckBox("💡 スペクトル発光を有効化")
+        self.prop_visualizer_glow_enabled.stateChanged.connect(self.apply_properties_live)
         self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
         self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
         self.prop_weather_location = QLineEdit()
@@ -6592,8 +6702,12 @@ class LiteDeskStudio(QMainWindow):
         form.addRow("🔤 Font Size", self.prop_font_size)
         form.addRow("", self.prop_clock_show_digital)
         form.addRow("", self.prop_visualizer_flip_vertical)
+        form.addRow("", self.prop_visualizer_peak_bar_enabled)
+        form.addRow("", self.prop_visualizer_glow_enabled)
         self.visualizer_only_property_widgets = [
             self.prop_visualizer_flip_vertical,
+            self.prop_visualizer_peak_bar_enabled,
+            self.prop_visualizer_glow_enabled,
         ]
 
         self.clock_only_property_widgets = [
@@ -6809,6 +6923,8 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_bg_alpha", None),
             getattr(self, "prop_clock_show_digital", None),
             getattr(self, "prop_visualizer_flip_vertical", None),
+            getattr(self, "prop_visualizer_peak_bar_enabled", None),
+            getattr(self, "prop_visualizer_glow_enabled", None),
             getattr(self, "prop_network_down_color", None),
             getattr(self, "prop_network_up_color", None),
         ]
@@ -6843,6 +6959,8 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_clock_show_digital.setChecked(True)
                 self.set_clock_controls_visible(False)
                 self.prop_visualizer_flip_vertical.setChecked(False)
+                self.prop_visualizer_peak_bar_enabled.setChecked(True)
+                self.prop_visualizer_glow_enabled.setChecked(True)
                 self.set_visualizer_controls_visible(False)
                 self.set_weather_controls_visible(False)
                 self.prop_network_down_color.setText("")
@@ -6893,8 +7011,16 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_flip_vertical.setChecked(
                     bool(getattr(cfg, "visualizer_flip_vertical", False))
                 )
+                self.prop_visualizer_peak_bar_enabled.setChecked(
+                    bool(getattr(cfg, "visualizer_peak_bar_enabled", True))
+                )
+                self.prop_visualizer_glow_enabled.setChecked(
+                    bool(getattr(cfg, "visualizer_glow_enabled", True))
+                )
             else:
                 self.prop_visualizer_flip_vertical.setChecked(False)
+                self.prop_visualizer_peak_bar_enabled.setChecked(True)
+                self.prop_visualizer_glow_enabled.setChecked(True)
 
             if cfg.type == "clock":
                 self.prop_clock_show_digital.setChecked(
@@ -6996,6 +7122,8 @@ class LiteDeskStudio(QMainWindow):
             "prop_disk_color",
             "prop_clock_show_digital",
             "prop_visualizer_flip_vertical",
+            "prop_visualizer_peak_bar_enabled",
+            "prop_visualizer_glow_enabled",
             "prop_network_down_color",
             "prop_network_up_color",
 
@@ -7052,6 +7180,8 @@ class LiteDeskStudio(QMainWindow):
 
             if cfg.type == "visualizer":
                 cfg.visualizer_flip_vertical = self.prop_visualizer_flip_vertical.isChecked()
+                cfg.visualizer_peak_bar_enabled = self.prop_visualizer_peak_bar_enabled.isChecked()
+                cfg.visualizer_glow_enabled = self.prop_visualizer_glow_enabled.isChecked()
 
             if cfg.type == "network":
                 cfg.network_down_color = self.prop_network_down_color.text().strip() or "#5BE7FF"
@@ -7665,7 +7795,7 @@ class DesktopCanvas(QWidget):
         self.selected = None
 
         for item in data.get("widgets", []):
-            cfg = WidgetConfig(**item)
+            cfg = widget_config_from_dict(item)
             self.widgets.append(create_widget(cfg))
 
         self.save_config()
@@ -8107,7 +8237,7 @@ class DesktopCanvas(QWidget):
                 self.studio_theme = normalize_studio_theme(data.get("studio_theme", DEFAULT_STUDIO_THEME))
             self.widgets = []
             for item in data.get("widgets", []):
-                cfg = WidgetConfig(**item)
+                cfg = widget_config_from_dict(item)
                 self.widgets.append(create_widget(cfg))
             self.update_platform_hit_mask()
 
