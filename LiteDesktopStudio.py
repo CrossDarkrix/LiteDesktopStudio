@@ -73,7 +73,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "LiteDesktopStudio v1.5.1"
+APP_NAME = "LiteDesktopStudio v1.5.2"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
@@ -215,6 +215,35 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_drop_ripple_enabled": True,
     "water_drop_ripple_chance": 0.75,
     "water_drop_surface_y": 0.86,
+    "sunrise_enabled": False,
+    "sunrise_angle": 0.0,
+    "sunrise_strength": 0.65,
+    "sunrise_warmth": 0.72,
+    "sunrise_horizon_y": 0.72,
+    "sunrise_spread": 0.62,
+    "sunrise_color_top": "#1B2C64",
+    "sunrise_color_mid": "#FF8A5C",
+    "sunrise_color_horizon": "#FFD08A",
+    "sun_enabled": False,
+    "sunlight_enabled": False,
+    "lens_flare_enabled": False,
+    "sun_x": 0.22,
+    "sun_y": 0.22,
+    "sun_radius": 82.0,
+    "sun_alpha": 235,
+    "sun_angle": 0.0,
+    "sun_color": "#FFD36E",
+    "sun_edge_color": "#FF7A3D",
+    "sunlight_angle": 18.0,
+    "sunlight_radius": 420.0,
+    "sunlight_alpha": 92,
+    "sunlight_beam_width": 0.38,
+    "sunlight_color": "#FFD08A",
+    "lens_flare_angle": 18.0,
+    "lens_flare_alpha": 128,
+    "lens_flare_size": 1.0,
+    "lens_flare_count": 6,
+    "lens_flare_color": "#FFE2A6",
     "moon_body_enabled": False,
     "moonlight_enabled": False,
     "moon_shadow_enabled": False,
@@ -262,7 +291,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.1 - エフェクト設定")
+        self.setWindowTitle("Lite Desktop Studio v1.5.2 - エフェクト設定")
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -299,6 +328,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.color_form = self._create_tab("色")
         self.extra_weather_form = self._create_tab("雪・水・火")
         self.extra_sky_form = self._create_tab("空・その他")
+        self.sunrise_form = self._create_tab("朝焼け・太陽")
         self.moon_form = self._create_tab("月")
 
         
@@ -313,6 +343,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self._build_color_tab()
         self._build_extra_weather_tab()
         self._build_extra_sky_tab()
+        self._build_sunrise_tab()
         self._build_moon_tab()
 
         bottom = QHBoxLayout()
@@ -345,6 +376,11 @@ class EffectsOverlayEditorDialog(QDialog):
             "雪・水・火": "❄️",
             "空・その他": "🌌",
             "月": "🌙",
+            "朝焼け・太陽": "🌅",
+            "朝焼け": "🌅",
+            "太陽": "☀️",
+            "太陽光": "🌞",
+            "レンズフレア": "✨",
             "月光": "🌕",
             "月影": "🌘",
             "月本体": "🌝",
@@ -474,6 +510,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled = QCheckBox("中くらいのバラの花")
         self.blooming_roses_enabled = QCheckBox("大きな咲いた花が散る")
         self.sakura_petals_enabled = QCheckBox("桜の花びら")
+        self.sunrise_enabled = QCheckBox("朝焼け")
+        self.sun_enabled = QCheckBox("太陽")
+        self.sunlight_enabled = QCheckBox("太陽光")
+        self.lens_flare_enabled = QCheckBox("レンズフレア")
         self.moon_body_enabled = QCheckBox("月本体")
         self.moonlight_enabled = QCheckBox("月光")
         self.moon_shadow_enabled = QCheckBox("月影")
@@ -491,6 +531,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(getattr(self.settings, "rose_flowers_enabled", False))
         self.blooming_roses_enabled.setChecked(getattr(self.settings, "blooming_roses_enabled", False))
         self.sakura_petals_enabled.setChecked(getattr(self.settings, "sakura_petals_enabled", False))
+        self.sunrise_enabled.setChecked(getattr(self.settings, "sunrise_enabled", False))
+        self.sun_enabled.setChecked(getattr(self.settings, "sun_enabled", False))
+        self.sunlight_enabled.setChecked(getattr(self.settings, "sunlight_enabled", False))
+        self.lens_flare_enabled.setChecked(getattr(self.settings, "lens_flare_enabled", False))
         self.moon_body_enabled.setChecked(getattr(self.settings, "moon_body_enabled", False))
         self.moonlight_enabled.setChecked(getattr(self.settings, "moonlight_enabled", False))
         self.moon_shadow_enabled.setChecked(getattr(self.settings, "moon_shadow_enabled", False))
@@ -503,6 +547,10 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("バラ花", self.rose_flowers_enabled)
         f.addRow("開花バラ", self.blooming_roses_enabled)
         f.addRow("桜", self.sakura_petals_enabled)
+        f.addRow("朝焼け", self.sunrise_enabled)
+        f.addRow("太陽", self.sun_enabled)
+        f.addRow("太陽光", self.sunlight_enabled)
+        f.addRow("レンズフレア", self.lens_flare_enabled)
         f.addRow("月本体", self.moon_body_enabled)
         f.addRow("月光", self.moonlight_enabled)
         f.addRow("月影", self.moon_shadow_enabled)
@@ -787,6 +835,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(True)
         self.blooming_roses_enabled.setChecked(True)
         self.sakura_petals_enabled.setChecked(True)
+        self.sunrise_enabled.setChecked(True)
+        self.sun_enabled.setChecked(True)
+        self.sunlight_enabled.setChecked(True)
+        self.lens_flare_enabled.setChecked(True)
         self.moon_body_enabled.setChecked(True)
         self.moonlight_enabled.setChecked(True)
         self.moon_shadow_enabled.setChecked(True)
@@ -799,6 +851,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self.sunrise_enabled.setChecked(False)
+        self.sun_enabled.setChecked(False)
+        self.sunlight_enabled.setChecked(False)
+        self.lens_flare_enabled.setChecked(False)
         self.moon_body_enabled.setChecked(False)
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
@@ -811,6 +867,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self.sunrise_enabled.setChecked(False)
+        self.sun_enabled.setChecked(False)
+        self.sunlight_enabled.setChecked(False)
+        self.lens_flare_enabled.setChecked(False)
         self.moon_body_enabled.setChecked(False)
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
@@ -823,6 +883,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self.sunrise_enabled.setChecked(False)
+        self.sun_enabled.setChecked(False)
+        self.sunlight_enabled.setChecked(False)
+        self.lens_flare_enabled.setChecked(False)
         self.moon_body_enabled.setChecked(False)
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
@@ -841,6 +905,81 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_petal_sway.setValue(1.15)
         self.rose_petal_size.setValue(18.0)
         self.rose_petal_alpha.setValue(215)
+    def _build_sunrise_tab(self):
+        f = self.sunrise_form
+        self._section(f, "朝焼け")
+        self.sunrise_enabled_tab = QCheckBox("朝焼けを描画")
+        self.sunrise_enabled_tab.setChecked(bool(getattr(self.settings, "sunrise_enabled", False)))
+        self.sunrise_enabled.toggled.connect(self.sunrise_enabled_tab.setChecked)
+        self.sunrise_enabled_tab.toggled.connect(self.sunrise_enabled.setChecked)
+        self.sunrise_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "sunrise_angle", 0.0), 1.0)
+        self.sunrise_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "sunrise_strength", 0.65), 0.01)
+        self.sunrise_warmth = self._double_spin(0.0, 1.0, getattr(self.settings, "sunrise_warmth", 0.72), 0.01)
+        self.sunrise_horizon_y = self._double_spin(0.0, 1.0, getattr(self.settings, "sunrise_horizon_y", 0.72), 0.01)
+        self.sunrise_spread = self._double_spin(0.05, 1.0, getattr(self.settings, "sunrise_spread", 0.62), 0.01)
+        f.addRow("朝焼け", self.sunrise_enabled_tab)
+        f.addRow("朝焼け角度", self.sunrise_angle)
+        f.addRow("朝焼けの強さ", self.sunrise_strength)
+        f.addRow("朝焼け具合", self.sunrise_warmth)
+        f.addRow("地平線Y", self.sunrise_horizon_y)
+        f.addRow("広がり", self.sunrise_spread)
+
+        self._section(f, "太陽")
+        self.sun_enabled_tab = QCheckBox("太陽を描画")
+        self.sun_enabled_tab.setChecked(bool(getattr(self.settings, "sun_enabled", False)))
+        self.sun_enabled.toggled.connect(self.sun_enabled_tab.setChecked)
+        self.sun_enabled_tab.toggled.connect(self.sun_enabled.setChecked)
+        self.sun_x = self._double_spin(0.0, 1.0, getattr(self.settings, "sun_x", 0.22), 0.01)
+        self.sun_y = self._double_spin(0.0, 1.0, getattr(self.settings, "sun_y", 0.22), 0.01)
+        self.sun_radius = self._double_spin(4.0, 3000.0, getattr(self.settings, "sun_radius", 82.0), 1.0)
+        self.sun_alpha = self._int_spin(0, 255, getattr(self.settings, "sun_alpha", 235))
+        self.sun_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "sun_angle", 0.0), 1.0)
+        f.addRow("太陽", self.sun_enabled_tab)
+        f.addRow("太陽X位置", self.sun_x)
+        f.addRow("太陽Y位置", self.sun_y)
+        f.addRow("太陽半径", self.sun_radius)
+        f.addRow("太陽透明度", self.sun_alpha)
+        f.addRow("太陽角度", self.sun_angle)
+
+        self._section(f, "太陽光")
+        self.sunlight_enabled_tab = QCheckBox("太陽光を描画")
+        self.sunlight_enabled_tab.setChecked(bool(getattr(self.settings, "sunlight_enabled", False)))
+        self.sunlight_enabled.toggled.connect(self.sunlight_enabled_tab.setChecked)
+        self.sunlight_enabled_tab.toggled.connect(self.sunlight_enabled.setChecked)
+        self.sunlight_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "sunlight_angle", 18.0), 1.0)
+        self.sunlight_radius = self._double_spin(10.0, 3000.0, getattr(self.settings, "sunlight_radius", 420.0), 5.0)
+        self.sunlight_alpha = self._int_spin(0, 255, getattr(self.settings, "sunlight_alpha", 92))
+        self.sunlight_beam_width = self._double_spin(0.05, 1.0, getattr(self.settings, "sunlight_beam_width", 0.38), 0.01)
+        f.addRow("太陽光", self.sunlight_enabled_tab)
+        f.addRow("太陽光角度", self.sunlight_angle)
+        f.addRow("太陽光半径", self.sunlight_radius)
+        f.addRow("太陽光透明度", self.sunlight_alpha)
+        f.addRow("太陽光幅", self.sunlight_beam_width)
+
+        self._section(f, "レンズフレア")
+        self.lens_flare_enabled_tab = QCheckBox("レンズフレアを描画")
+        self.lens_flare_enabled_tab.setChecked(bool(getattr(self.settings, "lens_flare_enabled", False)))
+        self.lens_flare_enabled.toggled.connect(self.lens_flare_enabled_tab.setChecked)
+        self.lens_flare_enabled_tab.toggled.connect(self.lens_flare_enabled.setChecked)
+        self.lens_flare_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "lens_flare_angle", 18.0), 1.0)
+        self.lens_flare_alpha = self._int_spin(0, 255, getattr(self.settings, "lens_flare_alpha", 128))
+        self.lens_flare_size = self._double_spin(0.1, 4.0, getattr(self.settings, "lens_flare_size", 1.0), 0.05)
+        self.lens_flare_count = self._int_spin(0, 12, getattr(self.settings, "lens_flare_count", 6))
+        f.addRow("レンズフレア", self.lens_flare_enabled_tab)
+        f.addRow("フレア角度", self.lens_flare_angle)
+        f.addRow("フレア透明度", self.lens_flare_alpha)
+        f.addRow("フレアサイズ", self.lens_flare_size)
+        f.addRow("フレア数", self.lens_flare_count)
+
+        self._section(f, "色")
+        self.sunrise_color_top = self._color_row_on(f, "朝焼け上部色", getattr(self.settings, "sunrise_color_top", "#1B2C64"))
+        self.sunrise_color_mid = self._color_row_on(f, "朝焼け中間色", getattr(self.settings, "sunrise_color_mid", "#FF8A5C"))
+        self.sunrise_color_horizon = self._color_row_on(f, "朝焼け地平線色", getattr(self.settings, "sunrise_color_horizon", "#FFD08A"))
+        self.sun_color = self._color_row_on(f, "太陽色", getattr(self.settings, "sun_color", "#FFD36E"))
+        self.sun_edge_color = self._color_row_on(f, "太陽縁色", getattr(self.settings, "sun_edge_color", "#FF7A3D"))
+        self.sunlight_color = self._color_row_on(f, "太陽光色", getattr(self.settings, "sunlight_color", "#FFD08A"))
+        self.lens_flare_color = self._color_row_on(f, "レンズフレア色", getattr(self.settings, "lens_flare_color", "#FFE2A6"))
+
     def _build_moon_tab(self):
         f = self.moon_form
         self._section(f, "月本体")
@@ -932,6 +1071,35 @@ class EffectsOverlayEditorDialog(QDialog):
             sakura_petal_ripple_chance=self.sakura_petal_ripple_chance.value(),
             sakura_petal_ripple_min_radius=self.sakura_petal_ripple_min_radius.value(),
             sakura_petal_ripple_max_radius=self.sakura_petal_ripple_max_radius.value(),
+            sunrise_enabled=self.sunrise_enabled.isChecked(),
+            sunrise_angle=self.sunrise_angle.value(),
+            sunrise_strength=self.sunrise_strength.value(),
+            sunrise_warmth=self.sunrise_warmth.value(),
+            sunrise_horizon_y=self.sunrise_horizon_y.value(),
+            sunrise_spread=self.sunrise_spread.value(),
+            sunrise_color_top=self.sunrise_color_top.text().strip() or "#1B2C64",
+            sunrise_color_mid=self.sunrise_color_mid.text().strip() or "#FF8A5C",
+            sunrise_color_horizon=self.sunrise_color_horizon.text().strip() or "#FFD08A",
+            sun_enabled=self.sun_enabled.isChecked(),
+            sunlight_enabled=self.sunlight_enabled.isChecked(),
+            lens_flare_enabled=self.lens_flare_enabled.isChecked(),
+            sun_x=self.sun_x.value(),
+            sun_y=self.sun_y.value(),
+            sun_radius=self.sun_radius.value(),
+            sun_alpha=self.sun_alpha.value(),
+            sun_angle=self.sun_angle.value(),
+            sun_color=self.sun_color.text().strip() or "#FFD36E",
+            sun_edge_color=self.sun_edge_color.text().strip() or "#FF7A3D",
+            sunlight_angle=self.sunlight_angle.value(),
+            sunlight_radius=self.sunlight_radius.value(),
+            sunlight_alpha=self.sunlight_alpha.value(),
+            sunlight_beam_width=self.sunlight_beam_width.value(),
+            sunlight_color=self.sunlight_color.text().strip() or "#FFD08A",
+            lens_flare_angle=self.lens_flare_angle.value(),
+            lens_flare_alpha=self.lens_flare_alpha.value(),
+            lens_flare_size=self.lens_flare_size.value(),
+            lens_flare_count=self.lens_flare_count.value(),
+            lens_flare_color=self.lens_flare_color.text().strip() or "#FFE2A6",
             moon_body_enabled=self.moon_body_enabled.isChecked(),
             moonlight_enabled=self.moonlight_enabled.isChecked(),
             moon_shadow_enabled=self.moon_shadow_enabled.isChecked(),
@@ -1265,6 +1433,35 @@ class EffectOverlaySettings:
     sakura_petal_ripple_max_radius: float = 88.0
     sakura_petal_ripple_cooldown: float = 0.025
 
+    sunrise_enabled: bool = False
+    sunrise_angle: float = 0.0
+    sunrise_strength: float = 0.65
+    sunrise_warmth: float = 0.72
+    sunrise_horizon_y: float = 0.72
+    sunrise_spread: float = 0.62
+    sunrise_color_top: str = "#1B2C64"
+    sunrise_color_mid: str = "#FF8A5C"
+    sunrise_color_horizon: str = "#FFD08A"
+    sun_enabled: bool = False
+    sunlight_enabled: bool = False
+    lens_flare_enabled: bool = False
+    sun_x: float = 0.22
+    sun_y: float = 0.22
+    sun_radius: float = 82.0
+    sun_alpha: int = 235
+    sun_angle: float = 0.0
+    sun_color: str = "#FFD36E"
+    sun_edge_color: str = "#FF7A3D"
+    sunlight_angle: float = 18.0
+    sunlight_radius: float = 420.0
+    sunlight_alpha: int = 92
+    sunlight_beam_width: float = 0.38
+    sunlight_color: str = "#FFD08A"
+    lens_flare_angle: float = 18.0
+    lens_flare_alpha: int = 128
+    lens_flare_size: float = 1.0
+    lens_flare_count: int = 6
+    lens_flare_color: str = "#FFE2A6"
     moon_body_enabled: bool = False
     moonlight_enabled: bool = False
     moon_shadow_enabled: bool = False
@@ -1572,6 +1769,35 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         sakura_petal_ripple_min_radius=float(defaults.get("sakura_petal_ripple_min_radius", 22.0)),
         sakura_petal_ripple_max_radius=float(defaults.get("sakura_petal_ripple_max_radius", 88.0)),
         sakura_petal_ripple_cooldown=float(defaults.get("sakura_petal_ripple_cooldown", 0.025)),
+        sunrise_enabled=bool(defaults.get("sunrise_enabled", False)),
+        sunrise_angle=float(defaults.get("sunrise_angle", 0.0)),
+        sunrise_strength=float(defaults.get("sunrise_strength", 0.65)),
+        sunrise_warmth=float(defaults.get("sunrise_warmth", 0.72)),
+        sunrise_horizon_y=float(defaults.get("sunrise_horizon_y", 0.72)),
+        sunrise_spread=float(defaults.get("sunrise_spread", 0.62)),
+        sunrise_color_top=str(defaults.get("sunrise_color_top", "#1B2C64")),
+        sunrise_color_mid=str(defaults.get("sunrise_color_mid", "#FF8A5C")),
+        sunrise_color_horizon=str(defaults.get("sunrise_color_horizon", "#FFD08A")),
+        sun_enabled=bool(defaults.get("sun_enabled", False)),
+        sunlight_enabled=bool(defaults.get("sunlight_enabled", False)),
+        lens_flare_enabled=bool(defaults.get("lens_flare_enabled", False)),
+        sun_x=float(defaults.get("sun_x", 0.22)),
+        sun_y=float(defaults.get("sun_y", 0.22)),
+        sun_radius=float(defaults.get("sun_radius", 82.0)),
+        sun_alpha=max(0, min(255, int(defaults.get("sun_alpha", 235)))),
+        sun_angle=float(defaults.get("sun_angle", 0.0)),
+        sun_color=str(defaults.get("sun_color", "#FFD36E")),
+        sun_edge_color=str(defaults.get("sun_edge_color", "#FF7A3D")),
+        sunlight_angle=float(defaults.get("sunlight_angle", 18.0)),
+        sunlight_radius=float(defaults.get("sunlight_radius", 420.0)),
+        sunlight_alpha=max(0, min(255, int(defaults.get("sunlight_alpha", 92)))),
+        sunlight_beam_width=float(defaults.get("sunlight_beam_width", 0.38)),
+        sunlight_color=str(defaults.get("sunlight_color", "#FFD08A")),
+        lens_flare_angle=float(defaults.get("lens_flare_angle", 18.0)),
+        lens_flare_alpha=max(0, min(255, int(defaults.get("lens_flare_alpha", 128)))),
+        lens_flare_size=float(defaults.get("lens_flare_size", 1.0)),
+        lens_flare_count=max(0, int(defaults.get("lens_flare_count", 6))),
+        lens_flare_color=str(defaults.get("lens_flare_color", "#FFE2A6")),
         moon_body_enabled=bool(defaults.get("moon_body_enabled", False)),
         moonlight_enabled=bool(defaults.get("moonlight_enabled", False)),
         moon_shadow_enabled=bool(defaults.get("moon_shadow_enabled", False)),
@@ -3009,14 +3235,18 @@ class EffectsOverlayWidget(BaseWidget):
 
     def interaction_rect(self) -> QRectF:
         settings = get_effect_overlay_settings(self.cfg)
+        rects = []
+        if self._has_visible_sun_effect(settings):
+            rects.append(self.sun_interaction_rect(settings))
         if self._has_visible_moon_effect(settings):
-            return self.moon_interaction_rect(settings)
-        return self.rect
+            rects.append(self.moon_interaction_rect(settings))
+        bounds = self._united_interaction_rects(rects)
+        return bounds if not bounds.isNull() else self.rect
 
     def contains(self, pos: QPoint) -> bool:
         settings = get_effect_overlay_settings(self.cfg)
-        if self._has_visible_moon_effect(settings):
-            return self.moon_interaction_rect(settings).contains(QPointF(pos))
+        if self._has_visible_sun_effect(settings) or self._has_visible_moon_effect(settings):
+            return self.interaction_rect().contains(QPointF(pos))
         return self.rect.contains(pos)
 
     def is_moon_hit(self, pos: QPoint) -> bool:
@@ -3040,6 +3270,132 @@ class EffectsOverlayWidget(BaseWidget):
         new_center_y = float(pos.y()) - float(offset.y())
         settings.moon_x = max(0.0, min(1.0, (new_center_x - r.left()) / max(1.0, r.width())))
         settings.moon_y = max(0.0, min(1.0, (new_center_y - r.top()) / max(1.0, r.height())))
+        set_effect_overlay_settings(self.cfg, settings)
+
+    def _has_visible_sun_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        return bool(getattr(settings, "sunrise_enabled", False) or getattr(settings, "sun_enabled", False) or getattr(settings, "sunlight_enabled", False) or getattr(settings, "lens_flare_enabled", False))
+
+    def _united_interaction_rects(self, rects):
+        bounds = QRectF()
+        has_bounds = False
+        for rect in rects:
+            try:
+                if rect is None or rect.isNull() or not rect.isValid():
+                    continue
+            except Exception:
+                continue
+            bounds = QRectF(rect) if not has_bounds else bounds.united(rect)
+            has_bounds = True
+        return bounds if has_bounds else QRectF()
+
+    def _circle_interaction_rect(self, center: QPointF, radius: float) -> QRectF:
+        radius = max(1.0, float(radius))
+        return QRectF(center.x() - radius, center.y() - radius, radius * 2.0, radius * 2.0)
+
+    def sun_body_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not getattr(settings, "sun_enabled", False):
+            return QRectF()
+        center = self._sun_center(self.rect, settings)
+        radius = max(2.0, float(getattr(settings, "sun_radius", 82.0)))
+        return self._circle_interaction_rect(center, radius * 1.34).adjusted(-4.0, -4.0, 4.0, 4.0)
+
+    def sunlight_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not getattr(settings, "sunlight_enabled", False):
+            return QRectF()
+        center = self._sun_center(self.rect, settings)
+        sun_radius = max(2.0, float(getattr(settings, "sun_radius", 82.0)))
+        light_radius = max(sun_radius * 1.5, float(getattr(settings, "sunlight_radius", 420.0)))
+        return self._circle_interaction_rect(center, light_radius).adjusted(-4.0, -4.0, 4.0, 4.0)
+
+    def sunrise_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not getattr(settings, "sunrise_enabled", False):
+            return QRectF()
+        r = self.rect
+        center = self._sun_center(r, settings)
+        radius = max(2.0, float(getattr(settings, "sun_radius", 82.0)))
+        spread = max(0.05, min(1.0, float(getattr(settings, "sunrise_spread", 0.62))))
+        glow_radius = max(radius * 2.2, r.height() * (0.18 + spread * 0.55))
+        return QRectF(center.x() - glow_radius, center.y() - glow_radius * 0.72, glow_radius * 2.0, glow_radius * 1.44).adjusted(-4.0, -4.0, 4.0, 4.0)
+
+    def lens_flare_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not getattr(settings, "lens_flare_enabled", False):
+            return QRectF()
+        r = self.rect
+        center = self._sun_center(r, settings)
+        radius = max(2.0, float(getattr(settings, "sun_radius", 82.0)))
+        count = max(0, int(getattr(settings, "lens_flare_count", 6)))
+        if count <= 0:
+            return QRectF()
+        size_scale = max(0.1, min(4.0, float(getattr(settings, "lens_flare_size", 1.0))))
+        rad = math.radians(self._angle_degrees(settings, "lens_flare_angle", 18.0))
+        dx, dy = math.cos(rad), math.sin(rad)
+        screen_center = r.center()
+        base_len = math.hypot(screen_center.x() - center.x(), screen_center.y() - center.y())
+        if base_len < 1.0:
+            base_len = math.hypot(r.width(), r.height()) * 0.35
+        rects = []
+        for i in range(count):
+            t = (i + 1) / (count + 1)
+            sign = -1.0 if i % 2 else 1.0
+            dist = base_len * (0.28 + t * 1.35) * sign
+            x = center.x() + dx * dist
+            y = center.y() + dy * dist
+            flare_radius = radius * size_scale * (0.06 + 0.12 * (1.0 - abs(0.5 - t)))
+            rx = max(3.0, flare_radius * 2.2)
+            ry = max(3.0, flare_radius * (1.1 + 0.35 * (i % 3)))
+            rects.append(QRectF(x - rx, y - ry, rx * 2.0, ry * 2.0))
+        bounds = self._united_interaction_rects(rects)
+        return bounds.adjusted(-5.0, -5.0, 5.0, 5.0) if not bounds.isNull() else QRectF()
+
+    def sun_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not self._has_visible_sun_effect(settings):
+            return QRectF()
+        return self._united_interaction_rects([self.sunrise_interaction_rect(settings), self.sunlight_interaction_rect(settings), self.sun_body_interaction_rect(settings), self.lens_flare_interaction_rect(settings)])
+
+    def sun_effect_hit_kind(self, pos: QPoint, settings: Optional[EffectOverlaySettings] = None):
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not self._has_visible_sun_effect(settings):
+            return None
+        p = QPointF(pos)
+        for kind, rect in [("sun", self.sun_body_interaction_rect(settings)), ("lens_flare", self.lens_flare_interaction_rect(settings)), ("sunlight", self.sunlight_interaction_rect(settings)), ("sunrise", self.sunrise_interaction_rect(settings))]:
+            if rect is not None and (not rect.isNull()) and rect.contains(p):
+                return kind
+        return None
+
+    def is_sun_effect_hit(self, pos: QPoint) -> bool:
+        return self.sun_effect_hit_kind(pos) is not None
+
+    def sun_drag_offset_from_pos(self, pos: QPoint) -> QPointF:
+        settings = get_effect_overlay_settings(self.cfg)
+        center = self._sun_center(self.rect, settings)
+        return QPointF(float(pos.x()) - center.x(), float(pos.y()) - center.y())
+
+    def move_sun_center_to(self, pos: QPoint, offset: Optional[QPointF] = None, kind: str = "sun"):
+        settings = get_effect_overlay_settings(self.cfg)
+        r = self.rect
+        if r.width() <= 0 or r.height() <= 0:
+            return
+        if offset is None:
+            offset = QPointF(0.0, 0.0)
+        new_center_x = float(pos.x()) - float(offset.x())
+        new_center_y = float(pos.y()) - float(offset.y())
+        settings.sun_x = max(0.0, min(1.0, (new_center_x - r.left()) / max(1.0, r.width())))
+        settings.sun_y = max(0.0, min(1.0, (new_center_y - r.top()) / max(1.0, r.height())))
+        if kind == "sunrise":
+            settings.sunrise_horizon_y = settings.sun_y
         set_effect_overlay_settings(self.cfg, settings)
 
     def paint(self, p: QPainter, ctx: Dict):
@@ -3067,6 +3423,13 @@ class EffectsOverlayWidget(BaseWidget):
         if settings.noise_enabled:
             self._draw_noise(p, r, settings, now)
 
+        if (
+            getattr(settings, "sunrise_enabled", False)
+            or getattr(settings, "sun_enabled", False)
+            or getattr(settings, "sunlight_enabled", False)
+            or getattr(settings, "lens_flare_enabled", False)
+        ):
+            self._draw_sunrise_sun_integrated_effect(p, r, settings, now)
         if getattr(settings, "moonlight_enabled", False) or getattr(settings, "moon_shadow_enabled", False) or getattr(settings, "moon_body_enabled", False):
             self._draw_moon_integrated_effect(p, r, settings, now)
 
@@ -3139,6 +3502,183 @@ class EffectsOverlayWidget(BaseWidget):
         ca = math.cos(rad)
         sa = math.sin(rad)
         return QPointF(x * ca - y * sa, x * sa + y * ca)
+
+    def _sun_center(self, r: QRectF, settings: EffectOverlaySettings):
+        x = r.left() + r.width() * max(0.0, min(1.0, float(getattr(settings, "sun_x", 0.22))))
+        y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, "sun_y", 0.22))))
+        return QPointF(x, y)
+
+    def _line_through_rect(self, r: QRectF, center: QPointF, angle_degrees: float):
+        rad = math.radians(float(angle_degrees))
+        dx = math.cos(rad)
+        dy = math.sin(rad)
+        span = math.hypot(max(1.0, r.width()), max(1.0, r.height())) * 0.72
+        return QPointF(center.x() - dx * span, center.y() - dy * span), QPointF(center.x() + dx * span, center.y() + dy * span)
+
+    def _draw_sunrise_sun_integrated_effect(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        center = self._sun_center(r, settings)
+        radius = max(2.0, float(getattr(settings, "sun_radius", 82.0)))
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if getattr(settings, "sunrise_enabled", False):
+            self._draw_sunrise_background(p, r, center, radius, settings, now)
+        if getattr(settings, "sunlight_enabled", False):
+            self._draw_sunlight(p, r, center, radius, settings, now)
+        if getattr(settings, "sun_enabled", False):
+            self._draw_sun_body(p, center, radius, settings, now)
+        if getattr(settings, "lens_flare_enabled", False):
+            self._draw_lens_flare(p, r, center, radius, settings, now)
+        p.restore()
+
+    def _draw_sunrise_background(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        strength = max(0.0, min(1.0, float(getattr(settings, "sunrise_strength", 0.65)))) * max(0.0, float(getattr(settings, "intensity", 1.0)))
+        if strength <= 0.0:
+            return
+        warmth = max(0.0, min(1.0, float(getattr(settings, "sunrise_warmth", 0.72))))
+        horizon_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, "sunrise_horizon_y", 0.72))))
+        spread = max(0.05, min(1.0, float(getattr(settings, "sunrise_spread", 0.62))))
+        angle = self._angle_degrees(settings, "sunrise_angle", 0.0)
+        start, end = self._line_through_rect(r, QPointF(r.center().x(), horizon_y), angle + 90.0)
+        top = QColor(getattr(settings, "sunrise_color_top", "#1B2C64"))
+        mid = QColor(getattr(settings, "sunrise_color_mid", "#FF8A5C"))
+        horizon = QColor(getattr(settings, "sunrise_color_horizon", "#FFD08A"))
+        top.setAlpha(max(0, min(255, int(42 * strength * (0.55 + 0.45 * (1.0 - warmth))))))
+        mid.setAlpha(max(0, min(255, int(118 * strength * (0.55 + warmth * 0.45)))))
+        horizon.setAlpha(max(0, min(255, int(150 * strength))))
+        clear = QColor(horizon); clear.setAlpha(0)
+        grad = QLinearGradient(start, end)
+        grad.setColorAt(0.0, top)
+        grad.setColorAt(max(0.05, 0.45 - spread * 0.22), mid)
+        grad.setColorAt(max(0.10, 0.62 - spread * 0.20), horizon)
+        grad.setColorAt(1.0, clear)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawRect(r)
+        glow_radius = max(radius * 2.2, r.height() * (0.18 + spread * 0.55))
+        glow = QRadialGradient(center, glow_radius)
+        g0 = QColor(horizon); g0.setAlpha(max(0, min(255, int(105 * strength))))
+        g1 = QColor(mid); g1.setAlpha(max(0, min(255, int(48 * strength))))
+        g2 = QColor(mid); g2.setAlpha(0)
+        glow.setColorAt(0.0, g0)
+        glow.setColorAt(0.38, g1)
+        glow.setColorAt(1.0, g2)
+        p.setBrush(QBrush(glow))
+        p.drawEllipse(center, glow_radius, glow_radius * 0.72)
+
+    def _draw_sunlight(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        color = QColor(getattr(settings, "sunlight_color", "#FFD08A"))
+        alpha = max(0, min(255, int(getattr(settings, "sunlight_alpha", 92) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        light_radius = max(radius * 1.5, float(getattr(settings, "sunlight_radius", 420.0)))
+        pulse = 0.94 + 0.06 * math.sin(now * 0.7)
+        light_radius *= pulse
+        angle = self._angle_degrees(settings, "sunlight_angle", 18.0)
+        beam_width = max(0.05, min(1.0, float(getattr(settings, "sunlight_beam_width", 0.38))))
+        grad = QRadialGradient(center, light_radius)
+        c0 = QColor(color); c0.setAlpha(alpha)
+        c1 = QColor(color); c1.setAlpha(int(alpha * 0.28))
+        c2 = QColor(color); c2.setAlpha(0)
+        grad.setColorAt(0.0, c0); grad.setColorAt(0.42, c1); grad.setColorAt(1.0, c2)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(center, light_radius, light_radius)
+        corners = [r.topLeft(), r.topRight(), r.bottomLeft(), r.bottomRight()]
+        reach = max(math.hypot(c.x() - center.x(), c.y() - center.y()) for c in corners) + radius
+        top_w = radius * (0.42 + beam_width)
+        bottom_w = max(top_w * 1.8, max(r.width(), r.height()) * beam_width)
+        p.save()
+        p.translate(center)
+        p.rotate(angle)
+        beam = QPainterPath()
+        beam.moveTo(-top_w, radius * 0.15)
+        beam.cubicTo(-bottom_w * 0.25, reach * 0.35, -bottom_w * 0.55, reach * 0.74, -bottom_w, reach)
+        beam.lineTo(bottom_w, reach)
+        beam.cubicTo(bottom_w * 0.55, reach * 0.74, bottom_w * 0.25, reach * 0.35, top_w, radius * 0.15)
+        beam.closeSubpath()
+        beam_grad = QLinearGradient(0, 0, 0, reach)
+        b0 = QColor(color); b0.setAlpha(max(0, min(255, int(alpha * 0.75))))
+        b1 = QColor(color); b1.setAlpha(max(0, min(255, int(alpha * 0.20))))
+        b2 = QColor(color); b2.setAlpha(0)
+        beam_grad.setColorAt(0.0, b0); beam_grad.setColorAt(0.55, b1); beam_grad.setColorAt(1.0, b2)
+        p.setBrush(QBrush(beam_grad))
+        p.drawPath(beam)
+        p.restore()
+
+    def _draw_sun_body(self, p: QPainter, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        sun_color = QColor(getattr(settings, "sun_color", "#FFD36E"))
+        edge_color = QColor(getattr(settings, "sun_edge_color", "#FF7A3D"))
+        alpha = max(0, min(255, int(getattr(settings, "sun_alpha", 235) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        angle = self._angle_degrees(settings, "sun_angle", 0.0)
+        p.save()
+        p.translate(center)
+        p.rotate(angle)
+        outer = QRadialGradient(QPointF(0.0, 0.0), radius * 1.85)
+        o0 = QColor(sun_color); o0.setAlpha(int(alpha * 0.55))
+        o1 = QColor(edge_color); o1.setAlpha(int(alpha * 0.18))
+        o2 = QColor(edge_color); o2.setAlpha(0)
+        outer.setColorAt(0.0, o0); outer.setColorAt(0.45, o1); outer.setColorAt(1.0, o2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(outer))
+        p.drawEllipse(QPointF(0.0, 0.0), radius * 1.85, radius * 1.85)
+        grad = QRadialGradient(QPointF(-radius * 0.28, -radius * 0.30), radius * 1.2)
+        c0 = QColor(255, 250, 205, alpha)
+        c1 = QColor(sun_color); c1.setAlpha(alpha)
+        c2 = QColor(edge_color); c2.setAlpha(max(0, min(255, int(alpha * 0.95))))
+        grad.setColorAt(0.0, c0); grad.setColorAt(0.55, c1); grad.setColorAt(1.0, c2)
+        p.setPen(QPen(QColor(edge_color.red(), edge_color.green(), edge_color.blue(), int(alpha * 0.72)), max(1, int(radius * 0.025))))
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+        ray_pen = QPen(QColor(edge_color.red(), edge_color.green(), edge_color.blue(), max(0, min(255, int(alpha * 0.36)))), max(1, int(radius * 0.035)))
+        ray_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(ray_pen)
+        for i in range(16):
+            a = math.tau * i / 16.0
+            wobble = 0.88 + 0.12 * math.sin(now * 1.1 + i)
+            inner = radius * 1.06
+            outer_len = radius * (1.30 + 0.20 * (i % 2)) * wobble
+            p.drawLine(QPointF(math.cos(a) * inner, math.sin(a) * inner), QPointF(math.cos(a) * outer_len, math.sin(a) * outer_len))
+        p.restore()
+
+    def _draw_lens_flare(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        count = max(0, int(getattr(settings, "lens_flare_count", 6)))
+        if count <= 0:
+            return
+        alpha_base = max(0, min(255, int(getattr(settings, "lens_flare_alpha", 128) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha_base <= 0:
+            return
+        size_scale = max(0.1, min(4.0, float(getattr(settings, "lens_flare_size", 1.0))))
+        color = QColor(getattr(settings, "lens_flare_color", "#FFE2A6"))
+        angle = self._angle_degrees(settings, "lens_flare_angle", 18.0)
+        rad = math.radians(angle)
+        dx = math.cos(rad)
+        dy = math.sin(rad)
+        screen_center = r.center()
+        base_len = math.hypot(screen_center.x() - center.x(), screen_center.y() - center.y())
+        if base_len < 1.0:
+            base_len = math.hypot(r.width(), r.height()) * 0.35
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for i in range(count):
+            t = (i + 1) / (count + 1)
+            sign = -1.0 if i % 2 else 1.0
+            dist = base_len * (0.28 + t * 1.35) * sign
+            x = center.x() + dx * dist
+            y = center.y() + dy * dist
+            flare_radius = radius * size_scale * (0.06 + 0.12 * (1.0 - abs(0.5 - t)))
+            flare_alpha = max(0, min(255, int(alpha_base * (0.68 - t * 0.36))))
+            if flare_alpha <= 0:
+                continue
+            grad = QRadialGradient(QPointF(x, y), max(1.0, flare_radius * 2.2))
+            c0 = QColor(255, 255, 255, flare_alpha)
+            c1 = QColor(color); c1.setAlpha(int(flare_alpha * 0.55))
+            c2 = QColor(color); c2.setAlpha(0)
+            grad.setColorAt(0.0, c0); grad.setColorAt(0.46, c1); grad.setColorAt(1.0, c2)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawEllipse(QPointF(x, y), flare_radius * 2.2, flare_radius * (1.1 + 0.35 * (i % 3)))
+        line_color = QColor(color); line_color.setAlpha(max(0, min(255, int(alpha_base * 0.22))))
+        pen = QPen(line_color, max(1.0, radius * 0.018 * size_scale))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.drawLine(QPointF(center.x() - dx * radius * 0.5, center.y() - dy * radius * 0.5), QPointF(center.x() + dx * base_len * 1.25, center.y() + dy * base_len * 1.25))
+        p.restore()
 
     def _draw_moon_integrated_effect(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         center = self._moon_center(r, settings)
@@ -4696,17 +5236,21 @@ class EffectsOverlayWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         settings = get_effect_overlay_settings(self.cfg)
-        selection_rect = self.moon_interaction_rect(settings) if self._has_visible_moon_effect(settings) else self.rect
+        selection_rect = self.interaction_rect() if (self._has_visible_sun_effect(settings) or self._has_visible_moon_effect(settings)) else self.rect
         pen = QPen(QColor("#FFFFFF"))
         pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(selection_rect, 16, 16)
+        marker_pen = QPen(QColor(255, 255, 255, 190), 1)
+        marker_pen.setStyle(Qt.PenStyle.SolidLine)
+        p.setPen(marker_pen)
+        if self._has_visible_sun_effect(settings):
+            center = self._sun_center(self.rect, settings)
+            p.drawLine(QPointF(center.x() - 6.0, center.y()), QPointF(center.x() + 6.0, center.y()))
+            p.drawLine(QPointF(center.x(), center.y() - 6.0), QPointF(center.x(), center.y() + 6.0))
         if self._has_visible_moon_effect(settings):
             center = self._moon_center(self.rect, settings)
-            marker_pen = QPen(QColor(255, 255, 255, 190), 1)
-            marker_pen.setStyle(Qt.PenStyle.SolidLine)
-            p.setPen(marker_pen)
             p.drawLine(QPointF(center.x() - 6.0, center.y()), QPointF(center.x() + 6.0, center.y()))
             p.drawLine(QPointF(center.x(), center.y() - 6.0), QPointF(center.x(), center.y() + 6.0))
 
@@ -6599,7 +7143,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle("Lite Desktop Studio v1.5.1 - ウィジェット編集")
+        self.setWindowTitle("Lite Desktop Studio v1.5.2 - ウィジェット編集")
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -6764,7 +7308,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.1")
+        self.setWindowTitle("Lite Desktop Studio v1.5.2")
         self.resize(960, 640)
 
         self.build_ui()
@@ -7880,7 +8424,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v1.5.1 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v1.5.2 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -8012,6 +8556,9 @@ class DesktopCanvas(QWidget):
         self.drag_offset = QPoint(0, 0)
         self.dragging_effect_moon = False
         self.effect_moon_drag_offset = QPointF(0.0, 0.0)
+        self.dragging_effect_sun = False
+        self.effect_sun_drag_offset = QPointF(0.0, 0.0)
+        self.effect_sun_drag_kind = "sun"
         self.edit_mode = False
         self.last_right_click_time = 0.0
         self.last_right_click_widget = None
@@ -8353,6 +8900,8 @@ class DesktopCanvas(QWidget):
             self.selected = None
             self.dragging = False
             self.dragging_effect_moon = False
+            self.dragging_effect_sun = False
+            self.effect_sun_drag_kind = "sun"
             self.volume_sliding = False
 
             if clicked_widget is not None:
@@ -8386,11 +8935,27 @@ class DesktopCanvas(QWidget):
                 else:
                     if self.edit_mode:
                         self.dragging = True
-                        if isinstance(clicked_widget, EffectsOverlayWidget) and clicked_widget.is_moon_hit(pos):
-                            self.dragging_effect_moon = True
-                            self.effect_moon_drag_offset = clicked_widget.moon_drag_offset_from_pos(pos)
+                        if isinstance(clicked_widget, EffectsOverlayWidget):
+                            sun_kind = clicked_widget.sun_effect_hit_kind(pos)
+                            if sun_kind is not None:
+                                self.dragging_effect_sun = True
+                                self.effect_sun_drag_kind = sun_kind
+                                self.effect_sun_drag_offset = clicked_widget.sun_drag_offset_from_pos(pos)
+                                self.dragging_effect_moon = False
+                            elif clicked_widget.is_moon_hit(pos):
+                                self.dragging_effect_moon = True
+                                self.effect_moon_drag_offset = clicked_widget.moon_drag_offset_from_pos(pos)
+                                self.dragging_effect_sun = False
+                            else:
+                                self.dragging_effect_moon = False
+                                self.dragging_effect_sun = False
+                                self.drag_offset = pos - QPoint(
+                                    clicked_widget.cfg.x,
+                                    clicked_widget.cfg.y
+                                )
                         else:
                             self.dragging_effect_moon = False
+                            self.dragging_effect_sun = False
                             self.drag_offset = pos - QPoint(
                                 clicked_widget.cfg.x,
                                 clicked_widget.cfg.y
@@ -8407,6 +8972,19 @@ class DesktopCanvas(QWidget):
         pos = event.position().toPoint()
         self.notify_effect_widgets_mouse_move(pos)
         new_pos = pos - self.drag_offset
+
+        if self.dragging and self.selected and self.edit_mode and isinstance(self.selected, EffectsOverlayWidget) and (getattr(self, "dragging_effect_sun", False) or getattr(self, "dragging_effect_moon", False)):
+            if getattr(self, "dragging_effect_sun", False):
+                self.selected.move_sun_center_to(
+                    pos,
+                    getattr(self, "effect_sun_drag_offset", QPointF(0.0, 0.0)),
+                    getattr(self, "effect_sun_drag_kind", "sun")
+                )
+            else:
+                self.selected.move_moon_center_to(pos, getattr(self, "effect_moon_drag_offset", QPointF(0.0, 0.0)))
+            self.update_platform_hit_mask()
+            self.update()
+            return
 
         if self.dragging and self.selected and self.edit_mode:
             if getattr(self, "dragging_effect_moon", False) and isinstance(self.selected, EffectsOverlayWidget):
@@ -8428,6 +9006,7 @@ class DesktopCanvas(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             self.dragging_effect_moon = False
+            self.dragging_effect_sun = False
             self.volume_sliding = False
             self.update_platform_hit_mask()
             self.save_config()
