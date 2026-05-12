@@ -73,7 +73,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "LiteDesktopStudio v1.5.0"
+APP_NAME = "LiteDesktopStudio v1.5.1"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
@@ -215,6 +215,31 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_drop_ripple_enabled": True,
     "water_drop_ripple_chance": 0.75,
     "water_drop_surface_y": 0.86,
+    "moon_body_enabled": False,
+    "moonlight_enabled": False,
+    "moon_shadow_enabled": False,
+    "moon_x": 0.78,
+    "moon_y": 0.18,
+    "moon_body_angle": 0.0,
+    "moon_radius": 74.0,
+    "moon_alpha": 230,
+    "moon_color": "#FFF3C4",
+    "moon_edge_color": "#C9D7FF",
+    "moon_crater_count": 9,
+    "moon_crater_alpha": 54,
+    "moonlight_radius": 260.0,
+    "moonlight_alpha": 82,
+    "moonlight_color": "#CFE8FF",
+    "moonlight_angle": 0.0,
+    "moonlight_beam_enabled": True,
+    "moonlight_beam_alpha": 44,
+    "moonlight_beam_width": 0.34,
+    "moon_shadow_alpha": 70,
+    "moon_shadow_color": "#061028",
+    "moon_shadow_offset_x": 28.0,
+    "moon_shadow_offset_y": 38.0,
+    "moon_shadow_angle": 0.0,
+    "moon_shadow_blur_radius": 150.0,
 }
 
 
@@ -237,7 +262,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.0 - エフェクト設定")
+        self.setWindowTitle("Lite Desktop Studio v1.5.1 - エフェクト設定")
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -274,6 +299,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.color_form = self._create_tab("色")
         self.extra_weather_form = self._create_tab("雪・水・火")
         self.extra_sky_form = self._create_tab("空・その他")
+        self.moon_form = self._create_tab("月")
 
         
         self.form = self.basic_form
@@ -287,6 +313,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self._build_color_tab()
         self._build_extra_weather_tab()
         self._build_extra_sky_tab()
+        self._build_moon_tab()
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)
@@ -317,6 +344,10 @@ class EffectsOverlayEditorDialog(QDialog):
             "色": "🎨",
             "雪・水・火": "❄️",
             "空・その他": "🌌",
+            "月": "🌙",
+            "月光": "🌕",
+            "月影": "🌘",
+            "月本体": "🌝",
 
             
             "雨粒": "🌧️",
@@ -443,6 +474,9 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled = QCheckBox("中くらいのバラの花")
         self.blooming_roses_enabled = QCheckBox("大きな咲いた花が散る")
         self.sakura_petals_enabled = QCheckBox("桜の花びら")
+        self.moon_body_enabled = QCheckBox("月本体")
+        self.moonlight_enabled = QCheckBox("月光")
+        self.moon_shadow_enabled = QCheckBox("月影")
         self.rain_ripple_enabled = QCheckBox("雨粒が水面に当たったら波紋")
         self.mouse_ripple_enabled = QCheckBox("マウスクリック波紋")
         self.mouse_flee_enabled = QCheckBox("マウス周辺から微粒子が逃げる")
@@ -457,6 +491,9 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(getattr(self.settings, "rose_flowers_enabled", False))
         self.blooming_roses_enabled.setChecked(getattr(self.settings, "blooming_roses_enabled", False))
         self.sakura_petals_enabled.setChecked(getattr(self.settings, "sakura_petals_enabled", False))
+        self.moon_body_enabled.setChecked(getattr(self.settings, "moon_body_enabled", False))
+        self.moonlight_enabled.setChecked(getattr(self.settings, "moonlight_enabled", False))
+        self.moon_shadow_enabled.setChecked(getattr(self.settings, "moon_shadow_enabled", False))
         self.rain_ripple_enabled.setChecked(getattr(self.settings, "rain_ripple_enabled", False))
         self.mouse_ripple_enabled.setChecked(self.settings.mouse_ripple_enabled)
         self.mouse_flee_enabled.setChecked(self.settings.mouse_flee_enabled)
@@ -466,6 +503,9 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("バラ花", self.rose_flowers_enabled)
         f.addRow("開花バラ", self.blooming_roses_enabled)
         f.addRow("桜", self.sakura_petals_enabled)
+        f.addRow("月本体", self.moon_body_enabled)
+        f.addRow("月光", self.moonlight_enabled)
+        f.addRow("月影", self.moon_shadow_enabled)
         f.addRow("雨", self.rain_enabled)
         f.addRow("粒子", self.particles_enabled)
         f.addRow("ノイズ", self.noise_enabled)
@@ -747,6 +787,9 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(True)
         self.blooming_roses_enabled.setChecked(True)
         self.sakura_petals_enabled.setChecked(True)
+        self.moon_body_enabled.setChecked(True)
+        self.moonlight_enabled.setChecked(True)
+        self.moon_shadow_enabled.setChecked(True)
         self._set_extra_effect_toggles(True)
 
     def set_all_off(self):
@@ -756,6 +799,9 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self.moon_body_enabled.setChecked(False)
+        self.moonlight_enabled.setChecked(False)
+        self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
 
     def set_mouse_only(self):
@@ -765,6 +811,9 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self.moon_body_enabled.setChecked(False)
+        self.moonlight_enabled.setChecked(False)
+        self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
 
     def set_ambient_only(self):
@@ -774,6 +823,9 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_flowers_enabled.setChecked(False)
         self.blooming_roses_enabled.setChecked(False)
         self.sakura_petals_enabled.setChecked(False)
+        self.moon_body_enabled.setChecked(False)
+        self.moonlight_enabled.setChecked(False)
+        self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
 
     def set_rose_petals_only(self):
@@ -789,6 +841,69 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_petal_sway.setValue(1.15)
         self.rose_petal_size.setValue(18.0)
         self.rose_petal_alpha.setValue(215)
+    def _build_moon_tab(self):
+        f = self.moon_form
+        self._section(f, "月本体")
+        self.moon_body_enabled_tab = QCheckBox("月本体を描画")
+        self.moon_body_enabled_tab.setChecked(bool(getattr(self.settings, "moon_body_enabled", False)))
+        self.moonlight_enabled_tab = QCheckBox("月光を描画")
+        self.moonlight_enabled_tab.setChecked(bool(getattr(self.settings, "moonlight_enabled", False)))
+        self.moon_shadow_enabled_tab = QCheckBox("月影を描画")
+        self.moon_shadow_enabled_tab.setChecked(bool(getattr(self.settings, "moon_shadow_enabled", False)))
+        self.moon_body_enabled.toggled.connect(self.moon_body_enabled_tab.setChecked)
+        self.moon_body_enabled_tab.toggled.connect(self.moon_body_enabled.setChecked)
+        self.moonlight_enabled.toggled.connect(self.moonlight_enabled_tab.setChecked)
+        self.moonlight_enabled_tab.toggled.connect(self.moonlight_enabled.setChecked)
+        self.moon_shadow_enabled.toggled.connect(self.moon_shadow_enabled_tab.setChecked)
+        self.moon_shadow_enabled_tab.toggled.connect(self.moon_shadow_enabled.setChecked)
+        self.moon_x = self._double_spin(0.0, 1.0, getattr(self.settings, "moon_x", 0.78), 0.01)
+        self.moon_y = self._double_spin(0.0, 1.0, getattr(self.settings, "moon_y", 0.18), 0.01)
+        self.moon_body_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "moon_body_angle", 0.0), 1.0)
+        self.moon_radius = self._double_spin(4.0, 3000.0, getattr(self.settings, "moon_radius", 74.0), 1.0)
+        self.moon_alpha = self._int_spin(0, 255, getattr(self.settings, "moon_alpha", 230))
+        self.moon_crater_count = self._int_spin(0, 40, getattr(self.settings, "moon_crater_count", 9))
+        self.moon_crater_alpha = self._int_spin(0, 255, getattr(self.settings, "moon_crater_alpha", 54))
+        f.addRow("月本体", self.moon_body_enabled_tab)
+        f.addRow("月光", self.moonlight_enabled_tab)
+        f.addRow("月影", self.moon_shadow_enabled_tab)
+        f.addRow("X位置", self.moon_x)
+        f.addRow("Y位置", self.moon_y)
+        f.addRow("月本体角度", self.moon_body_angle)
+        f.addRow("半径", self.moon_radius)
+        f.addRow("透明度", self.moon_alpha)
+        f.addRow("クレーター数", self.moon_crater_count)
+        f.addRow("クレーター透明度", self.moon_crater_alpha)
+        self._section(f, "月光")
+        self.moonlight_radius = self._double_spin(10.0, 900.0, getattr(self.settings, "moonlight_radius", 260.0), 5.0)
+        self.moonlight_alpha = self._int_spin(0, 255, getattr(self.settings, "moonlight_alpha", 82))
+        self.moonlight_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "moonlight_angle", 0.0), 1.0)
+        self.moonlight_beam_enabled = QCheckBox("月光ビーム")
+        self.moonlight_beam_enabled.setChecked(bool(getattr(self.settings, "moonlight_beam_enabled", True)))
+        self.moonlight_beam_alpha = self._int_spin(0, 255, getattr(self.settings, "moonlight_beam_alpha", 44))
+        self.moonlight_beam_width = self._double_spin(0.05, 1.0, getattr(self.settings, "moonlight_beam_width", 0.34), 0.01)
+        f.addRow("月光半径", self.moonlight_radius)
+        f.addRow("月光透明度", self.moonlight_alpha)
+        f.addRow("月光角度", self.moonlight_angle)
+        f.addRow("ビーム", self.moonlight_beam_enabled)
+        f.addRow("ビーム透明度", self.moonlight_beam_alpha)
+        f.addRow("ビーム幅", self.moonlight_beam_width)
+        self._section(f, "月影")
+        self.moon_shadow_alpha = self._int_spin(0, 255, getattr(self.settings, "moon_shadow_alpha", 70))
+        self.moon_shadow_offset_x = self._double_spin(-300.0, 300.0, getattr(self.settings, "moon_shadow_offset_x", 28.0), 1.0)
+        self.moon_shadow_offset_y = self._double_spin(-300.0, 300.0, getattr(self.settings, "moon_shadow_offset_y", 38.0), 1.0)
+        self.moon_shadow_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "moon_shadow_angle", 0.0), 1.0)
+        self.moon_shadow_blur_radius = self._double_spin(4.0, 600.0, getattr(self.settings, "moon_shadow_blur_radius", 150.0), 5.0)
+        f.addRow("月影透明度", self.moon_shadow_alpha)
+        f.addRow("影Xオフセット", self.moon_shadow_offset_x)
+        f.addRow("影Yオフセット", self.moon_shadow_offset_y)
+        f.addRow("月影角度", self.moon_shadow_angle)
+        f.addRow("影ぼかし半径", self.moon_shadow_blur_radius)
+        self._section(f, "色")
+        self.moon_color = self._color_row_on(f, "月色", getattr(self.settings, "moon_color", "#FFF3C4"))
+        self.moon_edge_color = self._color_row_on(f, "月の縁色", getattr(self.settings, "moon_edge_color", "#C9D7FF"))
+        self.moonlight_color = self._color_row_on(f, "月光色", getattr(self.settings, "moonlight_color", "#CFE8FF"))
+        self.moon_shadow_color = self._color_row_on(f, "月影色", getattr(self.settings, "moon_shadow_color", "#061028"))
+
     def build_settings(self):
         return EffectOverlaySettings(
             rain_enabled=self.rain_enabled.isChecked(),
@@ -817,6 +932,31 @@ class EffectsOverlayEditorDialog(QDialog):
             sakura_petal_ripple_chance=self.sakura_petal_ripple_chance.value(),
             sakura_petal_ripple_min_radius=self.sakura_petal_ripple_min_radius.value(),
             sakura_petal_ripple_max_radius=self.sakura_petal_ripple_max_radius.value(),
+            moon_body_enabled=self.moon_body_enabled.isChecked(),
+            moonlight_enabled=self.moonlight_enabled.isChecked(),
+            moon_shadow_enabled=self.moon_shadow_enabled.isChecked(),
+            moon_x=self.moon_x.value(),
+            moon_y=self.moon_y.value(),
+            moon_body_angle=self.moon_body_angle.value(),
+            moon_radius=self.moon_radius.value(),
+            moon_alpha=self.moon_alpha.value(),
+            moon_color=self.moon_color.text().strip() or "#FFF3C4",
+            moon_edge_color=self.moon_edge_color.text().strip() or "#C9D7FF",
+            moon_crater_count=self.moon_crater_count.value(),
+            moon_crater_alpha=self.moon_crater_alpha.value(),
+            moonlight_radius=self.moonlight_radius.value(),
+            moonlight_alpha=self.moonlight_alpha.value(),
+            moonlight_color=self.moonlight_color.text().strip() or "#CFE8FF",
+            moonlight_angle=self.moonlight_angle.value(),
+            moonlight_beam_enabled=self.moonlight_beam_enabled.isChecked(),
+            moonlight_beam_alpha=self.moonlight_beam_alpha.value(),
+            moonlight_beam_width=self.moonlight_beam_width.value(),
+            moon_shadow_alpha=self.moon_shadow_alpha.value(),
+            moon_shadow_color=self.moon_shadow_color.text().strip() or "#061028",
+            moon_shadow_offset_x=self.moon_shadow_offset_x.value(),
+            moon_shadow_offset_y=self.moon_shadow_offset_y.value(),
+            moon_shadow_angle=self.moon_shadow_angle.value(),
+            moon_shadow_blur_radius=self.moon_shadow_blur_radius.value(),
             ripple_color=self.ripple_color.text().strip() or "#A8EFFF",
             rain_ripple_enabled=self.rain_ripple_enabled.isChecked(),
             rain_ripple_chance=self.rain_ripple_chance.value(),
@@ -1125,6 +1265,31 @@ class EffectOverlaySettings:
     sakura_petal_ripple_max_radius: float = 88.0
     sakura_petal_ripple_cooldown: float = 0.025
 
+    moon_body_enabled: bool = False
+    moonlight_enabled: bool = False
+    moon_shadow_enabled: bool = False
+    moon_x: float = 0.78
+    moon_y: float = 0.18
+    moon_body_angle: float = 0.0
+    moon_radius: float = 74.0
+    moon_alpha: int = 230
+    moon_color: str = "#FFF3C4"
+    moon_edge_color: str = "#C9D7FF"
+    moon_crater_count: int = 9
+    moon_crater_alpha: int = 54
+    moonlight_radius: float = 260.0
+    moonlight_alpha: int = 82
+    moonlight_color: str = "#CFE8FF"
+    moonlight_angle: float = 0.0
+    moonlight_beam_enabled: bool = True
+    moonlight_beam_alpha: int = 44
+    moonlight_beam_width: float = 0.34
+    moon_shadow_alpha: int = 70
+    moon_shadow_color: str = "#061028"
+    moon_shadow_offset_x: float = 28.0
+    moon_shadow_offset_y: float = 38.0
+    moon_shadow_angle: float = 0.0
+    moon_shadow_blur_radius: float = 150.0
     sakura_tree_enabled: bool = True
     sakura_tree_x: float = 0.15
     sakura_tree_ground_y: float = 0.92
@@ -1407,6 +1572,31 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         sakura_petal_ripple_min_radius=float(defaults.get("sakura_petal_ripple_min_radius", 22.0)),
         sakura_petal_ripple_max_radius=float(defaults.get("sakura_petal_ripple_max_radius", 88.0)),
         sakura_petal_ripple_cooldown=float(defaults.get("sakura_petal_ripple_cooldown", 0.025)),
+        moon_body_enabled=bool(defaults.get("moon_body_enabled", False)),
+        moonlight_enabled=bool(defaults.get("moonlight_enabled", False)),
+        moon_shadow_enabled=bool(defaults.get("moon_shadow_enabled", False)),
+        moon_x=float(defaults.get("moon_x", 0.78)),
+        moon_y=float(defaults.get("moon_y", 0.18)),
+        moon_body_angle=float(defaults.get("moon_body_angle", 0.0)),
+        moon_radius=float(defaults.get("moon_radius", 74.0)),
+        moon_alpha=max(0, min(255, int(defaults.get("moon_alpha", 230)))),
+        moon_color=str(defaults.get("moon_color", "#FFF3C4")),
+        moon_edge_color=str(defaults.get("moon_edge_color", "#C9D7FF")),
+        moon_crater_count=max(0, int(defaults.get("moon_crater_count", 9))),
+        moon_crater_alpha=max(0, min(255, int(defaults.get("moon_crater_alpha", 54)))),
+        moonlight_radius=float(defaults.get("moonlight_radius", 260.0)),
+        moonlight_alpha=max(0, min(255, int(defaults.get("moonlight_alpha", 82)))),
+        moonlight_color=str(defaults.get("moonlight_color", "#CFE8FF")),
+        moonlight_angle=float(defaults.get("moonlight_angle", 0.0)),
+        moonlight_beam_enabled=bool(defaults.get("moonlight_beam_enabled", True)),
+        moonlight_beam_alpha=max(0, min(255, int(defaults.get("moonlight_beam_alpha", 44)))),
+        moonlight_beam_width=float(defaults.get("moonlight_beam_width", 0.34)),
+        moon_shadow_alpha=max(0, min(255, int(defaults.get("moon_shadow_alpha", 70)))),
+        moon_shadow_color=str(defaults.get("moon_shadow_color", "#061028")),
+        moon_shadow_offset_x=float(defaults.get("moon_shadow_offset_x", 28.0)),
+        moon_shadow_offset_y=float(defaults.get("moon_shadow_offset_y", 38.0)),
+        moon_shadow_angle=float(defaults.get("moon_shadow_angle", 0.0)),
+        moon_shadow_blur_radius=float(defaults.get("moon_shadow_blur_radius", 150.0)),
         sakura_tree_enabled=bool(defaults.get("sakura_tree_enabled", True)),
         sakura_tree_x=float(defaults.get("sakura_tree_x", 0.15)),
         sakura_tree_ground_y=float(defaults.get("sakura_tree_ground_y", 0.92)),
@@ -2699,6 +2889,8 @@ class WidgetConfig:
     visualizer_flip_vertical: bool = False
     visualizer_peak_bar_enabled: bool = True
     visualizer_glow_enabled: bool = True
+    visualizer_bar_width_scale: float = 1.0
+    visualizer_orientation: str = "horizontal"
     weather_location: str = ""
     network_down_color: str = "#5BE7FF"
     network_up_color: str = "#80FF9F"
@@ -2723,8 +2915,12 @@ class BaseWidget:
     def rect(self) -> QRectF:
         return QRectF(self.cfg.x, self.cfg.y, self.cfg.w, self.cfg.h)
 
+    def interaction_rect(self) -> QRectF:
+        """Mouse hit / selection area used by the canvas."""
+        return self.rect
+
     def contains(self, pos: QPoint) -> bool:
-        return self.rect.contains(pos)
+        return self.interaction_rect().contains(QPointF(pos))
 
     def paint(self, p: QPainter, ctx: Dict):
         raise NotImplementedError
@@ -2755,6 +2951,96 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_sakura_tree_emit_time = 0.0
         self._extra_effects: Dict[str, List[ExtraEffectParticle]] = {}
         self._last_extra_ripple_time = 0.0
+        self._moon_drag_offset = QPointF(0.0, 0.0)
+
+    def _has_visible_moon_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
+        """Return True when any moon-related visual is enabled."""
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        return bool(
+            getattr(settings, "moon_body_enabled", False)
+            or getattr(settings, "moonlight_enabled", False)
+            or getattr(settings, "moon_shadow_enabled", False)
+        )
+
+    def moon_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        """Compact hit/selection area for moon body, moonlight and moon shadow.
+
+        The overlay widget itself can be full-screen. For moon effects, the selectable
+        rectangle is the union of the enabled moon visuals only. The long moonlight
+        beam is intentionally excluded from hit-testing so the selection area stays
+        near the moon instead of stretching to the bottom of the screen.
+        """
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        r = self.rect
+        if not self._has_visible_moon_effect(settings):
+            return QRectF(r)
+        center = self._moon_center(r, settings)
+        moon_radius = max(2.0, float(getattr(settings, "moon_radius", 74.0)))
+        bounds = QRectF()
+        has_bounds = False
+
+        def unite(rect: QRectF):
+            nonlocal bounds, has_bounds
+            bounds = QRectF(rect) if not has_bounds else bounds.united(rect)
+            has_bounds = True
+
+        if getattr(settings, "moon_body_enabled", False):
+            body_radius = moon_radius + moon_radius * 0.18 + 8.0
+            unite(QRectF(center.x() - body_radius, center.y() - body_radius, body_radius * 2.0, body_radius * 2.0))
+
+        if getattr(settings, "moonlight_enabled", False):
+            light_radius = max(moon_radius * 1.2, float(getattr(settings, "moonlight_radius", 260.0))) * 1.08
+            unite(QRectF(center.x() - light_radius, center.y() - light_radius, light_radius * 2.0, light_radius * 2.0))
+
+        if getattr(settings, "moon_shadow_enabled", False):
+            offset_x = float(getattr(settings, "moon_shadow_offset_x", 28.0))
+            offset_y = float(getattr(settings, "moon_shadow_offset_y", 38.0))
+            shadow_angle = self._angle_degrees(settings, "moon_shadow_angle", 0.0)
+            rotated_shadow_offset = self._rotated_offset(offset_x, offset_y, shadow_angle)
+            blur_radius = max(moon_radius, float(getattr(settings, "moon_shadow_blur_radius", 150.0)))
+            shadow_center = QPointF(center.x() + rotated_shadow_offset.x(), center.y() + rotated_shadow_offset.y())
+            unite(QRectF(shadow_center.x() - blur_radius * 1.05, shadow_center.y() - blur_radius * 0.95, blur_radius * 2.10, blur_radius * 1.90))
+
+        if not has_bounds:
+            return QRectF(r)
+        return bounds.adjusted(-8.0, -8.0, 8.0, 8.0)
+
+    def interaction_rect(self) -> QRectF:
+        settings = get_effect_overlay_settings(self.cfg)
+        if self._has_visible_moon_effect(settings):
+            return self.moon_interaction_rect(settings)
+        return self.rect
+
+    def contains(self, pos: QPoint) -> bool:
+        settings = get_effect_overlay_settings(self.cfg)
+        if self._has_visible_moon_effect(settings):
+            return self.moon_interaction_rect(settings).contains(QPointF(pos))
+        return self.rect.contains(pos)
+
+    def is_moon_hit(self, pos: QPoint) -> bool:
+        settings = get_effect_overlay_settings(self.cfg)
+        return self._has_visible_moon_effect(settings) and self.moon_interaction_rect(settings).contains(QPointF(pos))
+
+    def moon_drag_offset_from_pos(self, pos: QPoint) -> QPointF:
+        settings = get_effect_overlay_settings(self.cfg)
+        center = self._moon_center(self.rect, settings)
+        return QPointF(float(pos.x()) - center.x(), float(pos.y()) - center.y())
+
+    def move_moon_center_to(self, pos: QPoint, offset: Optional[QPointF] = None):
+        """Move moon body/light/shadow together by updating moon_x and moon_y."""
+        settings = get_effect_overlay_settings(self.cfg)
+        r = self.rect
+        if r.width() <= 0 or r.height() <= 0:
+            return
+        if offset is None:
+            offset = QPointF(0.0, 0.0)
+        new_center_x = float(pos.x()) - float(offset.x())
+        new_center_y = float(pos.y()) - float(offset.y())
+        settings.moon_x = max(0.0, min(1.0, (new_center_x - r.left()) / max(1.0, r.width())))
+        settings.moon_y = max(0.0, min(1.0, (new_center_y - r.top()) / max(1.0, r.height())))
+        set_effect_overlay_settings(self.cfg, settings)
 
     def paint(self, p: QPainter, ctx: Dict):
         settings = get_effect_overlay_settings(self.cfg)
@@ -2780,6 +3066,9 @@ class EffectsOverlayWidget(BaseWidget):
 
         if settings.noise_enabled:
             self._draw_noise(p, r, settings, now)
+
+        if getattr(settings, "moonlight_enabled", False) or getattr(settings, "moon_shadow_enabled", False) or getattr(settings, "moon_body_enabled", False):
+            self._draw_moon_integrated_effect(p, r, settings, now)
 
         self._ensure_extra_effects(r, settings, now)
         self._update_extra_effects(r, settings, dt, now)
@@ -2832,6 +3121,137 @@ class EffectsOverlayWidget(BaseWidget):
         p.restore()
 
 
+    def _moon_center(self, r: QRectF, settings: EffectOverlaySettings):
+        x = r.left() + r.width() * max(0.0, min(1.0, float(getattr(settings, "moon_x", 0.78))))
+        y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, "moon_y", 0.18))))
+        return QPointF(x, y)
+
+    def _angle_degrees(self, settings: EffectOverlaySettings, name: str, default: float = 0.0) -> float:
+        """Safely read an angle setting in degrees."""
+        try:
+            return float(getattr(settings, name, default))
+        except Exception:
+            return float(default)
+
+    def _rotated_offset(self, x: float, y: float, angle_degrees: float) -> QPointF:
+        """Rotate an offset vector by angle_degrees around the origin."""
+        rad = math.radians(float(angle_degrees))
+        ca = math.cos(rad)
+        sa = math.sin(rad)
+        return QPointF(x * ca - y * sa, x * sa + y * ca)
+
+    def _draw_moon_integrated_effect(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        center = self._moon_center(r, settings)
+        radius = max(2.0, float(getattr(settings, "moon_radius", 74.0)))
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if getattr(settings, "moon_shadow_enabled", False):
+            self._draw_moon_shadow(p, center, radius, settings, now)
+        if getattr(settings, "moonlight_enabled", False):
+            self._draw_moonlight(p, r, center, radius, settings, now)
+        if getattr(settings, "moon_body_enabled", False):
+            self._draw_moon_body(p, center, radius, settings, now)
+        p.restore()
+
+    def _draw_moonlight(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        color = QColor(getattr(settings, "moonlight_color", "#CFE8FF"))
+        alpha = max(0, min(255, int(getattr(settings, "moonlight_alpha", 82) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        light_radius = max(radius * 1.2, float(getattr(settings, "moonlight_radius", 260.0)))
+        light_radius *= 0.92 + 0.08 * math.sin(now * 0.85)
+        angle = self._angle_degrees(settings, "moonlight_angle", 0.0)
+
+        grad = QRadialGradient(center, light_radius)
+        c0 = QColor(color); c0.setAlpha(alpha)
+        c1 = QColor(color); c1.setAlpha(int(alpha * 0.30))
+        c2 = QColor(color); c2.setAlpha(0)
+        grad.setColorAt(0.0, c0); grad.setColorAt(0.38, c1); grad.setColorAt(1.0, c2)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(center, light_radius, light_radius)
+
+        if bool(getattr(settings, "moonlight_beam_enabled", True)):
+            beam_alpha = max(0, min(255, int(getattr(settings, "moonlight_beam_alpha", 44) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+            beam_width = max(0.05, min(1.0, float(getattr(settings, "moonlight_beam_width", 0.34))))
+            top_w = radius * (0.35 + beam_width)
+            bottom_w = max(top_w * 1.4, max(r.width(), r.height()) * beam_width)
+            corners = [r.topLeft(), r.topRight(), r.bottomLeft(), r.bottomRight()]
+            reach = max(math.hypot(c.x() - center.x(), c.y() - center.y()) for c in corners) + radius * 0.8
+            start_y = radius * 0.22
+            end_y = reach
+
+            p.save()
+            p.translate(center)
+            p.rotate(angle)
+            beam = QPainterPath()
+            beam.moveTo(-top_w, start_y)
+            beam.cubicTo(-bottom_w * 0.22, light_radius * 0.34, -bottom_w * 0.48, end_y - radius * 0.4, -bottom_w, end_y)
+            beam.lineTo(bottom_w, end_y)
+            beam.cubicTo(bottom_w * 0.48, end_y - radius * 0.4, bottom_w * 0.22, light_radius * 0.34, top_w, start_y)
+            beam.closeSubpath()
+            beam_grad = QLinearGradient(0, 0, 0, end_y)
+            b0 = QColor(color); b0.setAlpha(beam_alpha)
+            b1 = QColor(color); b1.setAlpha(int(beam_alpha * 0.20))
+            b2 = QColor(color); b2.setAlpha(0)
+            beam_grad.setColorAt(0.0, b0); beam_grad.setColorAt(0.58, b1); beam_grad.setColorAt(1.0, b2)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(beam_grad))
+            p.drawPath(beam)
+            p.restore()
+    def _draw_moon_shadow(self, p: QPainter, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        color = QColor(getattr(settings, "moon_shadow_color", "#061028"))
+        alpha = max(0, min(255, int(getattr(settings, "moon_shadow_alpha", 70) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        offset_x = float(getattr(settings, "moon_shadow_offset_x", 28.0))
+        offset_y = float(getattr(settings, "moon_shadow_offset_y", 38.0))
+        angle = self._angle_degrees(settings, "moon_shadow_angle", 0.0)
+        rotated_offset = self._rotated_offset(offset_x, offset_y, angle)
+        blur_radius = max(radius, float(getattr(settings, "moon_shadow_blur_radius", 150.0)))
+        shadow_center = QPointF(center.x() + rotated_offset.x(), center.y() + rotated_offset.y())
+        grad = QRadialGradient(QPointF(0.0, 0.0), blur_radius)
+        c0 = QColor(color); c0.setAlpha(alpha)
+        c1 = QColor(color); c1.setAlpha(int(alpha * 0.28))
+        c2 = QColor(color); c2.setAlpha(0)
+        grad.setColorAt(0.0, c0); grad.setColorAt(0.48, c1); grad.setColorAt(1.0, c2)
+        p.save()
+        p.translate(shadow_center)
+        p.rotate(angle)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(0.0, 0.0), blur_radius, blur_radius * 0.86)
+        p.restore()
+    def _draw_moon_body(self, p: QPainter, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        moon_color = QColor(getattr(settings, "moon_color", "#FFF3C4"))
+        edge_color = QColor(getattr(settings, "moon_edge_color", "#C9D7FF"))
+        alpha = max(0, min(255, int(getattr(settings, "moon_alpha", 230) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        angle = self._angle_degrees(settings, "moon_body_angle", 0.0)
+
+        p.save()
+        p.translate(center)
+        p.rotate(angle)
+
+        grad = QRadialGradient(QPointF(-radius * 0.26, -radius * 0.30), radius * 1.25)
+        c0 = QColor(255, 255, 245, alpha)
+        c1 = QColor(moon_color); c1.setAlpha(alpha)
+        c2 = QColor(edge_color); c2.setAlpha(max(0, min(255, int(alpha * 0.92))))
+        grad.setColorAt(0.0, c0); grad.setColorAt(0.52, c1); grad.setColorAt(1.0, c2)
+        p.setPen(QPen(QColor(edge_color.red(), edge_color.green(), edge_color.blue(), int(alpha * 0.72)), max(1, int(radius * 0.025))))
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+
+        crater_count = max(0, int(getattr(settings, "moon_crater_count", 9)))
+        crater_alpha = max(0, min(255, int(getattr(settings, "moon_crater_alpha", 54) * alpha / 255)))
+        rng = random.Random(7331 + int(radius * 10))
+        for _ in range(crater_count):
+            ang = rng.random() * math.tau
+            dist = radius * (0.12 + rng.random() * 0.62)
+            cx = math.cos(ang) * dist * 0.88
+            cy = math.sin(ang) * dist * 0.78
+            cr = radius * (0.035 + rng.random() * 0.075)
+            shade = QColor(86, 92, 112, crater_alpha)
+            light = QColor(255, 255, 245, int(crater_alpha * 0.36))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(shade))
+            p.drawEllipse(QPointF(cx, cy), cr * 1.08, cr * 0.82)
+            p.setBrush(QBrush(light))
+            p.drawEllipse(QPointF(cx - cr * 0.25, cy - cr * 0.22), max(1.0, cr * 0.42), max(1.0, cr * 0.28))
+        p.restore()
     def _extra_kind_specs(self):
         return {
             "snow": ("snow_enabled", "snow_count"),
@@ -4275,11 +4695,20 @@ class EffectsOverlayWidget(BaseWidget):
         return 1.0 - pow(1.0 - t, 3.0)
 
     def _paint_selection(self, p: QPainter):
+        settings = get_effect_overlay_settings(self.cfg)
+        selection_rect = self.moon_interaction_rect(settings) if self._has_visible_moon_effect(settings) else self.rect
         pen = QPen(QColor("#FFFFFF"))
         pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(self.rect, 16, 16)
+        p.drawRoundedRect(selection_rect, 16, 16)
+        if self._has_visible_moon_effect(settings):
+            center = self._moon_center(self.rect, settings)
+            marker_pen = QPen(QColor(255, 255, 255, 190), 1)
+            marker_pen.setStyle(Qt.PenStyle.SolidLine)
+            p.setPen(marker_pen)
+            p.drawLine(QPointF(center.x() - 6.0, center.y()), QPointF(center.x() + 6.0, center.y()))
+            p.drawLine(QPointF(center.x(), center.y() - 6.0), QPointF(center.x(), center.y() + 6.0))
 
 class VisualizerWidget(BaseWidget):
     def __init__(self, cfg):
@@ -4292,150 +4721,167 @@ class VisualizerWidget(BaseWidget):
             self._peak_levels = [0.0 for _ in range(count)]
             self._last_peak_update = time.time()
 
+    def _visualizer_orientation(self):
+        value = str(getattr(self.cfg, "visualizer_orientation", "horizontal") or "horizontal").strip().lower()
+        return "vertical" if value in ("vertical", "縦", "vertical_stack", "side") else "horizontal"
+
+    def _visualizer_bar_width_scale(self):
+        try:
+            scale = float(getattr(self.cfg, "visualizer_bar_width_scale", 1.0))
+        except Exception:
+            scale = 1.0
+        return max(0.35, min(2.4, scale))
+
     def paint(self, p: QPainter, ctx: Dict):
         audio: AudioEngine = ctx["audio"]
         bars = audio.get_spectrum()
-
+        count = max(1, len(bars))
         r = self.rect
-        radius = 16
-
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
         bg = widget_bg_color(self.cfg)
         p.setBrush(QBrush(bg))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(r, radius, radius)
+        p.drawRoundedRect(r, 16, 16)
 
         margin = 14
+        label_h = 18
         available_w = max(1.0, r.width() - margin * 2)
-        available_h = max(1.0, r.height() - margin * 2 - 18)
-        bar_gap = 3
-        bar_w = max(2.0, (available_w / max(1, len(bars))) - bar_gap)
+        available_h = max(1.0, r.height() - margin * 2 - label_h)
+        left = r.left() + margin
+        top = r.top() + margin + label_h
+        bottom = r.bottom() - margin
+        right = r.right() - margin
 
         color = QColor(self.cfg.color)
         flip_vertical = bool(getattr(self.cfg, "visualizer_flip_vertical", False))
         peak_bar_enabled = bool(getattr(self.cfg, "visualizer_peak_bar_enabled", True))
         glow_enabled = bool(getattr(self.cfg, "visualizer_glow_enabled", True))
-
-        base_y = r.bottom() - margin
-        top_y = r.top() + margin + 18
-
+        orientation = self._visualizer_orientation()
+        width_scale = self._visualizer_bar_width_scale()
         now = time.time()
         dt = max(0.001, min(0.08, now - getattr(self, "_last_peak_update", now)))
         self._last_peak_update = now
-        self._ensure_peak_levels(len(bars))
-
-        
+        self._ensure_peak_levels(count)
         peak_decay = 1.15 * dt
 
-        for i, v in enumerate(bars):
-            value = max(0.0, min(1.0, float(v)))
-            h = max(2.0, available_h * value)
-            x = r.left() + margin + i * (bar_w + bar_gap)
-
-            if peak_bar_enabled:
-                self._peak_levels[i] = max(value, max(0.0, self._peak_levels[i] - peak_decay))
-            else:
-                self._peak_levels[i] = value
-
-            if flip_vertical:
-                y = top_y
-                bar_rect = QRectF(x, y, bar_w, h)
-                peak_y = top_y + available_h * self._peak_levels[i]
-            else:
-                y = base_y - h
-                bar_rect = QRectF(x, y, bar_w, h)
-                peak_y = base_y - available_h * self._peak_levels[i]
-
-            if glow_enabled and value > 0.025:
-                self._draw_visualizer_bar_glow(p, bar_rect, color, value, flip_vertical)
-
-            grad = QLinearGradient(bar_rect.left(), bar_rect.top(), bar_rect.left(), bar_rect.bottom())
-            if flip_vertical:
-                grad.setColorAt(0.0, QColor(255, 255, 255, 105))
-                grad.setColorAt(0.38, QColor(color.red(), color.green(), color.blue(), 245))
-                grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 165))
-            else:
-                grad.setColorAt(0.0, QColor(255, 255, 255, 110))
-                grad.setColorAt(0.35, QColor(color.red(), color.green(), color.blue(), 245))
-                grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 165))
-
-            p.setBrush(QBrush(grad))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(bar_rect, 3, 3)
-
-            if peak_bar_enabled:
-                self._draw_visualizer_peak_bar(
-                    p,
-                    x,
-                    peak_y,
-                    bar_w,
-                    color,
-                    value,
-                    flip_vertical
-                )
+        if orientation == "vertical":
+            slot_h = available_h / count
+            gap = min(3.0, max(1.0, slot_h * 0.28))
+            bar_h = max(2.0, min(slot_h * 0.96, slot_h * width_scale - gap))
+            for i, v in enumerate(bars):
+                value = max(0.0, min(1.0, float(v)))
+                self._peak_levels[i] = max(value, max(0.0, self._peak_levels[i] - peak_decay)) if peak_bar_enabled else value
+                y = top + i * slot_h + (slot_h - bar_h) / 2.0
+                w = max(2.0, available_w * value)
+                peak_x = left + available_w * self._peak_levels[i]
+                x = left
+                if flip_vertical:
+                    x = right - w
+                    peak_x = right - available_w * self._peak_levels[i]
+                rect = QRectF(x, y, w, bar_h)
+                if glow_enabled and value > 0.025:
+                    self._draw_visualizer_bar_glow(p, rect, color, value, flip_vertical, orientation)
+                grad = QLinearGradient(rect.left(), rect.top(), rect.right(), rect.top())
+                grad.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 165))
+                grad.setColorAt(0.62, QColor(color.red(), color.green(), color.blue(), 245))
+                grad.setColorAt(1.0, QColor(255, 255, 255, 110))
+                if flip_vertical:
+                    grad.setStart(rect.right(), rect.top())
+                    grad.setFinalStop(rect.left(), rect.top())
+                p.setBrush(QBrush(grad))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(rect, 3, 3)
+                if peak_bar_enabled:
+                    self._draw_visualizer_peak_bar(p, x, y, rect.width(), bar_h, color, value, flip_vertical, orientation, peak_x)
+        else:
+            slot_w = available_w / count
+            gap = min(3.0, max(1.0, slot_w * 0.28))
+            bar_w = max(2.0, min(slot_w * 0.96, slot_w * width_scale - gap))
+            for i, v in enumerate(bars):
+                value = max(0.0, min(1.0, float(v)))
+                h = max(2.0, available_h * value)
+                x = left + i * slot_w + (slot_w - bar_w) / 2.0
+                self._peak_levels[i] = max(value, max(0.0, self._peak_levels[i] - peak_decay)) if peak_bar_enabled else value
+                y = top if flip_vertical else bottom - h
+                peak_y = top + available_h * self._peak_levels[i] if flip_vertical else bottom - available_h * self._peak_levels[i]
+                rect = QRectF(x, y, bar_w, h)
+                if glow_enabled and value > 0.025:
+                    self._draw_visualizer_bar_glow(p, rect, color, value, flip_vertical, orientation)
+                grad = QLinearGradient(rect.left(), rect.top(), rect.left(), rect.bottom())
+                if flip_vertical:
+                    grad.setColorAt(0.0, QColor(255, 255, 255, 105))
+                    grad.setColorAt(0.38, QColor(color.red(), color.green(), color.blue(), 245))
+                    grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 165))
+                else:
+                    grad.setColorAt(0.0, QColor(255, 255, 255, 110))
+                    grad.setColorAt(0.35, QColor(color.red(), color.green(), color.blue(), 245))
+                    grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 165))
+                p.setBrush(QBrush(grad))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(rect, 3, 3)
+                if peak_bar_enabled:
+                    self._draw_visualizer_peak_bar(p, x, peak_y, bar_w, h, color, value, flip_vertical, orientation)
 
         p.setPen(QColor(230, 240, 255, 220))
         p.setFont(QFont("Segoe UI", 9))
         label = ""
         if audio.use_fake:
             label += " / fallback"
+        if orientation == "vertical":
+            label += " / vertical"
         p.drawText(QRectF(r.left() + 14, r.top() + 8, r.width() - 20, 18), label)
-
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
-
         p.restore()
 
-    def _draw_visualizer_bar_glow(self, p: QPainter, bar_rect: QRectF, color: QColor, value: float, flip_vertical: bool):
+    def _draw_visualizer_bar_glow(self, p: QPainter, bar_rect: QRectF, color: QColor, value: float, flip_vertical: bool, orientation: str = "horizontal"):
         glow = QColor(color)
         glow.setAlpha(max(18, min(145, int(42 + value * 125))))
-        halo = QRectF(
-            bar_rect.left() - max(2.0, bar_rect.width() * 0.45),
-            bar_rect.top() - 5,
-            bar_rect.width() + max(4.0, bar_rect.width() * 0.9),
-            bar_rect.height() + 10,
-        )
+        if orientation == "vertical":
+            halo = QRectF(bar_rect.left() - 6, bar_rect.top() - max(2.0, bar_rect.height() * 0.45), bar_rect.width() + 12, bar_rect.height() + max(4.0, bar_rect.height() * 0.9))
+        else:
+            halo = QRectF(bar_rect.left() - max(2.0, bar_rect.width() * 0.45), bar_rect.top() - 5, bar_rect.width() + max(4.0, bar_rect.width() * 0.9), bar_rect.height() + 10)
         p.save()
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(glow))
         p.drawRoundedRect(halo, 5, 5)
-
-        
-        edge_alpha = max(20, min(120, int(30 + value * 100)))
         edge = QColor(color)
-        edge.setAlpha(edge_alpha)
+        edge.setAlpha(max(20, min(120, int(30 + value * 100))))
         p.setBrush(QBrush(edge))
-        if flip_vertical:
+        if orientation == "vertical":
+            edge_rect = QRectF((bar_rect.left() - 3) if flip_vertical else (bar_rect.right() - 3), bar_rect.top() - 1, 6, bar_rect.height() + 2)
+        elif flip_vertical:
             edge_rect = QRectF(bar_rect.left() - 1, bar_rect.bottom() - 3, bar_rect.width() + 2, 6)
         else:
             edge_rect = QRectF(bar_rect.left() - 1, bar_rect.top() - 3, bar_rect.width() + 2, 6)
         p.drawRoundedRect(edge_rect, 3, 3)
         p.restore()
 
-    def _draw_visualizer_peak_bar(self, p: QPainter, x: float, peak_y: float, bar_w: float, color: QColor, value: float, flip_vertical: bool):
+    def _draw_visualizer_peak_bar(self, p: QPainter, x: float, peak_pos: float, bar_w: float, bar_h: float, color: QColor, value: float, flip_vertical: bool, orientation: str = "horizontal", peak_x: float = None):
         p.save()
         peak_color = QColor(color)
         peak_color.setAlpha(max(150, min(255, int(165 + value * 90))))
         shine = QColor(255, 255, 255, max(80, min(210, int(90 + value * 120))))
-
-        cap_h = 3.0
-        cap_w = max(6.0, bar_w + 1.5)
-        cap_x = x - 0.75
-        if flip_vertical:
-            cap_y = peak_y + 2.0
+        if orientation == "vertical":
+            cap_x = peak_x if peak_x is not None else x + bar_w
+            cap_x = cap_x - 2.0 if flip_vertical else cap_x + 2.0
+            cap_rect = QRectF(cap_x, peak_pos - 0.75, 3.0, max(6.0, bar_h + 1.5))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(peak_color))
+            p.drawRoundedRect(cap_rect, 1.5, 1.5)
+            p.setBrush(QBrush(shine))
+            p.drawRoundedRect(QRectF(cap_rect.left(), cap_rect.top(), 1.0, cap_rect.height()), 0.8, 0.8)
         else:
-            cap_y = peak_y - cap_h - 2.0
-
-        cap_rect = QRectF(cap_x, cap_y, cap_w, cap_h)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(peak_color))
-        p.drawRoundedRect(cap_rect, 1.5, 1.5)
-
-        
-        p.setBrush(QBrush(shine))
-        p.drawRoundedRect(QRectF(cap_rect.left(), cap_rect.top(), cap_rect.width(), 1.0), 0.8, 0.8)
+            cap_h = 3.0
+            cap_w = max(6.0, bar_w + 1.5)
+            cap_y = peak_pos + 2.0 if flip_vertical else peak_pos - cap_h - 2.0
+            cap_rect = QRectF(x - 0.75, cap_y, cap_w, cap_h)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(peak_color))
+            p.drawRoundedRect(cap_rect, 1.5, 1.5)
+            p.setBrush(QBrush(shine))
+            p.drawRoundedRect(QRectF(cap_rect.left(), cap_rect.top(), cap_rect.width(), 1.0), 0.8, 0.8)
         p.restore()
 
     def _paint_selection(self, p: QPainter):
@@ -6153,7 +6599,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle("Lite Desktop Studio v1.5.0 - ウィジェット編集")
+        self.setWindowTitle("Lite Desktop Studio v1.5.1 - ウィジェット編集")
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -6318,7 +6764,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.0")
+        self.setWindowTitle("Lite Desktop Studio v1.5.1")
         self.resize(960, 640)
 
         self.build_ui()
@@ -6649,6 +7095,15 @@ class LiteDeskStudio(QMainWindow):
         self.prop_visualizer_peak_bar_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_visualizer_glow_enabled = QCheckBox("💡 スペクトル発光を有効化")
         self.prop_visualizer_glow_enabled.stateChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_bar_width_scale = QDoubleSpinBox()
+        self.prop_visualizer_bar_width_scale.setRange(0.35, 2.40)
+        self.prop_visualizer_bar_width_scale.setDecimals(2)
+        self.prop_visualizer_bar_width_scale.setSingleStep(0.05)
+        self.prop_visualizer_bar_width_scale.valueChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_orientation = QComboBox()
+        self.prop_visualizer_orientation.addItem("横向きに展開", "horizontal")
+        self.prop_visualizer_orientation.addItem("縦向きに展開", "vertical")
+        self.prop_visualizer_orientation.currentIndexChanged.connect(self.apply_properties_live)
         self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
         self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
         self.prop_weather_location = QLineEdit()
@@ -6704,10 +7159,14 @@ class LiteDeskStudio(QMainWindow):
         form.addRow("", self.prop_visualizer_flip_vertical)
         form.addRow("", self.prop_visualizer_peak_bar_enabled)
         form.addRow("", self.prop_visualizer_glow_enabled)
+        form.addRow("📏 スペクトルバー幅", self.prop_visualizer_bar_width_scale)
+        form.addRow("🧭 スペクトル展開方向", self.prop_visualizer_orientation)
         self.visualizer_only_property_widgets = [
             self.prop_visualizer_flip_vertical,
             self.prop_visualizer_peak_bar_enabled,
             self.prop_visualizer_glow_enabled,
+            self.prop_visualizer_bar_width_scale,
+            self.prop_visualizer_orientation,
         ]
 
         self.clock_only_property_widgets = [
@@ -6925,6 +7384,8 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_visualizer_flip_vertical", None),
             getattr(self, "prop_visualizer_peak_bar_enabled", None),
             getattr(self, "prop_visualizer_glow_enabled", None),
+            getattr(self, "prop_visualizer_bar_width_scale", None),
+            getattr(self, "prop_visualizer_orientation", None),
             getattr(self, "prop_network_down_color", None),
             getattr(self, "prop_network_up_color", None),
         ]
@@ -6961,6 +7422,8 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_flip_vertical.setChecked(False)
                 self.prop_visualizer_peak_bar_enabled.setChecked(True)
                 self.prop_visualizer_glow_enabled.setChecked(True)
+                self.prop_visualizer_bar_width_scale.setValue(1.0)
+                self.prop_visualizer_orientation.setCurrentIndex(0)
                 self.set_visualizer_controls_visible(False)
                 self.set_weather_controls_visible(False)
                 self.prop_network_down_color.setText("")
@@ -7017,10 +7480,19 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_glow_enabled.setChecked(
                     bool(getattr(cfg, "visualizer_glow_enabled", True))
                 )
+                try:
+                    self.prop_visualizer_bar_width_scale.setValue(max(0.35, min(2.40, float(getattr(cfg, "visualizer_bar_width_scale", 1.0)))))
+                except Exception:
+                    self.prop_visualizer_bar_width_scale.setValue(1.0)
+                orientation = str(getattr(cfg, "visualizer_orientation", "horizontal") or "horizontal").lower()
+                idx = self.prop_visualizer_orientation.findData("vertical" if orientation == "vertical" else "horizontal")
+                self.prop_visualizer_orientation.setCurrentIndex(max(0, idx))
             else:
                 self.prop_visualizer_flip_vertical.setChecked(False)
                 self.prop_visualizer_peak_bar_enabled.setChecked(True)
                 self.prop_visualizer_glow_enabled.setChecked(True)
+                self.prop_visualizer_bar_width_scale.setValue(1.0)
+                self.prop_visualizer_orientation.setCurrentIndex(0)
 
             if cfg.type == "clock":
                 self.prop_clock_show_digital.setChecked(
@@ -7124,6 +7596,8 @@ class LiteDeskStudio(QMainWindow):
             "prop_visualizer_flip_vertical",
             "prop_visualizer_peak_bar_enabled",
             "prop_visualizer_glow_enabled",
+            "prop_visualizer_bar_width_scale",
+            "prop_visualizer_orientation",
             "prop_network_down_color",
             "prop_network_up_color",
 
@@ -7182,6 +7656,8 @@ class LiteDeskStudio(QMainWindow):
                 cfg.visualizer_flip_vertical = self.prop_visualizer_flip_vertical.isChecked()
                 cfg.visualizer_peak_bar_enabled = self.prop_visualizer_peak_bar_enabled.isChecked()
                 cfg.visualizer_glow_enabled = self.prop_visualizer_glow_enabled.isChecked()
+                cfg.visualizer_bar_width_scale = self.prop_visualizer_bar_width_scale.value()
+                cfg.visualizer_orientation = self.prop_visualizer_orientation.currentData() or "horizontal"
 
             if cfg.type == "network":
                 cfg.network_down_color = self.prop_network_down_color.text().strip() or "#5BE7FF"
@@ -7404,7 +7880,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v1.5.0 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v1.5.1 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -7534,6 +8010,8 @@ class DesktopCanvas(QWidget):
         self.selected: Optional[BaseWidget] = None
         self.dragging = False
         self.drag_offset = QPoint(0, 0)
+        self.dragging_effect_moon = False
+        self.effect_moon_drag_offset = QPointF(0.0, 0.0)
         self.edit_mode = False
         self.last_right_click_time = 0.0
         self.last_right_click_widget = None
@@ -7584,7 +8062,8 @@ class DesktopCanvas(QWidget):
 
             for widget in self.widgets:
                 try:
-                    rect = widget.rect.toAlignedRect()
+                    hit_rect = widget.interaction_rect() if hasattr(widget, "interaction_rect") else widget.rect
+                    rect = hit_rect.toAlignedRect()
                 except Exception:
                     rect = QRect(
                         int(widget.cfg.x),
@@ -7737,6 +8216,15 @@ class DesktopCanvas(QWidget):
             disk_color=getattr(old, "disk_color", "#80FF9F"),
             clock_show_digital=getattr(old, "clock_show_digital", True),
             visualizer_flip_vertical=getattr(old, "visualizer_flip_vertical", False),
+            visualizer_peak_bar_enabled=getattr(old, "visualizer_peak_bar_enabled", True),
+            visualizer_glow_enabled=getattr(old, "visualizer_glow_enabled", True),
+            visualizer_bar_width_scale=getattr(old, "visualizer_bar_width_scale", 1.0),
+            visualizer_orientation=getattr(old, "visualizer_orientation", "horizontal"),
+            effects_json=getattr(old, "effects_json", "{}"),
+            effects_follow_mouse=getattr(old, "effects_follow_mouse", True),
+            weather_location=getattr(old, "weather_location", ""),
+            network_down_color=getattr(old, "network_down_color", DEFAULT_NETWORK_DOWN_COLOR),
+            network_up_color=getattr(old, "network_up_color", DEFAULT_NETWORK_UP_COLOR),
         )
 
         widget = create_widget(cfg)
@@ -7864,6 +8352,7 @@ class DesktopCanvas(QWidget):
 
             self.selected = None
             self.dragging = False
+            self.dragging_effect_moon = False
             self.volume_sliding = False
 
             if clicked_widget is not None:
@@ -7897,10 +8386,15 @@ class DesktopCanvas(QWidget):
                 else:
                     if self.edit_mode:
                         self.dragging = True
-                        self.drag_offset = pos - QPoint(
-                            clicked_widget.cfg.x,
-                            clicked_widget.cfg.y
-                        )
+                        if isinstance(clicked_widget, EffectsOverlayWidget) and clicked_widget.is_moon_hit(pos):
+                            self.dragging_effect_moon = True
+                            self.effect_moon_drag_offset = clicked_widget.moon_drag_offset_from_pos(pos)
+                        else:
+                            self.dragging_effect_moon = False
+                            self.drag_offset = pos - QPoint(
+                                clicked_widget.cfg.x,
+                                clicked_widget.cfg.y
+                            )
 
             self.update()
             self.notify_studio_selection_changed()
@@ -7915,8 +8409,11 @@ class DesktopCanvas(QWidget):
         new_pos = pos - self.drag_offset
 
         if self.dragging and self.selected and self.edit_mode:
-            self.selected.cfg.x = new_pos.x()
-            self.selected.cfg.y = new_pos.y()
+            if getattr(self, "dragging_effect_moon", False) and isinstance(self.selected, EffectsOverlayWidget):
+                self.selected.move_moon_center_to(pos, getattr(self, "effect_moon_drag_offset", QPointF(0.0, 0.0)))
+            else:
+                self.selected.cfg.x = new_pos.x()
+                self.selected.cfg.y = new_pos.y()
             self.update_platform_hit_mask()
         self.update()
 
@@ -7930,6 +8427,7 @@ class DesktopCanvas(QWidget):
         self.notify_effect_widgets_mouse_release(pos)
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
+            self.dragging_effect_moon = False
             self.volume_sliding = False
             self.update_platform_hit_mask()
             self.save_config()
