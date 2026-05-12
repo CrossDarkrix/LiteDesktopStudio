@@ -161,6 +161,9 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_speed": 0.18,
     "snow_size": 4.5,
     "snow_alpha": 210,
+    "snow_color": "#F5FCFF",
+    "snow_edge_color": "#CFEFFF",
+    "snow_ripple_color": "#DFFBFF",
     "snow_ripple_enabled": True,
     "snow_ripple_chance": 0.38,
     "snow_surface_y": 0.86,
@@ -169,6 +172,9 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_crystal_speed": 0.12,
     "snow_crystal_size": 15.0,
     "snow_crystal_alpha": 220,
+    "snow_crystal_color": "#EBFAFF",
+    "snow_crystal_edge_color": "#D8F4FF",
+    "snow_crystal_ripple_color": "#E8FBFF",
     "snow_crystal_ripple_enabled": True,
     "snow_crystal_ripple_chance": 0.55,
     "snow_crystal_surface_y": 0.86,
@@ -177,6 +183,17 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "bubble_speed": 0.26,
     "bubble_size": 12.0,
     "bubble_alpha": 150,
+    "water_drop_color": "#7DDCFF",
+    "water_drop_edge_color": "#D2F8FF",
+    "flame_core_color": "#FFF58C",
+    "flame_mid_color": "#FF7823",
+    "flame_edge_color": "#FF1E00",
+    "water_spray_color": "#82E1FF",
+    "water_spray_edge_color": "#D7FAFF",
+    "fireball_core_color": "#FFFFBE",
+    "fireball_mid_color": "#FF7828",
+    "fireball_edge_color": "#AA1400",
+    "fireball_trail_color": "#FF5A14",
     "flame_enabled": False,
     "flame_count": 60,
     "flame_speed": 0.55,
@@ -753,6 +770,27 @@ class EffectsOverlayEditorDialog(QDialog):
         self.sakura_petal_color = self._color_row_on(f, "桜花びら色", getattr(self.settings, "sakura_petal_color", "#FFD1E8"))
         self.sakura_petal_edge_color = self._color_row_on(f, "桜花びら縁色", getattr(self.settings, "sakura_petal_edge_color", "#FF8FC7"))
 
+        self._section(f, "雪")
+        self.snow_color = self._color_row_on(f, "雪の色", getattr(self.settings, "snow_color", "#F5FCFF"))
+        self.snow_edge_color = self._color_row_on(f, "雪の縁色", getattr(self.settings, "snow_edge_color", "#CFEFFF"))
+        self.snow_ripple_color = self._color_row_on(f, "雪の波紋色", getattr(self.settings, "snow_ripple_color", "#DFFBFF"))
+        self.snow_crystal_color = self._color_row_on(f, "雪の結晶色", getattr(self.settings, "snow_crystal_color", "#EBFAFF"))
+        self.snow_crystal_edge_color = self._color_row_on(f, "雪の結晶縁色", getattr(self.settings, "snow_crystal_edge_color", "#D8F4FF"))
+        self.snow_crystal_ripple_color = self._color_row_on(f, "雪の結晶波紋色", getattr(self.settings, "snow_crystal_ripple_color", "#E8FBFF"))
+
+        self._section(f, "水・火")
+        self.water_drop_color = self._color_row_on(f, "水玉色", getattr(self.settings, "water_drop_color", "#7DDCFF"))
+        self.water_drop_edge_color = self._color_row_on(f, "水玉縁色", getattr(self.settings, "water_drop_edge_color", "#D2F8FF"))
+        self.flame_core_color = self._color_row_on(f, "炎の中心色", getattr(self.settings, "flame_core_color", "#FFF58C"))
+        self.flame_mid_color = self._color_row_on(f, "炎の中間色", getattr(self.settings, "flame_mid_color", "#FF7823"))
+        self.flame_edge_color = self._color_row_on(f, "炎の外側色", getattr(self.settings, "flame_edge_color", "#FF1E00"))
+        self.water_spray_color = self._color_row_on(f, "水の吹き出し色", getattr(self.settings, "water_spray_color", "#82E1FF"))
+        self.water_spray_edge_color = self._color_row_on(f, "水の吹き出し縁色", getattr(self.settings, "water_spray_edge_color", "#D7FAFF"))
+        self.fireball_core_color = self._color_row_on(f, "火の玉中心色", getattr(self.settings, "fireball_core_color", "#FFFFBE"))
+        self.fireball_mid_color = self._color_row_on(f, "火の玉中間色", getattr(self.settings, "fireball_mid_color", "#FF7828"))
+        self.fireball_edge_color = self._color_row_on(f, "火の玉外側色", getattr(self.settings, "fireball_edge_color", "#AA1400"))
+        self.fireball_trail_color = self._color_row_on(f, "火の玉の尾色", getattr(self.settings, "fireball_trail_color", "#FF5A14"))
+
         self._section(f, "環境")
         self.particle_color = self._color_row_on(f, "粒子色", self.settings.particle_color)
         self.rain_color = self._color_row_on(f, "雨色", self.settings.rain_color)
@@ -1197,6 +1235,9 @@ class EffectsOverlayEditorDialog(QDialog):
             snow_speed=self.snow_speed.value(),
             snow_size=self.snow_size.value(),
             snow_alpha=self.snow_alpha.value(),
+            snow_color=self.snow_color.text().strip() or "#F5FCFF",
+            snow_edge_color=self.snow_edge_color.text().strip() or "#CFEFFF",
+            snow_ripple_color=self.snow_ripple_color.text().strip() or "#DFFBFF",
             snow_ripple_enabled=self.snow_ripple_enabled.isChecked(),
             snow_ripple_chance=self.snow_ripple_chance.value(),
             snow_surface_y=self.snow_surface_y.value(),
@@ -1205,6 +1246,20 @@ class EffectsOverlayEditorDialog(QDialog):
             snow_crystal_speed=self.snow_crystal_speed.value(),
             snow_crystal_size=self.snow_crystal_size.value(),
             snow_crystal_alpha=self.snow_crystal_alpha.value(),
+            snow_crystal_color=self.snow_crystal_color.text().strip() or "#EBFAFF",
+            snow_crystal_edge_color=self.snow_crystal_edge_color.text().strip() or "#D8F4FF",
+            snow_crystal_ripple_color=self.snow_crystal_ripple_color.text().strip() or "#E8FBFF",
+            water_drop_color=self.water_drop_color.text().strip() or "#7DDCFF",
+            water_drop_edge_color=self.water_drop_edge_color.text().strip() or "#D2F8FF",
+            flame_core_color=self.flame_core_color.text().strip() or "#FFF58C",
+            flame_mid_color=self.flame_mid_color.text().strip() or "#FF7823",
+            flame_edge_color=self.flame_edge_color.text().strip() or "#FF1E00",
+            water_spray_color=self.water_spray_color.text().strip() or "#82E1FF",
+            water_spray_edge_color=self.water_spray_edge_color.text().strip() or "#D7FAFF",
+            fireball_core_color=self.fireball_core_color.text().strip() or "#FFFFBE",
+            fireball_mid_color=self.fireball_mid_color.text().strip() or "#FF7828",
+            fireball_edge_color=self.fireball_edge_color.text().strip() or "#AA1400",
+            fireball_trail_color=self.fireball_trail_color.text().strip() or "#FF5A14",
             snow_crystal_ripple_enabled=self.snow_crystal_ripple_enabled.isChecked(),
             snow_crystal_ripple_chance=self.snow_crystal_ripple_chance.value(),
             snow_crystal_surface_y=self.snow_crystal_surface_y.value(),
@@ -1532,6 +1587,9 @@ class EffectOverlaySettings:
     snow_speed: float = 0.18
     snow_size: float = 4.5
     snow_alpha: int = 210
+    snow_color: str = "#F5FCFF"
+    snow_edge_color: str = "#CFEFFF"
+    snow_ripple_color: str = "#DFFBFF"
     snow_ripple_enabled: bool = True
     snow_ripple_chance: float = 0.38
     snow_surface_y: float = 0.86
@@ -1540,6 +1598,20 @@ class EffectOverlaySettings:
     snow_crystal_speed: float = 0.12
     snow_crystal_size: float = 15.0
     snow_crystal_alpha: int = 220
+    snow_crystal_color: str = "#EBFAFF"
+    snow_crystal_edge_color: str = "#D8F4FF"
+    snow_crystal_ripple_color: str = "#E8FBFF"
+    water_drop_color: str = "#7DDCFF"
+    water_drop_edge_color: str = "#D2F8FF"
+    flame_core_color: str = "#FFF58C"
+    flame_mid_color: str = "#FF7823"
+    flame_edge_color: str = "#FF1E00"
+    water_spray_color: str = "#82E1FF"
+    water_spray_edge_color: str = "#D7FAFF"
+    fireball_core_color: str = "#FFFFBE"
+    fireball_mid_color: str = "#FF7828"
+    fireball_edge_color: str = "#AA1400"
+    fireball_trail_color: str = "#FF5A14"
     snow_crystal_ripple_enabled: bool = True
     snow_crystal_ripple_chance: float = 0.55
     snow_crystal_surface_y: float = 0.86
@@ -1860,6 +1932,9 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         snow_speed=float(defaults.get("snow_speed", 0.18)),
         snow_size=float(defaults.get("snow_size", 4.5)),
         snow_alpha=max(0, min(255, int(defaults.get("snow_alpha", 210)))),
+        snow_color=str(defaults.get("snow_color", "#F5FCFF")),
+        snow_edge_color=str(defaults.get("snow_edge_color", "#CFEFFF")),
+        snow_ripple_color=str(defaults.get("snow_ripple_color", "#DFFBFF")),
         snow_ripple_enabled=bool(defaults.get("snow_ripple_enabled", True)),
         snow_ripple_chance=float(defaults.get("snow_ripple_chance", 0.38)),
         snow_surface_y=float(defaults.get("snow_surface_y", 0.86)),
@@ -1868,6 +1943,20 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         snow_crystal_speed=float(defaults.get("snow_crystal_speed", 0.12)),
         snow_crystal_size=float(defaults.get("snow_crystal_size", 15.0)),
         snow_crystal_alpha=max(0, min(255, int(defaults.get("snow_crystal_alpha", 220)))),
+        snow_crystal_color=str(defaults.get("snow_crystal_color", "#EBFAFF")),
+        snow_crystal_edge_color=str(defaults.get("snow_crystal_edge_color", "#D8F4FF")),
+        snow_crystal_ripple_color=str(defaults.get("snow_crystal_ripple_color", "#E8FBFF")),
+        water_drop_color=str(defaults.get("water_drop_color", "#7DDCFF")),
+        water_drop_edge_color=str(defaults.get("water_drop_edge_color", "#D2F8FF")),
+        flame_core_color=str(defaults.get("flame_core_color", "#FFF58C")),
+        flame_mid_color=str(defaults.get("flame_mid_color", "#FF7823")),
+        flame_edge_color=str(defaults.get("flame_edge_color", "#FF1E00")),
+        water_spray_color=str(defaults.get("water_spray_color", "#82E1FF")),
+        water_spray_edge_color=str(defaults.get("water_spray_edge_color", "#D7FAFF")),
+        fireball_core_color=str(defaults.get("fireball_core_color", "#FFFFBE")),
+        fireball_mid_color=str(defaults.get("fireball_mid_color", "#FF7828")),
+        fireball_edge_color=str(defaults.get("fireball_edge_color", "#AA1400")),
+        fireball_trail_color=str(defaults.get("fireball_trail_color", "#FF5A14")),
         snow_crystal_ripple_enabled=bool(defaults.get("snow_crystal_ripple_enabled", True)),
         snow_crystal_ripple_chance=float(defaults.get("snow_crystal_ripple_chance", 0.55)),
         snow_crystal_surface_y=float(defaults.get("snow_crystal_surface_y", 0.86)),
@@ -3908,7 +3997,12 @@ class EffectsOverlayWidget(BaseWidget):
         if now - getattr(self, "_last_extra_ripple_time", 0.0) < 0.018:
             return
         base = max(12.0, float(item.size) * (4.2 if kind == "snow_crystal" else 3.2))
-        color = "#DFFBFF" if kind != "water_drop" else "#9FE7FF"
+        if kind == "water_drop":
+            color = getattr(settings, "water_drop_color", "#9FE7FF")
+        elif kind == "snow_crystal":
+            color = getattr(settings, "snow_crystal_ripple_color", "#E8FBFF")
+        else:
+            color = getattr(settings, "snow_ripple_color", "#DFFBFF")
         self._ripples.append(EffectRipple(float(item.x), float(surface_y), now, base, color, max(0.05, float(getattr(settings, "ripple_speed", 1.0))) * 0.85))
         self._last_extra_ripple_time = now
 
@@ -3922,35 +4016,42 @@ class EffectsOverlayWidget(BaseWidget):
                 if alpha <= 0:
                     continue
                 if kind == "snow":
-                    self._draw_snow_dot(p, item, alpha)
+                    self._draw_snow_dot(p, item, alpha, settings)
                 elif kind == "snow_crystal":
-                    self._draw_snow_crystal(p, item, alpha)
+                    self._draw_snow_crystal(p, item, alpha, settings)
                 elif kind == "water_drop":
-                    self._draw_water_drop(p, item, alpha)
+                    self._draw_water_drop(p, item, alpha, settings)
                 elif kind == "bubble":
                     self._draw_bubble(p, item, alpha)
                 elif kind == "flame":
-                    self._draw_flame_particle(p, item, alpha)
+                    self._draw_flame_particle(p, item, alpha, settings)
                 elif kind == "water_spray":
-                    self._draw_water_spray_particle(p, item, alpha)
+                    self._draw_water_spray_particle(p, item, alpha, settings)
                 elif kind == "fireball":
-                    self._draw_fireball(p, item, alpha)
+                    self._draw_fireball(p, item, alpha, settings)
                 elif kind in ("shooting_star", "meteor_shower"):
                     self._draw_shooting_star(p, item, alpha)
                 elif kind == "balloon":
                     self._draw_balloon(p, item, alpha)
 
-    def _draw_snow_dot(self, p: QPainter, item, alpha: int):
-        c = QColor(245, 252, 255, alpha)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(c))
-        p.drawEllipse(QPointF(item.x, item.y), max(1.0, item.size), max(1.0, item.size))
+    def _draw_snow_dot(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        base = QColor(getattr(settings, "snow_color", "#F5FCFF"))
+        edge = QColor(getattr(settings, "snow_edge_color", "#CFEFFF"))
+        base.setAlpha(alpha)
+        edge.setAlpha(max(0, min(255, int(alpha * 0.72))))
+        radius = max(1.0, item.size)
+        p.setPen(QPen(edge, max(1, int(radius * 0.20))))
+        p.setBrush(QBrush(base))
+        p.drawEllipse(QPointF(item.x, item.y), radius, radius)
 
-    def _draw_snow_crystal(self, p: QPainter, item, alpha: int):
+    def _draw_snow_crystal(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
         p.save()
         p.translate(item.x, item.y)
         p.rotate(math.degrees(item.rotation))
-        c = QColor(235, 250, 255, alpha)
+        c = QColor(getattr(settings, "snow_crystal_color", "#EBFAFF"))
+        edge = QColor(getattr(settings, "snow_crystal_edge_color", "#D8F4FF"))
+        c.setAlpha(alpha)
+        edge.setAlpha(max(0, min(255, int(alpha * 0.70))))
         pen = QPen(c, max(1, int(item.size * 0.08)))
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
@@ -3964,9 +4065,11 @@ class EffectsOverlayWidget(BaseWidget):
             for sign in (-1, 1):
                 ba = a + sign * 0.65
                 p.drawLine(int(bx), int(by), int(bx + math.cos(ba)*item.size*0.25), int(by + math.sin(ba)*item.size*0.25))
+        p.setPen(QPen(edge, max(1, int(item.size * 0.045))))
+        p.drawEllipse(QPointF(0, 0), max(1.0, item.size * 0.16), max(1.0, item.size * 0.16))
         p.restore()
 
-    def _draw_water_drop(self, p: QPainter, item, alpha: int):
+    def _draw_water_drop(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
         p.save()
         p.translate(item.x, item.y)
         path = QPainterPath()
@@ -3974,12 +4077,19 @@ class EffectsOverlayWidget(BaseWidget):
         path.moveTo(0, -s * 1.25)
         path.cubicTo(s * 0.85, -s * 0.25, s * 0.65, s * 0.85, 0, s * 1.0)
         path.cubicTo(-s * 0.65, s * 0.85, -s * 0.85, -s * 0.25, 0, -s * 1.25)
-        grad = QRadialGradient(QPointF(-s*0.25, -s*0.35), max(1.0, s*1.6))
-        grad.setColorAt(0.0, QColor(255,255,255, min(255, alpha)))
-        grad.setColorAt(0.45, QColor(125,220,255, alpha))
-        grad.setColorAt(1.0, QColor(40,130,220, int(alpha*0.72)))
+        base = QColor(getattr(settings, "water_drop_color", "#7DDCFF"))
+        edge = QColor(getattr(settings, "water_drop_edge_color", "#D2F8FF"))
+        dark = QColor(max(0, int(base.red() * 0.38)), max(0, int(base.green() * 0.58)), max(0, int(base.blue() * 0.82)), int(alpha * 0.72))
+        grad = QRadialGradient(QPointF(-s * 0.25, -s * 0.35), max(1.0, s * 1.6))
+        grad.setColorAt(0.0, QColor(255, 255, 255, min(255, alpha)))
+        mid = QColor(base)
+        mid.setAlpha(alpha)
+        grad.setColorAt(0.45, mid)
+        grad.setColorAt(1.0, dark)
         p.setBrush(QBrush(grad))
-        p.setPen(QPen(QColor(210,245,255, int(alpha*0.75)), max(1, int(s*0.08))))
+        outline = QColor(edge)
+        outline.setAlpha(max(0, min(255, int(alpha * 0.75))))
+        p.setPen(QPen(outline, max(1, int(s * 0.08))))
         p.drawPath(path)
         p.restore()
 
@@ -3992,32 +4102,50 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(QColor(255,255,255, int(alpha*0.35))))
         p.drawEllipse(QPointF(item.x-item.size*0.35, item.y-item.size*0.35), max(1.0,item.size*0.18), max(1.0,item.size*0.18))
 
-    def _draw_flame_particle(self, p: QPainter, item, alpha: int):
+    def _draw_flame_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
         radius = max(2.0, item.size)
+        core = QColor(getattr(settings, "flame_core_color", "#FFF58C"))
+        mid = QColor(getattr(settings, "flame_mid_color", "#FF7823"))
+        edge = QColor(getattr(settings, "flame_edge_color", "#FF1E00"))
+        core.setAlpha(alpha)
+        mid.setAlpha(max(0, min(255, int(alpha * 0.82))))
+        edge.setAlpha(0)
         grad = QRadialGradient(QPointF(item.x, item.y), radius)
-        grad.setColorAt(0.0, QColor(255, 245, 140, alpha))
-        grad.setColorAt(0.45, QColor(255, 120, 35, int(alpha*0.82)))
-        grad.setColorAt(1.0, QColor(255, 30, 0, 0))
+        grad.setColorAt(0.0, core)
+        grad.setColorAt(0.45, mid)
+        grad.setColorAt(1.0, edge)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(grad))
-        p.drawEllipse(QPointF(item.x, item.y), radius*0.75, radius*1.25)
+        p.drawEllipse(QPointF(item.x, item.y), radius * 0.75, radius * 1.25)
 
-    def _draw_water_spray_particle(self, p: QPainter, item, alpha: int):
-        c = QColor(130, 225, 255, alpha)
-        p.setPen(Qt.PenStyle.NoPen)
+    def _draw_water_spray_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        c = QColor(getattr(settings, "water_spray_color", "#82E1FF"))
+        edge = QColor(getattr(settings, "water_spray_edge_color", "#D7FAFF"))
+        c.setAlpha(alpha)
+        edge.setAlpha(max(0, min(255, int(alpha * 0.55))))
+        p.setPen(QPen(edge, max(1, int(item.size * 0.10))))
         p.setBrush(QBrush(c))
         p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
 
-    def _draw_fireball(self, p: QPainter, item, alpha: int):
+    def _draw_fireball(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        trail = QColor(getattr(settings, "fireball_trail_color", "#FF5A14"))
         for i in range(4, 0, -1):
             trail_alpha = int(alpha * 0.12 * i)
+            tc = QColor(trail)
+            tc.setAlpha(max(0, min(255, trail_alpha)))
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(QColor(255, 90, 20, trail_alpha)))
-            p.drawEllipse(QPointF(item.x - item.vx*0.012*i, item.y - item.vy*0.012*i), item.size*(0.7+i*0.22), item.size*(0.7+i*0.22))
-        grad = QRadialGradient(QPointF(item.x, item.y), item.size*1.5)
-        grad.setColorAt(0.0, QColor(255, 255, 190, alpha))
-        grad.setColorAt(0.45, QColor(255, 120, 40, alpha))
-        grad.setColorAt(1.0, QColor(170, 20, 0, 0))
+            p.setBrush(QBrush(tc))
+            p.drawEllipse(QPointF(item.x - item.vx * 0.012 * i, item.y - item.vy * 0.012 * i), item.size * (0.7 + i * 0.22), item.size * (0.7 + i * 0.22))
+        core = QColor(getattr(settings, "fireball_core_color", "#FFFFBE"))
+        mid = QColor(getattr(settings, "fireball_mid_color", "#FF7828"))
+        edge = QColor(getattr(settings, "fireball_edge_color", "#AA1400"))
+        core.setAlpha(alpha)
+        mid.setAlpha(alpha)
+        edge.setAlpha(0)
+        grad = QRadialGradient(QPointF(item.x, item.y), item.size * 1.5)
+        grad.setColorAt(0.0, core)
+        grad.setColorAt(0.45, mid)
+        grad.setColorAt(1.0, edge)
         p.setBrush(QBrush(grad))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
