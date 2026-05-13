@@ -224,6 +224,19 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "balloon_speed": 0.20,
     "balloon_size": 34.0,
     "balloon_alpha": 220,
+    "star_sky_enabled": False,
+    "star_sky_count": 360,
+    "star_sky_speed": 0.35,
+    "star_sky_size": 1.6,
+    "star_sky_alpha": 220,
+    "star_sky_color": "#F8FBFF",
+    "star_sky_secondary_color": "#BFD8FF",
+    "milky_way_enabled": False,
+    "milky_way_star_count": 220,
+    "milky_way_alpha": 120,
+    "milky_way_width": 0.22,
+    "milky_way_angle": -18.0,
+    "milky_way_color": "#BFD7FF",
     "water_drop_enabled": False,
     "water_drop_count": 55,
     "water_drop_speed": 0.48,
@@ -419,6 +432,12 @@ class EffectsOverlayEditorDialog(QDialog):
             "炎": "🔥",
             "水が吹き出る": "🚿",
             "火の玉": "🔥",
+            "満天の星空": "🌌",
+            "星空": "🌌",
+            "天の川": "🌌",
+            "星空色": "🎨",
+            "星空サブ色": "🎨",
+            "天の川色": "🎨",
             "流れ星": "☄️",
             "流星群": "🌠",
             "バルーン": "🎈",
@@ -791,6 +810,11 @@ class EffectsOverlayEditorDialog(QDialog):
         self.fireball_edge_color = self._color_row_on(f, "火の玉外側色", getattr(self.settings, "fireball_edge_color", "#AA1400"))
         self.fireball_trail_color = self._color_row_on(f, "火の玉の尾色", getattr(self.settings, "fireball_trail_color", "#FF5A14"))
 
+        self._section(f, "星空・天の川")
+        self.star_sky_color = self._color_row_on(f, "星空色", getattr(self.settings, "star_sky_color", "#F8FBFF"))
+        self.star_sky_secondary_color = self._color_row_on(f, "星空サブ色", getattr(self.settings, "star_sky_secondary_color", "#BFD8FF"))
+        self.milky_way_color = self._color_row_on(f, "天の川色", getattr(self.settings, "milky_way_color", "#BFD7FF"))
+
         self._section(f, "環境")
         self.particle_color = self._color_row_on(f, "粒子色", self.settings.particle_color)
         self.rain_color = self._color_row_on(f, "雨色", self.settings.rain_color)
@@ -842,6 +866,19 @@ class EffectsOverlayEditorDialog(QDialog):
     def _build_extra_sky_tab(self):
         f = self.extra_sky_form
         self._add_effect_block(f, "火の玉", "fireball", "火の玉がゆらゆら上から降りる", 10, 0.34, 20.0, 225, ripple=False)
+        self._add_effect_block(f, "満天の星空", "star_sky", "遠くで小さくキラキラ光る星", 360, 0.35, 1.6, 220, ripple=False)
+        self._section(f, "天の川")
+        self.milky_way_enabled = QCheckBox("天の川を描画")
+        self.milky_way_enabled.setChecked(bool(getattr(self.settings, "milky_way_enabled", False)))
+        self.milky_way_star_count = self._int_spin(0, 2000, getattr(self.settings, "milky_way_star_count", 220))
+        self.milky_way_alpha = self._int_spin(0, 255, getattr(self.settings, "milky_way_alpha", 120))
+        self.milky_way_width = self._double_spin(0.02, 1.0, getattr(self.settings, "milky_way_width", 0.22), 0.01)
+        self.milky_way_angle = self._double_spin(-180.0, 180.0, getattr(self.settings, "milky_way_angle", -18.0), 1.0)
+        f.addRow("天の川", self.milky_way_enabled)
+        f.addRow("天の川の星数", self.milky_way_star_count)
+        f.addRow("天の川透明度", self.milky_way_alpha)
+        f.addRow("天の川幅", self.milky_way_width)
+        f.addRow("天の川角度", self.milky_way_angle)
         self._add_effect_block(f, "流れ星", "shooting_star", "流れ星が斜めに走る", 3, 0.8, 18.0, 230, ripple=False)
         self._add_effect_block(f, "流星群", "meteor_shower", "流星群が連続して流れる", 18, 0.9, 12.0, 220, ripple=False)
         self._add_effect_block(f, "バルーン", "balloon", "バルーンがゆっくり登る", 12, 0.20, 34.0, 220, ripple=False)
@@ -850,11 +887,14 @@ class EffectsOverlayEditorDialog(QDialog):
     def _set_extra_effect_toggles(self, value):
         for name in [
             "snow", "snow_crystal", "water_drop", "bubble", "flame", "water_spray",
-            "fireball", "shooting_star", "meteor_shower", "balloon",
+            "fireball", "star_sky", "shooting_star", "meteor_shower", "balloon",
         ]:
             widget = getattr(self, f"{name}_enabled", None)
             if widget is not None:
                 widget.setChecked(bool(value))
+        milky_widget = getattr(self, "milky_way_enabled", None)
+        if milky_widget is not None:
+            milky_widget.setChecked(bool(value))
 
     def _set_toggle_values(self, rain, particles, noise, glow, ripple, mouse_ripple, mouse_flee, mouse_glow):
         self.rain_enabled.setChecked(bool(rain))
@@ -1298,6 +1338,19 @@ class EffectsOverlayEditorDialog(QDialog):
             balloon_speed=self.balloon_speed.value(),
             balloon_size=self.balloon_size.value(),
             balloon_alpha=self.balloon_alpha.value(),
+            star_sky_enabled=self.star_sky_enabled.isChecked(),
+            star_sky_count=self.star_sky_count.value(),
+            star_sky_speed=self.star_sky_speed.value(),
+            star_sky_size=self.star_sky_size.value(),
+            star_sky_alpha=self.star_sky_alpha.value(),
+            star_sky_color=self.star_sky_color.text().strip() or "#F8FBFF",
+            star_sky_secondary_color=self.star_sky_secondary_color.text().strip() or "#BFD8FF",
+            milky_way_enabled=self.milky_way_enabled.isChecked(),
+            milky_way_star_count=self.milky_way_star_count.value(),
+            milky_way_alpha=self.milky_way_alpha.value(),
+            milky_way_width=self.milky_way_width.value(),
+            milky_way_angle=self.milky_way_angle.value(),
+            milky_way_color=self.milky_way_color.text().strip() or "#BFD7FF",
             water_drop_enabled=self.water_drop_enabled.isChecked(),
             water_drop_count=self.water_drop_count.value(),
             water_drop_speed=self.water_drop_speed.value(),
@@ -1650,6 +1703,19 @@ class EffectOverlaySettings:
     balloon_speed: float = 0.20
     balloon_size: float = 34.0
     balloon_alpha: int = 220
+    star_sky_enabled: bool = False
+    star_sky_count: int = 360
+    star_sky_speed: float = 0.35
+    star_sky_size: float = 1.6
+    star_sky_alpha: int = 220
+    star_sky_color: str = "#F8FBFF"
+    star_sky_secondary_color: str = "#BFD8FF"
+    milky_way_enabled: bool = False
+    milky_way_star_count: int = 220
+    milky_way_alpha: int = 120
+    milky_way_width: float = 0.22
+    milky_way_angle: float = -18.0
+    milky_way_color: str = "#BFD7FF"
     water_drop_enabled: bool = False
     water_drop_count: int = 55
     water_drop_speed: float = 0.48
@@ -1995,6 +2061,19 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         balloon_speed=float(defaults.get("balloon_speed", 0.20)),
         balloon_size=float(defaults.get("balloon_size", 34.0)),
         balloon_alpha=max(0, min(255, int(defaults.get("balloon_alpha", 220)))),
+        star_sky_enabled=bool(defaults.get("star_sky_enabled", False)),
+        star_sky_count=max(0, int(defaults.get("star_sky_count", 360))),
+        star_sky_speed=float(defaults.get("star_sky_speed", 0.35)),
+        star_sky_size=float(defaults.get("star_sky_size", 1.6)),
+        star_sky_alpha=max(0, min(255, int(defaults.get("star_sky_alpha", 220)))),
+        star_sky_color=str(defaults.get("star_sky_color", "#F8FBFF")),
+        star_sky_secondary_color=str(defaults.get("star_sky_secondary_color", "#BFD8FF")),
+        milky_way_enabled=bool(defaults.get("milky_way_enabled", False)),
+        milky_way_star_count=max(0, int(defaults.get("milky_way_star_count", 220))),
+        milky_way_alpha=max(0, min(255, int(defaults.get("milky_way_alpha", 120)))),
+        milky_way_width=float(defaults.get("milky_way_width", 0.22)),
+        milky_way_angle=float(defaults.get("milky_way_angle", -18.0)),
+        milky_way_color=str(defaults.get("milky_way_color", "#BFD7FF")),
         water_drop_enabled=bool(defaults.get("water_drop_enabled", False)),
         water_drop_count=max(0, int(defaults.get("water_drop_count", 55))),
         water_drop_speed=float(defaults.get("water_drop_speed", 0.48)),
@@ -3889,6 +3968,7 @@ class EffectsOverlayWidget(BaseWidget):
             "flame": ("flame_enabled", "flame_count"),
             "water_spray": ("water_spray_enabled", "water_spray_count"),
             "fireball": ("fireball_enabled", "fireball_count"),
+            "star_sky": ("star_sky_enabled", "star_sky_count"),
             "shooting_star": ("shooting_star_enabled", "shooting_star_count"),
             "meteor_shower": ("meteor_shower_enabled", "meteor_shower_count"),
             "balloon": ("balloon_enabled", "balloon_count"),
@@ -3945,6 +4025,9 @@ class EffectsOverlayWidget(BaseWidget):
             speed = max(0.01, float(getattr(settings, "fireball_speed", 0.34)))
             size = max(4.0, float(getattr(settings, "fireball_size", 20.0))) * (0.75 + rnd.random()*0.8)
             return ExtraEffectParticle(kind, random_x(), top_y(0.65), (-24+rnd.random()*48)*speed, (55+rnd.random()*55)*speed, size, 0.70+rnd.random()*0.30, rnd.random()*10000, rnd.random()*math.tau, (-1.5+rnd.random()*3)*speed, 12, now)
+        if kind == "star_sky":
+            size = max(0.2, float(getattr(settings, "star_sky_size", 1.6))) * (0.35 + rnd.random() * 1.25)
+            return ExtraEffectParticle(kind, random_x(), r.top() + rnd.random() * h, 0.0, 0.0, size, 0.40 + rnd.random() * 0.60, rnd.random() * 10000, 0.0, 0.0, 999999.0, now)
         if kind in ("shooting_star", "meteor_shower"):
             speed = max(0.01, float(getattr(settings, f"{kind}_speed", 0.85)))
             size = max(3.0, float(getattr(settings, f"{kind}_size", 14.0))) * (0.70 + rnd.random()*0.75)
@@ -3969,6 +4052,10 @@ class EffectsOverlayWidget(BaseWidget):
             surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, surface_attr, 0.86))))
             for item in list(items):
                 prev_y = item.y
+                if kind == "star_sky":
+                    if not (r.left() - 4 <= item.x <= r.right() + 4 and r.top() - 4 <= item.y <= r.bottom() + 4):
+                        item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
+                    continue
                 item.x += (item.vx + math.sin(now * 1.2 + item.seed) * 10.0) * dt
                 item.y += item.vy * dt
                 item.rotation += item.rotation_speed * dt
@@ -4007,6 +4094,8 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_extra_ripple_time = now
 
     def _draw_extra_effects(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if bool(getattr(settings, "milky_way_enabled", False)):
+            self._draw_milky_way(p, r, settings, now)
         if not hasattr(self, "_extra_effects"):
             return
         for kind, items in self._extra_effects.items():
@@ -4029,6 +4118,8 @@ class EffectsOverlayWidget(BaseWidget):
                     self._draw_water_spray_particle(p, item, alpha, settings)
                 elif kind == "fireball":
                     self._draw_fireball(p, item, alpha, settings)
+                elif kind == "star_sky":
+                    self._draw_star_sky_particle(p, item, alpha, settings, now)
                 elif kind in ("shooting_star", "meteor_shower"):
                     self._draw_shooting_star(p, item, alpha)
                 elif kind == "balloon":
@@ -4149,6 +4240,89 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(grad))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
+
+    def _draw_star_sky_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings, now: float):
+        speed = max(0.0, float(getattr(settings, "star_sky_speed", 0.35)))
+        twinkle = 0.58 + 0.42 * math.sin(now * (1.5 + speed * 5.0) + float(getattr(item, "seed", 0.0)))
+        pulse = 0.78 + 0.22 * math.sin(now * (0.8 + speed * 3.0) + float(getattr(item, "seed", 0.0)) * 0.37)
+        star_alpha = max(0, min(255, int(alpha * twinkle)))
+        if star_alpha <= 0:
+            return
+        base = QColor(getattr(settings, "star_sky_color", "#F8FBFF"))
+        sub = QColor(getattr(settings, "star_sky_secondary_color", "#BFD8FF"))
+        mix = 0.5 + 0.5 * math.sin(float(getattr(item, "seed", 0.0)))
+        color = QColor(
+            int(base.red() * mix + sub.red() * (1.0 - mix)),
+            int(base.green() * mix + sub.green() * (1.0 - mix)),
+            int(base.blue() * mix + sub.blue() * (1.0 - mix)),
+            star_alpha,
+        )
+        radius = max(0.35, float(getattr(item, "size", 1.0)) * pulse)
+        glow_radius = max(radius * 2.8, radius + 1.6)
+        grad = QRadialGradient(QPointF(item.x, item.y), glow_radius)
+        core = QColor(color)
+        halo = QColor(color)
+        halo.setAlpha(max(0, min(255, int(star_alpha * 0.28))))
+        clear = QColor(color)
+        clear.setAlpha(0)
+        grad.setColorAt(0.0, core)
+        grad.setColorAt(0.38, halo)
+        grad.setColorAt(1.0, clear)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(item.x, item.y), glow_radius, glow_radius)
+        if radius >= 1.05 and star_alpha > 130:
+            pen = QPen(QColor(color.red(), color.green(), color.blue(), max(0, min(255, int(star_alpha * 0.65)))), max(1.0, radius * 0.28))
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.drawLine(QPointF(item.x - radius * 1.6, item.y), QPointF(item.x + radius * 1.6, item.y))
+            p.drawLine(QPointF(item.x, item.y - radius * 1.6), QPointF(item.x, item.y + radius * 1.6))
+
+    def _draw_milky_way(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        alpha_base = max(0, min(255, int(getattr(settings, "milky_way_alpha", 120))))
+        if alpha_base <= 0 or r.width() <= 0 or r.height() <= 0:
+            return
+        color = QColor(getattr(settings, "milky_way_color", "#BFD7FF"))
+        angle = float(getattr(settings, "milky_way_angle", -18.0))
+        width_ratio = max(0.02, min(1.0, float(getattr(settings, "milky_way_width", 0.22))))
+        band_half = max(8.0, min(r.width(), r.height()) * width_ratio)
+        length = math.hypot(max(1.0, r.width()), max(1.0, r.height())) * 1.22
+        rng = random.Random(64157)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.translate(r.center())
+        p.rotate(angle)
+        for i in range(18):
+            t = -0.5 + i / 17.0
+            x = t * length
+            y = math.sin(t * math.tau * 1.15) * band_half * 0.18
+            blob_w = length * (0.10 + 0.05 * rng.random())
+            blob_h = band_half * (0.95 + 0.75 * rng.random())
+            grad = QRadialGradient(QPointF(x, y), max(blob_w, blob_h))
+            c0 = QColor(color); c0.setAlpha(max(0, min(255, int(alpha_base * (0.20 + 0.18 * rng.random())))))
+            c1 = QColor(color); c1.setAlpha(max(0, min(255, int(alpha_base * 0.10))))
+            c2 = QColor(color); c2.setAlpha(0)
+            grad.setColorAt(0.0, c0)
+            grad.setColorAt(0.42, c1)
+            grad.setColorAt(1.0, c2)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawEllipse(QPointF(x, y), blob_w, blob_h)
+        star_count = max(0, int(getattr(settings, "milky_way_star_count", 220)))
+        base_star = QColor(getattr(settings, "star_sky_color", "#F8FBFF"))
+        for i in range(star_count):
+            x = (rng.random() - 0.5) * length
+            gaussian = sum(rng.random() - 0.5 for _ in range(6)) / 3.0
+            y = gaussian * band_half * 1.22 + math.sin((x / max(1.0, length)) * math.tau * 2.0) * band_half * 0.12
+            size = max(0.35, float(getattr(settings, "star_sky_size", 1.6)) * (0.25 + rng.random() * 0.75))
+            twinkle = 0.70 + 0.30 * math.sin(now * (1.1 + float(getattr(settings, "star_sky_speed", 0.35)) * 2.2) + i * 1.731)
+            a = max(0, min(255, int(alpha_base * (0.35 + rng.random() * 0.65) * twinkle)))
+            c = QColor(base_star)
+            c.setAlpha(a)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(c))
+            p.drawEllipse(QPointF(x, y), size, size)
+        p.restore()
 
     def _draw_shooting_star(self, p: QPainter, item, alpha: int):
         vx = float(getattr(item, "vx", 1.0))
