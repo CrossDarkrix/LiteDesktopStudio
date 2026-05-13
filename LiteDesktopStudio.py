@@ -73,7 +73,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "LiteDesktopStudio v1.5.2"
+APP_NAME = "LiteDesktopStudio v1.5.3"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
@@ -237,6 +237,18 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "milky_way_width": 0.22,
     "milky_way_angle": -18.0,
     "milky_way_color": "#BFD7FF",
+    "bamboo_grove_enabled": False,
+    "bamboo_count": 12,
+    "bamboo_thickness": 16.0,
+    "bamboo_angle": 0.0,
+    "bamboo_bend": 0.32,
+    "bamboo_height": 0.92,
+    "bamboo_alpha": 230,
+    "bamboo_leaf_density": 4,
+    "bamboo_stalk_color": "#3EA65A",
+    "bamboo_shadow_color": "#1F6F3B",
+    "bamboo_node_color": "#B7E37A",
+    "bamboo_leaf_color": "#5ED06C",
     "water_drop_enabled": False,
     "water_drop_count": 55,
     "water_drop_speed": 0.48,
@@ -321,7 +333,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.2 - エフェクト設定")
+        self.setWindowTitle("Lite Desktop Studio v1.5.3 - エフェクト設定")
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -435,6 +447,12 @@ class EffectsOverlayEditorDialog(QDialog):
             "満天の星空": "🌌",
             "星空": "🌌",
             "天の川": "🌌",
+            "竹林": "🎋",
+            "竹": "🎋",
+            "竹色": "🎨",
+            "竹の影色": "🎨",
+            "竹の節色": "🎨",
+            "竹の葉色": "🎨",
             "星空色": "🎨",
             "星空サブ色": "🎨",
             "天の川色": "🎨",
@@ -815,6 +833,12 @@ class EffectsOverlayEditorDialog(QDialog):
         self.star_sky_secondary_color = self._color_row_on(f, "星空サブ色", getattr(self.settings, "star_sky_secondary_color", "#BFD8FF"))
         self.milky_way_color = self._color_row_on(f, "天の川色", getattr(self.settings, "milky_way_color", "#BFD7FF"))
 
+        self._section(f, "竹林")
+        self.bamboo_stalk_color = self._color_row_on(f, "竹色", getattr(self.settings, "bamboo_stalk_color", "#3EA65A"))
+        self.bamboo_shadow_color = self._color_row_on(f, "竹の影色", getattr(self.settings, "bamboo_shadow_color", "#1F6F3B"))
+        self.bamboo_node_color = self._color_row_on(f, "竹の節色", getattr(self.settings, "bamboo_node_color", "#B7E37A"))
+        self.bamboo_leaf_color = self._color_row_on(f, "竹の葉色", getattr(self.settings, "bamboo_leaf_color", "#5ED06C"))
+
         self._section(f, "環境")
         self.particle_color = self._color_row_on(f, "粒子色", self.settings.particle_color)
         self.rain_color = self._color_row_on(f, "雨色", self.settings.rain_color)
@@ -879,6 +903,25 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("天の川透明度", self.milky_way_alpha)
         f.addRow("天の川幅", self.milky_way_width)
         f.addRow("天の川角度", self.milky_way_angle)
+
+        self._section(f, "竹林")
+        self.bamboo_grove_enabled = QCheckBox("竹林を描画")
+        self.bamboo_grove_enabled.setChecked(bool(getattr(self.settings, "bamboo_grove_enabled", False)))
+        self.bamboo_count = self._int_spin(0, 120, getattr(self.settings, "bamboo_count", 12))
+        self.bamboo_thickness = self._double_spin(2.0, 80.0, getattr(self.settings, "bamboo_thickness", 16.0), 0.5)
+        self.bamboo_angle = self._double_spin(-45.0, 45.0, getattr(self.settings, "bamboo_angle", 0.0), 0.5)
+        self.bamboo_bend = self._double_spin(0.0, 2.0, getattr(self.settings, "bamboo_bend", 0.32), 0.01)
+        self.bamboo_height = self._double_spin(0.10, 1.50, getattr(self.settings, "bamboo_height", 0.92), 0.01)
+        self.bamboo_alpha = self._int_spin(0, 255, getattr(self.settings, "bamboo_alpha", 230))
+        self.bamboo_leaf_density = self._int_spin(0, 12, getattr(self.settings, "bamboo_leaf_density", 4))
+        f.addRow("竹林", self.bamboo_grove_enabled)
+        f.addRow("竹の本数", self.bamboo_count)
+        f.addRow("竹の太さ", self.bamboo_thickness)
+        f.addRow("竹の角度", self.bamboo_angle)
+        f.addRow("竹のしなり", self.bamboo_bend)
+        f.addRow("竹の高さ", self.bamboo_height)
+        f.addRow("竹の透明度", self.bamboo_alpha)
+        f.addRow("竹の葉の量", self.bamboo_leaf_density)
         self._add_effect_block(f, "流れ星", "shooting_star", "流れ星が斜めに走る", 3, 0.8, 18.0, 230, ripple=False)
         self._add_effect_block(f, "流星群", "meteor_shower", "流星群が連続して流れる", 18, 0.9, 12.0, 220, ripple=False)
         self._add_effect_block(f, "バルーン", "balloon", "バルーンがゆっくり登る", 12, 0.20, 34.0, 220, ripple=False)
@@ -895,6 +938,9 @@ class EffectsOverlayEditorDialog(QDialog):
         milky_widget = getattr(self, "milky_way_enabled", None)
         if milky_widget is not None:
             milky_widget.setChecked(bool(value))
+        bamboo_widget = getattr(self, "bamboo_grove_enabled", None)
+        if bamboo_widget is not None:
+            bamboo_widget.setChecked(bool(value))
 
     def _set_toggle_values(self, rain, particles, noise, glow, ripple, mouse_ripple, mouse_flee, mouse_glow):
         self.rain_enabled.setChecked(bool(rain))
@@ -1351,6 +1397,18 @@ class EffectsOverlayEditorDialog(QDialog):
             milky_way_width=self.milky_way_width.value(),
             milky_way_angle=self.milky_way_angle.value(),
             milky_way_color=self.milky_way_color.text().strip() or "#BFD7FF",
+            bamboo_grove_enabled=self.bamboo_grove_enabled.isChecked(),
+            bamboo_count=self.bamboo_count.value(),
+            bamboo_thickness=self.bamboo_thickness.value(),
+            bamboo_angle=self.bamboo_angle.value(),
+            bamboo_bend=self.bamboo_bend.value(),
+            bamboo_height=self.bamboo_height.value(),
+            bamboo_alpha=self.bamboo_alpha.value(),
+            bamboo_leaf_density=self.bamboo_leaf_density.value(),
+            bamboo_stalk_color=self.bamboo_stalk_color.text().strip() or "#3EA65A",
+            bamboo_shadow_color=self.bamboo_shadow_color.text().strip() or "#1F6F3B",
+            bamboo_node_color=self.bamboo_node_color.text().strip() or "#B7E37A",
+            bamboo_leaf_color=self.bamboo_leaf_color.text().strip() or "#5ED06C",
             water_drop_enabled=self.water_drop_enabled.isChecked(),
             water_drop_count=self.water_drop_count.value(),
             water_drop_speed=self.water_drop_speed.value(),
@@ -1716,6 +1774,18 @@ class EffectOverlaySettings:
     milky_way_width: float = 0.22
     milky_way_angle: float = -18.0
     milky_way_color: str = "#BFD7FF"
+    bamboo_grove_enabled: bool = False
+    bamboo_count: int = 12
+    bamboo_thickness: float = 16.0
+    bamboo_angle: float = 0.0
+    bamboo_bend: float = 0.32
+    bamboo_height: float = 0.92
+    bamboo_alpha: int = 230
+    bamboo_leaf_density: int = 4
+    bamboo_stalk_color: str = "#3EA65A"
+    bamboo_shadow_color: str = "#1F6F3B"
+    bamboo_node_color: str = "#B7E37A"
+    bamboo_leaf_color: str = "#5ED06C"
     water_drop_enabled: bool = False
     water_drop_count: int = 55
     water_drop_speed: float = 0.48
@@ -2074,6 +2144,18 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         milky_way_width=float(defaults.get("milky_way_width", 0.22)),
         milky_way_angle=float(defaults.get("milky_way_angle", -18.0)),
         milky_way_color=str(defaults.get("milky_way_color", "#BFD7FF")),
+        bamboo_grove_enabled=bool(defaults.get("bamboo_grove_enabled", False)),
+        bamboo_count=max(0, int(defaults.get("bamboo_count", 12))),
+        bamboo_thickness=float(defaults.get("bamboo_thickness", 16.0)),
+        bamboo_angle=float(defaults.get("bamboo_angle", 0.0)),
+        bamboo_bend=float(defaults.get("bamboo_bend", 0.32)),
+        bamboo_height=float(defaults.get("bamboo_height", 0.92)),
+        bamboo_alpha=max(0, min(255, int(defaults.get("bamboo_alpha", 230)))),
+        bamboo_leaf_density=max(0, int(defaults.get("bamboo_leaf_density", 4))),
+        bamboo_stalk_color=str(defaults.get("bamboo_stalk_color", "#3EA65A")),
+        bamboo_shadow_color=str(defaults.get("bamboo_shadow_color", "#1F6F3B")),
+        bamboo_node_color=str(defaults.get("bamboo_node_color", "#B7E37A")),
+        bamboo_leaf_color=str(defaults.get("bamboo_leaf_color", "#5ED06C")),
         water_drop_enabled=bool(defaults.get("water_drop_enabled", False)),
         water_drop_count=max(0, int(defaults.get("water_drop_count", 55))),
         water_drop_speed=float(defaults.get("water_drop_speed", 0.48)),
@@ -3346,6 +3428,10 @@ class EffectsOverlayWidget(BaseWidget):
         self._extra_effects: Dict[str, List[ExtraEffectParticle]] = {}
         self._last_extra_ripple_time = 0.0
         self._moon_drag_offset = QPointF(0.0, 0.0)
+        self._bamboo_grove_cache_key = None
+        self._bamboo_grove_cache = []
+        self._milky_way_cache_signature = None
+        self._milky_way_cache = {"blobs": [], "stars": []}
 
     def _has_visible_moon_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
         """Return True when any moon-related visual is enabled."""
@@ -4097,6 +4183,8 @@ class EffectsOverlayWidget(BaseWidget):
         if bool(getattr(settings, "milky_way_enabled", False)):
             self._draw_milky_way(p, r, settings, now)
         if not hasattr(self, "_extra_effects"):
+            if bool(getattr(settings, "bamboo_grove_enabled", False)):
+                self._draw_bamboo_grove(p, r, settings, now)
             return
         for kind, items in self._extra_effects.items():
             alpha_base = max(0, min(255, int(getattr(settings, f"{kind}_alpha", 210))))
@@ -4124,6 +4212,8 @@ class EffectsOverlayWidget(BaseWidget):
                     self._draw_shooting_star(p, item, alpha)
                 elif kind == "balloon":
                     self._draw_balloon(p, item, alpha)
+        if bool(getattr(settings, "bamboo_grove_enabled", False)):
+            self._draw_bamboo_grove(p, r, settings, now)
 
     def _draw_snow_dot(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
         base = QColor(getattr(settings, "snow_color", "#F5FCFF"))
@@ -4241,10 +4331,145 @@ class EffectsOverlayWidget(BaseWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
 
+    def _bamboo_curve_point(self, base: QPointF, top: QPointF, bend: float, side: float, t: float):
+        t = max(0.0, min(1.0, float(t)))
+        height = base.y() - top.y()
+        curve = math.sin(t * math.pi) * bend * height * 0.16 * side
+        sway = math.sin(t * math.pi * 1.7) * bend * height * 0.035 * side
+        x = base.x() + (top.x() - base.x()) * t + curve + sway
+        y = base.y() + (top.y() - base.y()) * t
+        return QPointF(x, y)
+
+    def _bamboo_curve_tangent_angle(self, base: QPointF, top: QPointF, bend: float, side: float, t: float):
+        p1 = self._bamboo_curve_point(base, top, bend, side, max(0.0, t - 0.01))
+        p2 = self._bamboo_curve_point(base, top, bend, side, min(1.0, t + 0.01))
+        return math.degrees(math.atan2(p2.y() - p1.y(), p2.x() - p1.x()))
+
+    def _draw_bamboo_leaf(self, p: QPainter, origin: QPointF, angle_degrees: float, length: float, width: float, color: QColor):
+        p.save()
+        p.translate(origin)
+        p.rotate(angle_degrees)
+        path = QPainterPath()
+        path.moveTo(0.0, 0.0)
+        path.cubicTo(length * 0.30, -width, length * 0.72, -width * 0.70, length, 0.0)
+        path.cubicTo(length * 0.72, width * 0.70, length * 0.30, width, 0.0, 0.0)
+        path.closeSubpath()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(color))
+        p.drawPath(path)
+        p.restore()
+
+    def _bamboo_cache_key(self, r: QRectF, settings: EffectOverlaySettings):
+        return (
+            int(r.width()), int(r.height()),
+            max(0, int(getattr(settings, "bamboo_count", 12))),
+            round(float(getattr(settings, "bamboo_thickness", 16.0)), 2),
+            round(float(getattr(settings, "bamboo_angle", 0.0)), 2),
+            round(float(getattr(settings, "bamboo_bend", 0.32)), 3),
+            round(float(getattr(settings, "bamboo_height", 0.92)), 3),
+            max(0, int(getattr(settings, "bamboo_leaf_density", 4))),
+        )
+
+    def _get_bamboo_grove_cache(self, r: QRectF, settings: EffectOverlaySettings):
+        key = self._bamboo_cache_key(r, settings)
+        if getattr(self, "_bamboo_grove_cache_key", None) == key and hasattr(self, "_bamboo_grove_cache"):
+            return self._bamboo_grove_cache
+        count = max(0, int(getattr(settings, "bamboo_count", 12)))
+        thickness_base = max(2.0, float(getattr(settings, "bamboo_thickness", 16.0)))
+        angle_base = max(-45.0, min(45.0, float(getattr(settings, "bamboo_angle", 0.0))))
+        bend_base = max(0.0, min(2.0, float(getattr(settings, "bamboo_bend", 0.32))))
+        height_ratio = max(0.10, min(1.50, float(getattr(settings, "bamboo_height", 0.92))))
+        leaf_density = max(0, int(getattr(settings, "bamboo_leaf_density", 4)))
+        rng = random.Random(88231 + count * 17)
+        cache = []
+        for i in range(count):
+            slot = (i + 0.5) / max(1, count)
+            jitter = (rng.random() - 0.5) / max(1, count) * 0.82
+            x = r.left() + r.width() * max(0.0, min(1.0, slot + jitter))
+            depth = 0.72 + 0.38 * rng.random()
+            thickness = thickness_base * depth
+            height = r.height() * height_ratio * (0.72 + 0.34 * rng.random())
+            base = QPointF(x, r.bottom() + thickness * 1.5)
+            angle = angle_base + (-6.0 + rng.random() * 12.0)
+            rad = math.radians(angle)
+            top = QPointF(base.x() + math.sin(rad) * height * 0.36, base.y() - math.cos(rad) * height)
+            side = -1.0 if i % 2 else 1.0
+            bend = bend_base * (0.72 + 0.56 * rng.random())
+            path = QPainterPath()
+            p0 = self._bamboo_curve_point(base, top, bend, side, 0.0)
+            path.moveTo(p0)
+            steps = 18
+            for step in range(1, steps + 1):
+                path.lineTo(self._bamboo_curve_point(base, top, bend, side, step / steps))
+            segment_count = max(5, int(height / max(28.0, thickness * 2.2)))
+            nodes = []
+            branches = []
+            leaves = []
+            max_leaf_density = min(leaf_density, 5)
+            for j in range(1, segment_count):
+                t = j / segment_count
+                c = self._bamboo_curve_point(base, top, bend, side, t)
+                tangent = self._bamboo_curve_tangent_angle(base, top, bend, side, t)
+                nodes.append((c, tangent))
+                if max_leaf_density > 0 and (j >= segment_count - 4 or (j % 3 == 1 and rng.random() < 0.34)):
+                    branch_side = -1.0 if rng.random() < 0.5 else 1.0
+                    branch_angle = tangent - 90.0 + branch_side * (28.0 + rng.random() * 28.0)
+                    branch_len = thickness * (2.4 + rng.random() * 2.2)
+                    end = QPointF(c.x() + math.cos(math.radians(branch_angle)) * branch_len, c.y() + math.sin(math.radians(branch_angle)) * branch_len)
+                    branches.append((c, end))
+                    for k in range(max_leaf_density):
+                        offset = (k - (max_leaf_density - 1) / 2.0) * 10.0
+                        leaf_len = thickness * (1.8 + rng.random() * 2.0)
+                        leaf_w = max(2.0, thickness * (0.24 + rng.random() * 0.16))
+                        origin = QPointF(c.x() + (end.x() - c.x()) * (0.34 + 0.10 * k), c.y() + (end.y() - c.y()) * (0.34 + 0.10 * k))
+                        leaves.append((origin, branch_angle + offset, leaf_len, leaf_w))
+            cache.append({"path": path, "thickness": thickness, "nodes": nodes, "branches": branches, "leaves": leaves})
+        self._bamboo_grove_cache_key = key
+        self._bamboo_grove_cache = cache
+        return cache
+
+    def _draw_bamboo_grove(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        count = max(0, int(getattr(settings, "bamboo_count", 12)))
+        if count <= 0 or r.width() <= 0 or r.height() <= 0:
+            return
+        alpha_base = max(0, min(255, int(getattr(settings, "bamboo_alpha", 230) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha_base <= 0:
+            return
+        stalk_color = QColor(getattr(settings, "bamboo_stalk_color", "#3EA65A")); stalk_color.setAlpha(alpha_base)
+        shadow_color = QColor(getattr(settings, "bamboo_shadow_color", "#1F6F3B")); shadow_color.setAlpha(max(0, min(255, int(alpha_base * 0.78))))
+        node_color = QColor(getattr(settings, "bamboo_node_color", "#B7E37A")); node_color.setAlpha(max(0, min(255, int(alpha_base * 0.88))))
+        leaf_color = QColor(getattr(settings, "bamboo_leaf_color", "#5ED06C")); leaf_color.setAlpha(max(0, min(255, int(alpha_base * 0.88))))
+        cache = self._get_bamboo_grove_cache(r, settings)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for item in cache:
+            thickness = float(item["thickness"])
+            pen_shadow = QPen(shadow_color, thickness * 1.14)
+            pen_shadow.setCapStyle(Qt.PenCapStyle.RoundCap); pen_shadow.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen_shadow); p.drawPath(item["path"])
+            pen_main = QPen(stalk_color, thickness)
+            pen_main.setCapStyle(Qt.PenCapStyle.RoundCap); pen_main.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen_main); p.drawPath(item["path"])
+            highlight = QColor(210, 255, 170, max(0, min(255, int(alpha_base * 0.26))))
+            pen_hi = QPen(highlight, max(1.0, thickness * 0.13)); pen_hi.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen_hi); p.drawPath(item["path"])
+            p.setPen(QPen(node_color, max(1.0, thickness * 0.11)))
+            for c, tangent in item["nodes"]:
+                p.save(); p.translate(c); p.rotate(tangent + 90.0)
+                p.drawLine(QPointF(-thickness * 0.46, 0), QPointF(thickness * 0.46, 0))
+                p.restore()
+            branch_pen = QPen(shadow_color, max(1.0, thickness * 0.14)); branch_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(branch_pen)
+            for a, b in item["branches"]:
+                p.drawLine(a, b)
+            for origin, angle, length, width in item["leaves"]:
+                self._draw_bamboo_leaf(p, origin, angle, length, width, leaf_color)
+        p.restore()
+
     def _draw_star_sky_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings, now: float):
         speed = max(0.0, float(getattr(settings, "star_sky_speed", 0.35)))
-        twinkle = 0.58 + 0.42 * math.sin(now * (1.5 + speed * 5.0) + float(getattr(item, "seed", 0.0)))
-        pulse = 0.78 + 0.22 * math.sin(now * (0.8 + speed * 3.0) + float(getattr(item, "seed", 0.0)) * 0.37)
+        twinkle = 0.62 + 0.38 * math.sin(now * (1.2 + speed * 4.0) + float(getattr(item, "seed", 0.0)))
         star_alpha = max(0, min(255, int(alpha * twinkle)))
         if star_alpha <= 0:
             return
@@ -4257,26 +4482,52 @@ class EffectsOverlayWidget(BaseWidget):
             int(base.blue() * mix + sub.blue() * (1.0 - mix)),
             star_alpha,
         )
-        radius = max(0.35, float(getattr(item, "size", 1.0)) * pulse)
-        glow_radius = max(radius * 2.8, radius + 1.6)
-        grad = QRadialGradient(QPointF(item.x, item.y), glow_radius)
-        core = QColor(color)
-        halo = QColor(color)
-        halo.setAlpha(max(0, min(255, int(star_alpha * 0.28))))
-        clear = QColor(color)
-        clear.setAlpha(0)
-        grad.setColorAt(0.0, core)
-        grad.setColorAt(0.38, halo)
-        grad.setColorAt(1.0, clear)
+        radius = max(0.35, float(getattr(item, "size", 1.0)))
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(grad))
-        p.drawEllipse(QPointF(item.x, item.y), glow_radius, glow_radius)
-        if radius >= 1.05 and star_alpha > 130:
-            pen = QPen(QColor(color.red(), color.green(), color.blue(), max(0, min(255, int(star_alpha * 0.65)))), max(1.0, radius * 0.28))
-            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            p.setPen(pen)
-            p.drawLine(QPointF(item.x - radius * 1.6, item.y), QPointF(item.x + radius * 1.6, item.y))
-            p.drawLine(QPointF(item.x, item.y - radius * 1.6), QPointF(item.x, item.y + radius * 1.6))
+        p.setBrush(QBrush(color))
+        if radius < 1.05:
+            p.drawPoint(QPointF(item.x, item.y))
+        else:
+            p.drawEllipse(QPointF(item.x, item.y), radius, radius)
+
+    def _milky_way_cache_key(self, r: QRectF, settings: EffectOverlaySettings):
+        return (
+            int(r.width()), int(r.height()),
+            max(0, int(getattr(settings, "milky_way_star_count", 220))),
+            round(float(getattr(settings, "milky_way_width", 0.22)), 3),
+            round(float(getattr(settings, "milky_way_angle", -18.0)), 2),
+            round(float(getattr(settings, "star_sky_size", 1.6)), 2),
+        )
+
+    def _get_milky_way_cache(self, r: QRectF, settings: EffectOverlaySettings):
+        key_func = getattr(type(self), "_milky_way_cache_key", None)
+        if key_func is None:
+            key = (int(r.width()), int(r.height()), max(0, int(getattr(settings, "milky_way_star_count", 220))))
+        else:
+            key = key_func(self, r, settings)
+        if getattr(self, "_milky_way_cache_signature", None) == key and hasattr(self, "_milky_way_cache"):
+            return self._milky_way_cache
+        width_ratio = max(0.02, min(1.0, float(getattr(settings, "milky_way_width", 0.22))))
+        band_half = max(8.0, min(r.width(), r.height()) * width_ratio)
+        length = math.hypot(max(1.0, r.width()), max(1.0, r.height())) * 1.22
+        rng = random.Random(64157)
+        blobs = []
+        for i in range(14):
+            t = -0.5 + i / 13.0
+            x = t * length
+            y = math.sin(t * math.tau * 1.15) * band_half * 0.18
+            blobs.append((x, y, length * (0.10 + 0.05 * rng.random()), band_half * (0.85 + 0.65 * rng.random()), 0.16 + 0.14 * rng.random()))
+        stars = []
+        star_count = max(0, int(getattr(settings, "milky_way_star_count", 220)))
+        for i in range(star_count):
+            x = (rng.random() - 0.5) * length
+            gaussian = sum(rng.random() - 0.5 for _ in range(6)) / 3.0
+            y = gaussian * band_half * 1.22 + math.sin((x / max(1.0, length)) * math.tau * 2.0) * band_half * 0.12
+            size = max(0.35, float(getattr(settings, "star_sky_size", 1.6)) * (0.25 + rng.random() * 0.75))
+            stars.append((x, y, size, i * 1.731, 0.35 + rng.random() * 0.65))
+        self._milky_way_cache_signature = key
+        self._milky_way_cache = {"blobs": blobs, "stars": stars}
+        return self._milky_way_cache
 
     def _draw_milky_way(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         alpha_base = max(0, min(255, int(getattr(settings, "milky_way_alpha", 120))))
@@ -4284,44 +4535,28 @@ class EffectsOverlayWidget(BaseWidget):
             return
         color = QColor(getattr(settings, "milky_way_color", "#BFD7FF"))
         angle = float(getattr(settings, "milky_way_angle", -18.0))
-        width_ratio = max(0.02, min(1.0, float(getattr(settings, "milky_way_width", 0.22))))
-        band_half = max(8.0, min(r.width(), r.height()) * width_ratio)
-        length = math.hypot(max(1.0, r.width()), max(1.0, r.height())) * 1.22
-        rng = random.Random(64157)
+        cache = self._get_milky_way_cache(r, settings)
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.translate(r.center())
         p.rotate(angle)
-        for i in range(18):
-            t = -0.5 + i / 17.0
-            x = t * length
-            y = math.sin(t * math.tau * 1.15) * band_half * 0.18
-            blob_w = length * (0.10 + 0.05 * rng.random())
-            blob_h = band_half * (0.95 + 0.75 * rng.random())
-            grad = QRadialGradient(QPointF(x, y), max(blob_w, blob_h))
-            c0 = QColor(color); c0.setAlpha(max(0, min(255, int(alpha_base * (0.20 + 0.18 * rng.random())))))
-            c1 = QColor(color); c1.setAlpha(max(0, min(255, int(alpha_base * 0.10))))
-            c2 = QColor(color); c2.setAlpha(0)
-            grad.setColorAt(0.0, c0)
-            grad.setColorAt(0.42, c1)
-            grad.setColorAt(1.0, c2)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(grad))
-            p.drawEllipse(QPointF(x, y), blob_w, blob_h)
-        star_count = max(0, int(getattr(settings, "milky_way_star_count", 220)))
-        base_star = QColor(getattr(settings, "star_sky_color", "#F8FBFF"))
-        for i in range(star_count):
-            x = (rng.random() - 0.5) * length
-            gaussian = sum(rng.random() - 0.5 for _ in range(6)) / 3.0
-            y = gaussian * band_half * 1.22 + math.sin((x / max(1.0, length)) * math.tau * 2.0) * band_half * 0.12
-            size = max(0.35, float(getattr(settings, "star_sky_size", 1.6)) * (0.25 + rng.random() * 0.75))
-            twinkle = 0.70 + 0.30 * math.sin(now * (1.1 + float(getattr(settings, "star_sky_speed", 0.35)) * 2.2) + i * 1.731)
-            a = max(0, min(255, int(alpha_base * (0.35 + rng.random() * 0.65) * twinkle)))
-            c = QColor(base_star)
-            c.setAlpha(a)
-            p.setPen(Qt.PenStyle.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
+        for x, y, bw, bh, a_mul in cache.get("blobs", []):
+            c = QColor(color)
+            c.setAlpha(max(0, min(255, int(alpha_base * a_mul))))
             p.setBrush(QBrush(c))
-            p.drawEllipse(QPointF(x, y), size, size)
+            p.drawEllipse(QPointF(x, y), bw, bh)
+        base_star = QColor(getattr(settings, "star_sky_color", "#F8FBFF"))
+        speed = float(getattr(settings, "star_sky_speed", 0.35))
+        for x, y, size, phase, a_mul in cache.get("stars", []):
+            twinkle = 0.72 + 0.28 * math.sin(now * (1.0 + speed * 2.0) + phase)
+            c = QColor(base_star)
+            c.setAlpha(max(0, min(255, int(alpha_base * a_mul * twinkle))))
+            p.setBrush(QBrush(c))
+            if size < 0.9:
+                p.drawPoint(QPointF(x, y))
+            else:
+                p.drawEllipse(QPointF(x, y), size, size)
         p.restore()
 
     def _draw_shooting_star(self, p: QPainter, item, alpha: int):
@@ -7445,7 +7680,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle("Lite Desktop Studio v1.5.2 - ウィジェット編集")
+        self.setWindowTitle("Lite Desktop Studio v1.5.3 - ウィジェット編集")
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -7610,7 +7845,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.2")
+        self.setWindowTitle("Lite Desktop Studio v1.5.3")
         self.resize(960, 640)
 
         self.build_ui()
@@ -8726,7 +8961,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v1.5.2 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v1.5.3 を使用しています。"
         )
 
         self.performance_text.setPlainText(
