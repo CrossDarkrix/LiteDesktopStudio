@@ -245,6 +245,11 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "bamboo_height": 0.92,
     "bamboo_alpha": 230,
     "bamboo_leaf_density": 4,
+    "bamboo_depth_strength": 0.85,
+    "bamboo_layer_spread": 0.42,
+    "bamboo_highlight_alpha": 96,
+    "bamboo_ground_shadow_enabled": True,
+    "bamboo_atmosphere_enabled": True,
     "bamboo_stalk_color": "#3EA65A",
     "bamboo_shadow_color": "#1F6F3B",
     "bamboo_node_color": "#B7E37A",
@@ -914,6 +919,13 @@ class EffectsOverlayEditorDialog(QDialog):
         self.bamboo_height = self._double_spin(0.10, 1.50, getattr(self.settings, "bamboo_height", 0.92), 0.01)
         self.bamboo_alpha = self._int_spin(0, 255, getattr(self.settings, "bamboo_alpha", 230))
         self.bamboo_leaf_density = self._int_spin(0, 12, getattr(self.settings, "bamboo_leaf_density", 4))
+        self.bamboo_depth_strength = self._double_spin(0.0, 2.0, getattr(self.settings, "bamboo_depth_strength", 0.85), 0.01)
+        self.bamboo_layer_spread = self._double_spin(0.0, 1.0, getattr(self.settings, "bamboo_layer_spread", 0.42), 0.01)
+        self.bamboo_highlight_alpha = self._int_spin(0, 255, getattr(self.settings, "bamboo_highlight_alpha", 96))
+        self.bamboo_ground_shadow_enabled = QCheckBox("足元の影で奥行きを出す")
+        self.bamboo_ground_shadow_enabled.setChecked(bool(getattr(self.settings, "bamboo_ground_shadow_enabled", True)))
+        self.bamboo_atmosphere_enabled = QCheckBox("奥の竹を霞ませる")
+        self.bamboo_atmosphere_enabled.setChecked(bool(getattr(self.settings, "bamboo_atmosphere_enabled", True)))
         f.addRow("竹林", self.bamboo_grove_enabled)
         f.addRow("竹の本数", self.bamboo_count)
         f.addRow("竹の太さ", self.bamboo_thickness)
@@ -922,6 +934,11 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("竹の高さ", self.bamboo_height)
         f.addRow("竹の透明度", self.bamboo_alpha)
         f.addRow("竹の葉の量", self.bamboo_leaf_density)
+        f.addRow("竹林の奥行き", self.bamboo_depth_strength)
+        f.addRow("前後レイヤー幅", self.bamboo_layer_spread)
+        f.addRow("竹のハイライト", self.bamboo_highlight_alpha)
+        f.addRow("足元影", self.bamboo_ground_shadow_enabled)
+        f.addRow("奥の霞", self.bamboo_atmosphere_enabled)
         self._add_effect_block(f, "流れ星", "shooting_star", "流れ星が斜めに走る", 3, 0.8, 18.0, 230, ripple=False)
         self._add_effect_block(f, "流星群", "meteor_shower", "流星群が連続して流れる", 18, 0.9, 12.0, 220, ripple=False)
         self._add_effect_block(f, "バルーン", "balloon", "バルーンがゆっくり登る", 12, 0.20, 34.0, 220, ripple=False)
@@ -1405,6 +1422,11 @@ class EffectsOverlayEditorDialog(QDialog):
             bamboo_height=self.bamboo_height.value(),
             bamboo_alpha=self.bamboo_alpha.value(),
             bamboo_leaf_density=self.bamboo_leaf_density.value(),
+            bamboo_depth_strength=self.bamboo_depth_strength.value(),
+            bamboo_layer_spread=self.bamboo_layer_spread.value(),
+            bamboo_highlight_alpha=self.bamboo_highlight_alpha.value(),
+            bamboo_ground_shadow_enabled=self.bamboo_ground_shadow_enabled.isChecked(),
+            bamboo_atmosphere_enabled=self.bamboo_atmosphere_enabled.isChecked(),
             bamboo_stalk_color=self.bamboo_stalk_color.text().strip() or "#3EA65A",
             bamboo_shadow_color=self.bamboo_shadow_color.text().strip() or "#1F6F3B",
             bamboo_node_color=self.bamboo_node_color.text().strip() or "#B7E37A",
@@ -1782,6 +1804,11 @@ class EffectOverlaySettings:
     bamboo_height: float = 0.92
     bamboo_alpha: int = 230
     bamboo_leaf_density: int = 4
+    bamboo_depth_strength: float = 0.85
+    bamboo_layer_spread: float = 0.42
+    bamboo_highlight_alpha: int = 96
+    bamboo_ground_shadow_enabled: bool = True
+    bamboo_atmosphere_enabled: bool = True
     bamboo_stalk_color: str = "#3EA65A"
     bamboo_shadow_color: str = "#1F6F3B"
     bamboo_node_color: str = "#B7E37A"
@@ -2152,6 +2179,11 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         bamboo_height=float(defaults.get("bamboo_height", 0.92)),
         bamboo_alpha=max(0, min(255, int(defaults.get("bamboo_alpha", 230)))),
         bamboo_leaf_density=max(0, int(defaults.get("bamboo_leaf_density", 4))),
+        bamboo_depth_strength=float(defaults.get("bamboo_depth_strength", 0.85)),
+        bamboo_layer_spread=float(defaults.get("bamboo_layer_spread", 0.42)),
+        bamboo_highlight_alpha=max(0, min(255, int(defaults.get("bamboo_highlight_alpha", 96)))),
+        bamboo_ground_shadow_enabled=bool(defaults.get("bamboo_ground_shadow_enabled", True)),
+        bamboo_atmosphere_enabled=bool(defaults.get("bamboo_atmosphere_enabled", True)),
         bamboo_stalk_color=str(defaults.get("bamboo_stalk_color", "#3EA65A")),
         bamboo_shadow_color=str(defaults.get("bamboo_shadow_color", "#1F6F3B")),
         bamboo_node_color=str(defaults.get("bamboo_node_color", "#B7E37A")),
@@ -4345,7 +4377,7 @@ class EffectsOverlayWidget(BaseWidget):
         p2 = self._bamboo_curve_point(base, top, bend, side, min(1.0, t + 0.01))
         return math.degrees(math.atan2(p2.y() - p1.y(), p2.x() - p1.x()))
 
-    def _draw_bamboo_leaf(self, p: QPainter, origin: QPointF, angle_degrees: float, length: float, width: float, color: QColor):
+    def _draw_bamboo_leaf(self, p: QPainter, origin: QPointF, angle_degrees: float, length: float, width: float, color: QColor, depth: float = 1.0):
         p.save()
         p.translate(origin)
         p.rotate(angle_degrees)
@@ -4355,7 +4387,9 @@ class EffectsOverlayWidget(BaseWidget):
         path.cubicTo(length * 0.72, width * 0.70, length * 0.30, width, 0.0, 0.0)
         path.closeSubpath()
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(color))
+        leaf = QColor(color)
+        leaf.setAlpha(max(0, min(255, int(color.alpha() * (0.62 + 0.38 * depth)))))
+        p.setBrush(QBrush(leaf))
         p.drawPath(path)
         p.restore()
 
@@ -4368,6 +4402,8 @@ class EffectsOverlayWidget(BaseWidget):
             round(float(getattr(settings, "bamboo_bend", 0.32)), 3),
             round(float(getattr(settings, "bamboo_height", 0.92)), 3),
             max(0, int(getattr(settings, "bamboo_leaf_density", 4))),
+            round(float(getattr(settings, "bamboo_depth_strength", 0.85)), 3),
+            round(float(getattr(settings, "bamboo_layer_spread", 0.42)), 3),
         )
 
     def _get_bamboo_grove_cache(self, r: QRectF, settings: EffectOverlaySettings):
@@ -4380,21 +4416,26 @@ class EffectsOverlayWidget(BaseWidget):
         bend_base = max(0.0, min(2.0, float(getattr(settings, "bamboo_bend", 0.32))))
         height_ratio = max(0.10, min(1.50, float(getattr(settings, "bamboo_height", 0.92))))
         leaf_density = max(0, int(getattr(settings, "bamboo_leaf_density", 4)))
+        depth_strength = max(0.0, min(2.0, float(getattr(settings, "bamboo_depth_strength", 0.85))))
+        layer_spread = max(0.0, min(1.0, float(getattr(settings, "bamboo_layer_spread", 0.42))))
         rng = random.Random(88231 + count * 17)
         cache = []
         for i in range(count):
             slot = (i + 0.5) / max(1, count)
             jitter = (rng.random() - 0.5) / max(1, count) * 0.82
             x = r.left() + r.width() * max(0.0, min(1.0, slot + jitter))
-            depth = 0.72 + 0.38 * rng.random()
-            thickness = thickness_base * depth
-            height = r.height() * height_ratio * (0.72 + 0.34 * rng.random())
-            base = QPointF(x, r.bottom() + thickness * 1.5)
-            angle = angle_base + (-6.0 + rng.random() * 12.0)
+            depth = 0.38 + 0.62 * rng.random()
+            layer_offset = (depth - 0.5) * r.width() * 0.050 * layer_spread
+            x += layer_offset
+            depth_scale = 0.64 + 0.58 * depth_strength * depth
+            thickness = thickness_base * depth_scale
+            height = r.height() * height_ratio * (0.62 + 0.48 * depth)
+            base = QPointF(x, r.bottom() + thickness * (1.1 + 0.8 * depth))
+            angle = angle_base + (-6.0 + rng.random() * 12.0) * (0.65 + 0.35 * depth)
             rad = math.radians(angle)
             top = QPointF(base.x() + math.sin(rad) * height * 0.36, base.y() - math.cos(rad) * height)
             side = -1.0 if i % 2 else 1.0
-            bend = bend_base * (0.72 + 0.56 * rng.random())
+            bend = bend_base * (0.70 + 0.62 * rng.random()) * (0.78 + depth * 0.34)
             path = QPainterPath()
             p0 = self._bamboo_curve_point(base, top, bend, side, 0.0)
             path.moveTo(p0)
@@ -4411,22 +4452,58 @@ class EffectsOverlayWidget(BaseWidget):
                 c = self._bamboo_curve_point(base, top, bend, side, t)
                 tangent = self._bamboo_curve_tangent_angle(base, top, bend, side, t)
                 nodes.append((c, tangent))
-                if max_leaf_density > 0 and (j >= segment_count - 4 or (j % 3 == 1 and rng.random() < 0.34)):
+                leaf_chance = 0.27 + 0.18 * depth
+                if max_leaf_density > 0 and (j >= segment_count - 4 or (j % 3 == 1 and rng.random() < leaf_chance)):
                     branch_side = -1.0 if rng.random() < 0.5 else 1.0
-                    branch_angle = tangent - 90.0 + branch_side * (28.0 + rng.random() * 28.0)
-                    branch_len = thickness * (2.4 + rng.random() * 2.2)
+                    branch_angle = tangent - 90.0 + branch_side * (25.0 + rng.random() * 31.0)
+                    branch_len = thickness * (2.2 + rng.random() * 2.4)
                     end = QPointF(c.x() + math.cos(math.radians(branch_angle)) * branch_len, c.y() + math.sin(math.radians(branch_angle)) * branch_len)
                     branches.append((c, end))
-                    for k in range(max_leaf_density):
-                        offset = (k - (max_leaf_density - 1) / 2.0) * 10.0
-                        leaf_len = thickness * (1.8 + rng.random() * 2.0)
-                        leaf_w = max(2.0, thickness * (0.24 + rng.random() * 0.16))
-                        origin = QPointF(c.x() + (end.x() - c.x()) * (0.34 + 0.10 * k), c.y() + (end.y() - c.y()) * (0.34 + 0.10 * k))
+                    leaves_for_branch = max(1, int(max_leaf_density * (0.72 + 0.38 * depth)))
+                    for k in range(leaves_for_branch):
+                        offset = (k - (leaves_for_branch - 1) / 2.0) * 10.0
+                        leaf_len = thickness * (1.7 + rng.random() * 2.2)
+                        leaf_w = max(2.0, thickness * (0.22 + rng.random() * 0.17))
+                        ratio = 0.34 + 0.10 * k
+                        origin = QPointF(c.x() + (end.x() - c.x()) * ratio, c.y() + (end.y() - c.y()) * ratio)
                         leaves.append((origin, branch_angle + offset, leaf_len, leaf_w))
-            cache.append({"path": path, "thickness": thickness, "nodes": nodes, "branches": branches, "leaves": leaves})
+            cache.append({"path": path, "thickness": thickness, "nodes": nodes, "branches": branches, "leaves": leaves, "depth": depth, "base": base})
+        cache.sort(key=lambda item: item.get("depth", 0.0))
         self._bamboo_grove_cache_key = key
         self._bamboo_grove_cache = cache
         return cache
+
+    def _draw_bamboo_depth_atmosphere(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, alpha_base: int):
+        if not bool(getattr(settings, "bamboo_atmosphere_enabled", True)):
+            return
+        fog_alpha = max(0, min(255, int(alpha_base * 0.10)))
+        if fog_alpha <= 0:
+            return
+        fog = QLinearGradient(r.left(), r.top(), r.left(), r.bottom())
+        c0 = QColor(120, 180, 120, 0)
+        c1 = QColor(120, 190, 130, fog_alpha)
+        c2 = QColor(80, 130, 80, max(0, min(255, int(fog_alpha * 0.55))))
+        fog.setColorAt(0.0, c0)
+        fog.setColorAt(0.55, c1)
+        fog.setColorAt(1.0, c2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(fog))
+        p.drawRect(r)
+
+    def _draw_bamboo_ground_shadows(self, p: QPainter, r: QRectF, cache, settings: EffectOverlaySettings, alpha_base: int):
+        if not bool(getattr(settings, "bamboo_ground_shadow_enabled", True)):
+            return
+        p.save()
+        p.setPen(Qt.PenStyle.NoPen)
+        for item in cache:
+            base = item.get("base", QPointF(r.center().x(), r.bottom()))
+            thickness = float(item.get("thickness", 8.0))
+            depth = float(item.get("depth", 1.0))
+            a = max(0, min(255, int(alpha_base * 0.10 * (0.55 + depth))))
+            shadow = QColor(0, 35, 12, a)
+            p.setBrush(QBrush(shadow))
+            p.drawEllipse(QPointF(base.x(), r.bottom() - thickness * 0.15), thickness * (1.8 + depth * 1.1), thickness * (0.28 + depth * 0.12))
+        p.restore()
 
     def _draw_bamboo_grove(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         count = max(0, int(getattr(settings, "bamboo_count", 12)))
@@ -4435,36 +4512,60 @@ class EffectsOverlayWidget(BaseWidget):
         alpha_base = max(0, min(255, int(getattr(settings, "bamboo_alpha", 230) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
         if alpha_base <= 0:
             return
-        stalk_color = QColor(getattr(settings, "bamboo_stalk_color", "#3EA65A")); stalk_color.setAlpha(alpha_base)
-        shadow_color = QColor(getattr(settings, "bamboo_shadow_color", "#1F6F3B")); shadow_color.setAlpha(max(0, min(255, int(alpha_base * 0.78))))
-        node_color = QColor(getattr(settings, "bamboo_node_color", "#B7E37A")); node_color.setAlpha(max(0, min(255, int(alpha_base * 0.88))))
-        leaf_color = QColor(getattr(settings, "bamboo_leaf_color", "#5ED06C")); leaf_color.setAlpha(max(0, min(255, int(alpha_base * 0.88))))
+        stalk_color_src = QColor(getattr(settings, "bamboo_stalk_color", "#3EA65A"))
+        shadow_color_src = QColor(getattr(settings, "bamboo_shadow_color", "#1F6F3B"))
+        node_color_src = QColor(getattr(settings, "bamboo_node_color", "#B7E37A"))
+        leaf_color_src = QColor(getattr(settings, "bamboo_leaf_color", "#5ED06C"))
+        highlight_alpha = max(0, min(255, int(getattr(settings, "bamboo_highlight_alpha", 96))))
         cache = self._get_bamboo_grove_cache(r, settings)
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self._draw_bamboo_ground_shadows(p, r, cache, settings, alpha_base)
         p.setBrush(Qt.BrushStyle.NoBrush)
         for item in cache:
+            depth = float(item.get("depth", 1.0))
             thickness = float(item["thickness"])
-            pen_shadow = QPen(shadow_color, thickness * 1.14)
-            pen_shadow.setCapStyle(Qt.PenCapStyle.RoundCap); pen_shadow.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            p.setPen(pen_shadow); p.drawPath(item["path"])
+            rear_fade = 0.56 + 0.44 * depth
+            stalk_color = QColor(stalk_color_src)
+            stalk_color.setAlpha(max(0, min(255, int(alpha_base * rear_fade))))
+            shadow_color = QColor(shadow_color_src)
+            shadow_color.setAlpha(max(0, min(255, int(alpha_base * (0.58 + 0.22 * depth)))))
+            node_color = QColor(node_color_src)
+            node_color.setAlpha(max(0, min(255, int(alpha_base * (0.62 + 0.28 * depth)))))
+            leaf_color = QColor(leaf_color_src)
+            leaf_color.setAlpha(max(0, min(255, int(alpha_base * (0.55 + 0.35 * depth)))))
+            pen_shadow = QPen(shadow_color, thickness * (1.10 + 0.05 * depth))
+            pen_shadow.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen_shadow.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen_shadow)
+            p.drawPath(item["path"])
             pen_main = QPen(stalk_color, thickness)
-            pen_main.setCapStyle(Qt.PenCapStyle.RoundCap); pen_main.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            p.setPen(pen_main); p.drawPath(item["path"])
-            highlight = QColor(210, 255, 170, max(0, min(255, int(alpha_base * 0.26))))
-            pen_hi = QPen(highlight, max(1.0, thickness * 0.13)); pen_hi.setCapStyle(Qt.PenCapStyle.RoundCap)
-            p.setPen(pen_hi); p.drawPath(item["path"])
+            pen_main.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen_main.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen_main)
+            p.drawPath(item["path"])
+            hi_alpha = max(0, min(255, int(highlight_alpha * (0.30 + 0.70 * depth) * alpha_base / 255)))
+            if hi_alpha > 0:
+                highlight = QColor(220, 255, 170, hi_alpha)
+                pen_hi = QPen(highlight, max(1.0, thickness * 0.12))
+                pen_hi.setCapStyle(Qt.PenCapStyle.RoundCap)
+                p.setPen(pen_hi)
+                p.drawPath(item["path"])
             p.setPen(QPen(node_color, max(1.0, thickness * 0.11)))
             for c, tangent in item["nodes"]:
-                p.save(); p.translate(c); p.rotate(tangent + 90.0)
+                p.save()
+                p.translate(c)
+                p.rotate(tangent + 90.0)
                 p.drawLine(QPointF(-thickness * 0.46, 0), QPointF(thickness * 0.46, 0))
                 p.restore()
-            branch_pen = QPen(shadow_color, max(1.0, thickness * 0.14)); branch_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            branch_pen = QPen(shadow_color, max(1.0, thickness * 0.14))
+            branch_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(branch_pen)
             for a, b in item["branches"]:
                 p.drawLine(a, b)
             for origin, angle, length, width in item["leaves"]:
-                self._draw_bamboo_leaf(p, origin, angle, length, width, leaf_color)
+                self._draw_bamboo_leaf(p, origin, angle, length, width, leaf_color, depth)
+        self._draw_bamboo_depth_atmosphere(p, r, settings, alpha_base)
         p.restore()
 
     def _draw_star_sky_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings, now: float):
