@@ -42,6 +42,9 @@ from PySide6.QtGui import (
     QImage,
     QPixmap,
     QRegion,
+    QSurfaceFormat,
+    QOpenGLContext,
+    QOffscreenSurface,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -66,6 +69,10 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QComboBox,
 )
+try:
+    from PySide6.QtOpenGLWidgets import QOpenGLWidget
+except Exception:
+    QOpenGLWidget = None
 
 warnings.filterwarnings(
     "ignore",
@@ -73,7 +80,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "LiteDesktopStudio v1.5.3"
+APP_NAME = "LiteDesktopStudio v1.5.5"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
@@ -108,12 +115,105 @@ MOUSE_EFFECT_RIPPLE = "click_ripple"
 MOUSE_EFFECT_FLEE = "particle_flee"
 MOUSE_EFFECT_GLOW = "mouse_glow"
 
+EFFECT_GPU_ENV_FLAG = "LITEDESKTOPSTUDIO_EFFECT_GPU"
+EFFECT_GPU_STATUS = {
+    "requested": False,
+    "configured": False,
+    "available": False,
+    "backend": "未確認",
+    "message": "GPU支援描画は未確認です",
+}
+
+
+def _safe_qt_app_attr(name: str):
+    try:
+        return getattr(Qt.ApplicationAttribute, name)
+    except Exception:
+        return None
+
+
+def configure_effect_gpu_backend_before_app(force: bool = True) -> bool:
+    """Configure Qt's GPU-friendly rendering path before QApplication is created.
+
+    This does not rewrite every QPainter primitive into custom shaders. It enables
+    Qt's OpenGL/RHI-friendly application attributes and default surface format so
+    supported systems can use GPU-backed composition and pixmap/image paths.
+    """
+    if str(os.environ.get(EFFECT_GPU_ENV_FLAG, "1")).lower() in ("0", "false", "off", "no"):
+        EFFECT_GPU_STATUS.update({"requested": False, "configured": False, "message": "環境変数でGPU支援描画が無効です"})
+        return False
+    EFFECT_GPU_STATUS["requested"] = bool(force)
+    try:
+        for attr_name in ("AA_UseDesktopOpenGL", "AA_UseOpenGLES", "AA_ShareOpenGLContexts"):
+            attr = _safe_qt_app_attr(attr_name)
+            if attr is not None:
+                try:
+                    QApplication.setAttribute(attr, True)
+                except Exception:
+                    pass
+        try:
+            fmt = QSurfaceFormat()
+            fmt.setRenderableType(QSurfaceFormat.RenderableType.OpenGL)
+            fmt.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
+            fmt.setSamples(0)
+            fmt.setDepthBufferSize(0)
+            fmt.setStencilBufferSize(0)
+            QSurfaceFormat.setDefaultFormat(fmt)
+        except Exception:
+            pass
+        EFFECT_GPU_STATUS.update({"configured": True, "message": "Qt GPU支援設定を適用しました"})
+        return True
+    except Exception as exc:
+        EFFECT_GPU_STATUS.update({"configured": False, "message": f"Qt GPU支援設定に失敗: {exc}"})
+        return False
+
+
+def detect_effect_gpu_backend() -> Dict[str, object]:
+    """Best-effort OpenGL availability check after QApplication is available."""
+    status = dict(EFFECT_GPU_STATUS)
+    try:
+        surface = QOffscreenSurface()
+        surface.create()
+        ctx = QOpenGLContext()
+        created = bool(ctx.create())
+        made_current = bool(created and surface.isValid() and ctx.makeCurrent(surface))
+        if made_current:
+            fmt = ctx.format()
+            backend = "OpenGL"
+            try:
+                backend = f"OpenGL {fmt.majorVersion()}.{fmt.minorVersion()}"
+            except Exception:
+                pass
+            status.update({"available": True, "backend": backend, "message": "GPU支援描画が利用可能です"})
+            try:
+                ctx.doneCurrent()
+            except Exception:
+                pass
+        else:
+            status.update({"available": False, "backend": "Raster/Fallback", "message": "OpenGLコンテキストを作成できないためCPU描画にフォールバックします"})
+    except Exception as exc:
+        status.update({"available": False, "backend": "Raster/Fallback", "message": f"GPU確認に失敗したためCPU描画にフォールバックします: {exc}"})
+    EFFECT_GPU_STATUS.update(status)
+    return status
+
+
+def effect_gpu_status_text() -> str:
+    status = EFFECT_GPU_STATUS
+    mark = "✅" if status.get("available") else ("⚙️" if status.get("configured") else "ℹ️")
+    return f"{mark} {status.get('backend', '未確認')} - {status.get('message', '')}"
+
+
 LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "rain_enabled": False,
     "particles_enabled": False,
     "noise_enabled": False,
     "glow_enabled": False,
     "ripple_enabled": False,
+    "gpu_acceleration_enabled": True,
+    "gpu_acceleration_prefer_opengl": True,
+    "gpu_acceleration_smooth_pixmaps": True,
+    "effect_frame_rate_enabled": True,
+    "effect_frame_rate": 60,
 
     "mouse_ripple_enabled": False,
     "mouse_flee_enabled": False,
@@ -141,6 +241,20 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "rose_petal_shadow_alpha": 0,
     "rose_petal_highlight_alpha": 130,
     "rose_petal_vein_alpha": 90,
+    "petal_night_enabled": False,
+    "petal_night_tint_color": "#101A3A",
+    "petal_night_tint_strength": 0.35,
+    "petal_shadow_enabled": False,
+    "petal_outline_enabled": True,
+    "petal_outline_strength": 1.35,
+    "petal_blizzard_enabled": False,
+    "petal_wind_strength": 1.0,
+    "petal_wind_randomness": 0.55,
+    "petal_gust_interval": 4.0,
+    "petal_gust_duration": 1.15,
+    "petal_gust_strength": 1.45,
+    "petal_mouse_flutter_enabled": True,
+    "petal_mouse_flutter_strength": 1.0,
     "rose_flowers_enabled": False,
     "blooming_roses_enabled": False,
     "sakura_petals_enabled": False,
@@ -237,6 +351,37 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "milky_way_width": 0.22,
     "milky_way_angle": -18.0,
     "milky_way_color": "#BFD7FF",
+    "water_surface_enabled": False,
+    "water_surface_alpha": 92,
+    "water_surface_color": "#4FC3FF",
+    "water_surface_highlight_color": "#D8FAFF",
+    "water_surface_flow_angle": 0.0,
+    "water_surface_flow_speed": 0.55,
+    "water_surface_wave_count": 14,
+    "water_surface_wave_height": 12.0,
+    "water_surface_y": 0.58,
+    "water_surface_depth": 0.42,
+    "water_fish_enabled": True,
+    "water_fish_count": 4,
+    "water_fish_speed": 0.28,
+    "water_fish_size": 24.0,
+    "water_fish_alpha": 175,
+    "water_fish_color": "#7FE7D1",
+    "water_fish_secondary_color": "#D8FFF3",
+    "water_mirror_enabled": False,
+    "water_mirror_alpha": 110,
+    "water_mirror_blur": 5.0,
+    "water_mirror_depth": 0.65,
+    "water_mirror_wave": 7.0,
+    "water_mirror_tint_alpha": 58,
+    "water_mirror_reflect_effects_enabled": True,
+    "water_mirror_reflect_snow": True,
+    "water_mirror_reflect_snow_crystal": True,
+    "water_mirror_reflect_petals": True,
+    "water_mirror_reflect_bamboo": True,
+    "water_mirror_reflect_shooting_star": True,
+    "water_mirror_reflect_meteor_shower": True,
+    "water_mirror_reflect_rain": True,
     "bamboo_grove_enabled": False,
     "bamboo_count": 12,
     "bamboo_thickness": 16.0,
@@ -338,7 +483,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.3 - エフェクト設定")
+        self.setWindowTitle("Lite Desktop Studio v1.5.5 - エフェクト設定")
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -362,6 +507,30 @@ class EffectsOverlayEditorDialog(QDialog):
         for b in [self.btn_all_on, self.btn_all_off, self.btn_rose_only, self.btn_mouse_only, self.btn_ambient_only]:
             quick.addWidget(b)
         outer.addLayout(quick)
+
+        theme_title = QLabel("🎨 テーマプリセット")
+        theme_title.setStyleSheet("font-weight: 700; margin-top: 4px;")
+        outer.addWidget(theme_title)
+        theme_grid = QGridLayout()
+        theme_grid.setHorizontalSpacing(6)
+        theme_grid.setVerticalSpacing(6)
+        self.theme_preset_buttons = []
+        theme_presets = [
+            ("🌙 静かな夜空", "quiet_night"),
+            ("🌌 月夜の水面", "moonlit_water"),
+            ("🌸 春の花びら", "spring_petals"),
+            ("🎋 竹林の小径", "bamboo_path"),
+            ("🌧 雨と波紋", "rain_ripples"),
+            ("❄ 雪景色", "snow_scene"),
+            ("☄ 流星群", "meteor_sky"),
+            ("🔥 炎と水", "fire_and_water"),
+        ]
+        for i, (label, theme_id) in enumerate(theme_presets):
+            btn = QPushButton(label)
+            btn.clicked.connect(lambda checked=False, t=theme_id: self.apply_effect_theme(t))
+            self.theme_preset_buttons.append(btn)
+            theme_grid.addWidget(btn, i // 4, i % 4)
+        outer.addLayout(theme_grid)
 
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
@@ -487,6 +656,14 @@ class EffectsOverlayEditorDialog(QDialog):
             "波紋": "〰️",
             "波紋発生率": "💧",
             "水面Y": "🌊",
+            "水面": "🌊",
+            "水面色": "🎨",
+            "水面ハイライト色": "🎨",
+            "流れ角度": "🧭",
+            "流れ速度": "⚡",
+            "波の本数": "🔢",
+            "波の高さ": "📏",
+            "水面の深さ": "🌊",
             "色": "🎨",
             "波紋色": "💧",
             "ノイズ色": "🌫️",
@@ -634,7 +811,7 @@ class EffectsOverlayEditorDialog(QDialog):
         f = self.rose_form
         self._section(f, "バラ花びら: 数量・動き")
         self.rose_petal_count = self._int_spin(0, 500, getattr(self.settings, "rose_petal_count", 24))
-        self.rose_petal_speed = self._double_spin(0.01, 5.0, getattr(self.settings, "rose_petal_speed", 0.35), 0.01)
+        self.rose_petal_speed = self._double_spin(0.01, 300.0, getattr(self.settings, "rose_petal_speed", 0.35), 0.01)
         self.rose_petal_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_petal_sway", 1.0), 0.05)
         self.rose_petal_size = self._double_spin(2.0, 80.0, getattr(self.settings, "rose_petal_size", 16.0), 0.5)
         self.rose_petal_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_alpha", 210))
@@ -655,6 +832,40 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("影", self.rose_petal_shadow_alpha)
         f.addRow("ハイライト", self.rose_petal_highlight_alpha)
         f.addRow("葉脈", self.rose_petal_vein_alpha)
+
+        self._section(f, "花びら共通: 夜景・花吹雪")
+        self.petal_night_enabled = QCheckBox("夜景化する")
+        self.petal_night_enabled.setChecked(bool(getattr(self.settings, "petal_night_enabled", False)))
+        self.petal_night_tint_color = self._color_row_on(f, "夜景の影色", getattr(self.settings, "petal_night_tint_color", "#101A3A"))
+        self.petal_night_tint_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "petal_night_tint_strength", 0.35), 0.01)
+        self.petal_shadow_enabled = QCheckBox("旧: 花びら影を使う")
+        self.petal_shadow_enabled.setChecked(bool(getattr(self.settings, "petal_shadow_enabled", False)))
+        self.petal_outline_enabled = QCheckBox("花びらの輪郭を強調")
+        self.petal_outline_enabled.setChecked(bool(getattr(self.settings, "petal_outline_enabled", True)))
+        self.petal_outline_strength = self._double_spin(0.5, 4.0, getattr(self.settings, "petal_outline_strength", 1.35), 0.05)
+        self.petal_blizzard_enabled = QCheckBox("一定時間ごとの突風花吹雪")
+        self.petal_blizzard_enabled.setChecked(bool(getattr(self.settings, "petal_blizzard_enabled", False)))
+        self.petal_wind_strength = self._double_spin(0.0, 3.0, getattr(self.settings, "petal_wind_strength", 1.0), 0.05)
+        self.petal_wind_randomness = self._double_spin(0.0, 1.0, getattr(self.settings, "petal_wind_randomness", 0.55), 0.01)
+        self.petal_gust_interval = self._double_spin(0.8, 300.0, getattr(self.settings, "petal_gust_interval", 4.0), 0.1)
+        self.petal_gust_duration = self._double_spin(0.2, 300.0, getattr(self.settings, "petal_gust_duration", 1.15), 0.05)
+        self.petal_gust_strength = self._double_spin(0.2, 200.0, getattr(self.settings, "petal_gust_strength", 1.45), 0.05)
+        self.petal_mouse_flutter_enabled = QCheckBox("マウスで花びらを舞わせる")
+        self.petal_mouse_flutter_enabled.setChecked(bool(getattr(self.settings, "petal_mouse_flutter_enabled", True)))
+        self.petal_mouse_flutter_strength = self._double_spin(0.0, 3.0, getattr(self.settings, "petal_mouse_flutter_strength", 1.0), 0.05)
+        f.addRow("夜景", self.petal_night_enabled)
+        f.addRow("夜景の強さ", self.petal_night_tint_strength)
+        f.addRow("旧影", self.petal_shadow_enabled)
+        f.addRow("輪郭強調", self.petal_outline_enabled)
+        f.addRow("輪郭の強さ", self.petal_outline_strength)
+        f.addRow("突風花吹雪", self.petal_blizzard_enabled)
+        f.addRow("通常風の強さ", self.petal_wind_strength)
+        f.addRow("突風のランダム感", self.petal_wind_randomness)
+        f.addRow("突風間隔", self.petal_gust_interval)
+        f.addRow("突風時間", self.petal_gust_duration)
+        f.addRow("突風の強さ", self.petal_gust_strength)
+        f.addRow("マウス舞い", self.petal_mouse_flutter_enabled)
+        f.addRow("マウス舞い強さ", self.petal_mouse_flutter_strength)
 
         self._section(f, "水面・消え方")
         self.rose_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_surface_y", 0.84), 0.01)
@@ -688,7 +899,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self._section(f, "中くらいのバラ花")
         self.rose_flower_count = self._int_spin(0, 100, getattr(self.settings, "rose_flower_count", 5))
         self.rose_flower_size = self._double_spin(8.0, 160.0, getattr(self.settings, "rose_flower_size", 42.0), 1.0)
-        self.rose_flower_speed = self._double_spin(0.01, 3.0, getattr(self.settings, "rose_flower_speed", 0.22), 0.01)
+        self.rose_flower_speed = self._double_spin(0.01, 300.0, getattr(self.settings, "rose_flower_speed", 0.22), 0.01)
         self.rose_flower_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_flower_sway", 0.85), 0.05)
         self.rose_flower_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_flower_surface_y", 0.84), 0.01)
         self.rose_flower_ripple_enabled = QCheckBox("バラ花が水面に落ちたら波紋")
@@ -730,10 +941,10 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("グロー数", self.glow_count)
 
         self._section(f, "速度・サイズ")
-        self.particle_speed = self._double_spin(0.0, 10.0, self.settings.particle_speed, 0.05)
+        self.particle_speed = self._double_spin(0.0, 300.0, self.settings.particle_speed, 0.05)
         self.rain_speed = self._double_spin(0.0, 10.0, self.settings.rain_speed, 0.05)
         self.rain_drop_min_size = self._double_spin(0.2, 20.0, getattr(self.settings, "rain_drop_min_size", 1.0), 0.1)
-        self.rain_drop_max_size = self._double_spin(0.2, 30.0, getattr(self.settings, "rain_drop_max_size", 2.4), 0.1)
+        self.rain_drop_max_size = self._double_spin(0.2, 300.0, getattr(self.settings, "rain_drop_max_size", 2.4), 0.1)
         self.rain_drop_length_randomness = self._double_spin(0.0, 2.0, getattr(self.settings, "rain_drop_length_randomness", 0.55), 0.05)
         self.particle_size = self._double_spin(0.1, 20.0, self.settings.particle_size, 0.1)
         self.rain_length = self._double_spin(1.0, 120.0, self.settings.rain_length, 1.0)
@@ -753,9 +964,9 @@ class EffectsOverlayEditorDialog(QDialog):
         f = self.sakura_form
         self._section(f, "桜花びら")
         self.sakura_petal_count = self._int_spin(0, 2000, getattr(self.settings, "sakura_petal_count", 80))
-        self.sakura_petal_speed = self._double_spin(0.01, 5.0, getattr(self.settings, "sakura_petal_speed", 0.32), 0.01)
-        self.sakura_petal_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "sakura_petal_sway", 1.15), 0.05)
-        self.sakura_petal_size = self._double_spin(1.0, 60.0, getattr(self.settings, "sakura_petal_size", 9.0), 0.5)
+        self.sakura_petal_speed = self._double_spin(0.01, 300.0, getattr(self.settings, "sakura_petal_speed", 0.32), 0.01)
+        self.sakura_petal_sway = self._double_spin(0.0, 300.0, getattr(self.settings, "sakura_petal_sway", 1.15), 0.05)
+        self.sakura_petal_size = self._double_spin(1.0, 300.0, getattr(self.settings, "sakura_petal_size", 9.0), 0.5)
         self.sakura_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "sakura_petal_surface_y", 0.84), 0.01)
         self.sakura_petal_ripple_enabled = QCheckBox("桜花びらが水面で波紋")
         self.sakura_petal_ripple_enabled.setChecked(getattr(self.settings, "sakura_petal_ripple_enabled", True))
@@ -787,18 +998,35 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("雨波紋の間隔", self.rain_ripple_cooldown)
 
         self._section(f, "全体")
-        self.ripple_speed = self._double_spin(0.05, 10.0, self.settings.ripple_speed, 0.05)
+        self.ripple_speed = self._double_spin(0.05, 300.0, self.settings.ripple_speed, 0.05)
         self.ripple_max_radius = self._double_spin(10.0, 800.0, self.settings.ripple_max_radius, 5.0)
         self.mouse_glow_radius = self._double_spin(10.0, 600.0, self.settings.mouse_glow_radius, 5.0)
         self.intensity = self._double_spin(0.0, 5.0, self.settings.intensity, 0.05)
         self.noise_alpha = self._int_spin(0, 255, self.settings.noise_alpha)
         self.background_alpha = self._int_spin(0, 255, self.settings.background_alpha)
+        self.gpu_acceleration_enabled = QCheckBox("GPU支援描画を使う（利用可能な場合）")
+        self.gpu_acceleration_enabled.setChecked(bool(getattr(self.settings, "gpu_acceleration_enabled", True)))
+        self.gpu_acceleration_prefer_opengl = QCheckBox("OpenGL/RHIを優先")
+        self.gpu_acceleration_prefer_opengl.setChecked(bool(getattr(self.settings, "gpu_acceleration_prefer_opengl", True)))
+        self.gpu_acceleration_smooth_pixmaps = QCheckBox("GPU向け画像補間を有効化")
+        self.gpu_acceleration_smooth_pixmaps.setChecked(bool(getattr(self.settings, "gpu_acceleration_smooth_pixmaps", True)))
+        self.effect_frame_rate_enabled = QCheckBox("エフェクトFPS制限を使う")
+        self.effect_frame_rate_enabled.setChecked(bool(getattr(self.settings, "effect_frame_rate_enabled", True)))
+        self.effect_frame_rate = self._int_spin(1, 240, getattr(self.settings, "effect_frame_rate", 60))
+        self.gpu_status_label = QLabel(effect_gpu_status_text())
+        self.gpu_status_label.setWordWrap(True)
         f.addRow("波紋速度", self.ripple_speed)
         f.addRow("波紋最大半径", self.ripple_max_radius)
         f.addRow("マウスグロー半径", self.mouse_glow_radius)
         f.addRow("全体強度", self.intensity)
         f.addRow("ノイズ濃度", self.noise_alpha)
         f.addRow("背景不透明度", self.background_alpha)
+        f.addRow("GPU支援描画", self.gpu_acceleration_enabled)
+        f.addRow("GPUバックエンド優先", self.gpu_acceleration_prefer_opengl)
+        f.addRow("画像補間", self.gpu_acceleration_smooth_pixmaps)
+        f.addRow("エフェクトFPS制限", self.effect_frame_rate_enabled)
+        f.addRow("エフェクトFPS", self.effect_frame_rate)
+        f.addRow("GPU状態", self.gpu_status_label)
 
     def _build_color_tab(self):
         f = self.color_form
@@ -828,6 +1056,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.flame_edge_color = self._color_row_on(f, "炎の外側色", getattr(self.settings, "flame_edge_color", "#FF1E00"))
         self.water_spray_color = self._color_row_on(f, "水の吹き出し色", getattr(self.settings, "water_spray_color", "#82E1FF"))
         self.water_spray_edge_color = self._color_row_on(f, "水の吹き出し縁色", getattr(self.settings, "water_spray_edge_color", "#D7FAFF"))
+        self.water_surface_color = self._color_row_on(f, "水面色", getattr(self.settings, "water_surface_color", "#4FC3FF"))
+        self.water_surface_highlight_color = self._color_row_on(f, "水面ハイライト色", getattr(self.settings, "water_surface_highlight_color", "#D8FAFF"))
+        self.water_fish_color = self._color_row_on(f, "魚の色", getattr(self.settings, "water_fish_color", "#7FE7D1"))
+        self.water_fish_secondary_color = self._color_row_on(f, "魚のハイライト色", getattr(self.settings, "water_fish_secondary_color", "#D8FFF3"))
         self.fireball_core_color = self._color_row_on(f, "火の玉中心色", getattr(self.settings, "fireball_core_color", "#FFFFBE"))
         self.fireball_mid_color = self._color_row_on(f, "火の玉中間色", getattr(self.settings, "fireball_mid_color", "#FF7828"))
         self.fireball_edge_color = self._color_row_on(f, "火の玉外側色", getattr(self.settings, "fireball_edge_color", "#AA1400"))
@@ -909,6 +1141,73 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("天の川幅", self.milky_way_width)
         f.addRow("天の川角度", self.milky_way_angle)
 
+        self._section(f, "水面")
+        self.water_surface_enabled = QCheckBox("水面を描画")
+        self.water_surface_enabled.setChecked(bool(getattr(self.settings, "water_surface_enabled", False)))
+        self.water_surface_alpha = self._int_spin(0, 255, getattr(self.settings, "water_surface_alpha", 92))
+        self.water_surface_flow_angle = self._double_spin(-180.0, 180.0, getattr(self.settings, "water_surface_flow_angle", 0.0), 1.0)
+        self.water_surface_flow_speed = self._double_spin(0.0, 300.0, getattr(self.settings, "water_surface_flow_speed", 0.55), 0.01)
+        self.water_surface_wave_count = self._int_spin(0, 120, getattr(self.settings, "water_surface_wave_count", 14))
+        self.water_surface_wave_height = self._double_spin(0.0, 80.0, getattr(self.settings, "water_surface_wave_height", 12.0), 0.5)
+        self.water_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "water_surface_y", 0.58), 0.01)
+        self.water_surface_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "water_surface_depth", 0.42), 0.01)
+        self.water_fish_enabled = QCheckBox("水面ON時に曲線で描いた丸々とした魚を泳がせる")
+        self.water_fish_enabled.setChecked(bool(getattr(self.settings, "water_fish_enabled", True)))
+        self.water_fish_count = self._int_spin(0, 60, getattr(self.settings, "water_fish_count", 4))
+        self.water_fish_speed = self._double_spin(0.0, 3.0, getattr(self.settings, "water_fish_speed", 0.28), 0.01)
+        self.water_fish_size = self._double_spin(4.0, 90.0, getattr(self.settings, "water_fish_size", 24.0), 0.5)
+        self.water_fish_alpha = self._int_spin(0, 255, getattr(self.settings, "water_fish_alpha", 175))
+        self.water_mirror_enabled = QCheckBox("他ウィジェットを鏡面反射")
+        self.water_mirror_enabled.setChecked(bool(getattr(self.settings, "water_mirror_enabled", False)))
+        self.water_mirror_alpha = self._int_spin(0, 255, getattr(self.settings, "water_mirror_alpha", 110))
+        self.water_mirror_blur = self._double_spin(0.0, 24.0, getattr(self.settings, "water_mirror_blur", 5.0), 0.5)
+        self.water_mirror_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "water_mirror_depth", 0.65), 0.01)
+        self.water_mirror_wave = self._double_spin(0.0, 40.0, getattr(self.settings, "water_mirror_wave", 7.0), 0.5)
+        self.water_mirror_tint_alpha = self._int_spin(0, 255, getattr(self.settings, "water_mirror_tint_alpha", 58))
+        self.water_mirror_reflect_effects_enabled = QCheckBox("指定エフェクトも反射")
+        self.water_mirror_reflect_effects_enabled.setChecked(bool(getattr(self.settings, "water_mirror_reflect_effects_enabled", True)))
+        self.water_mirror_reflect_snow = QCheckBox("雪を反射")
+        self.water_mirror_reflect_snow.setChecked(bool(getattr(self.settings, "water_mirror_reflect_snow", True)))
+        self.water_mirror_reflect_snow_crystal = QCheckBox("雪の結晶を反射")
+        self.water_mirror_reflect_snow_crystal.setChecked(bool(getattr(self.settings, "water_mirror_reflect_snow_crystal", True)))
+        self.water_mirror_reflect_petals = QCheckBox("花びらを反射")
+        self.water_mirror_reflect_petals.setChecked(bool(getattr(self.settings, "water_mirror_reflect_petals", True)))
+        self.water_mirror_reflect_bamboo = QCheckBox("竹林を反射")
+        self.water_mirror_reflect_bamboo.setChecked(bool(getattr(self.settings, "water_mirror_reflect_bamboo", True)))
+        self.water_mirror_reflect_shooting_star = QCheckBox("流れ星を反射")
+        self.water_mirror_reflect_shooting_star.setChecked(bool(getattr(self.settings, "water_mirror_reflect_shooting_star", True)))
+        self.water_mirror_reflect_meteor_shower = QCheckBox("流星群を反射")
+        self.water_mirror_reflect_meteor_shower.setChecked(bool(getattr(self.settings, "water_mirror_reflect_meteor_shower", True)))
+        self.water_mirror_reflect_rain = QCheckBox("雨を反射")
+        self.water_mirror_reflect_rain.setChecked(bool(getattr(self.settings, "water_mirror_reflect_rain", True)))
+        f.addRow("水面", self.water_surface_enabled)
+        f.addRow("水面透明度", self.water_surface_alpha)
+        f.addRow("流れ角度", self.water_surface_flow_angle)
+        f.addRow("流れ速度", self.water_surface_flow_speed)
+        f.addRow("波の本数", self.water_surface_wave_count)
+        f.addRow("波の高さ", self.water_surface_wave_height)
+        f.addRow("水面Y", self.water_surface_y)
+        f.addRow("水面の深さ", self.water_surface_depth)
+        f.addRow("丸々とした魚", self.water_fish_enabled)
+        f.addRow("魚の数", self.water_fish_count)
+        f.addRow("魚の速度", self.water_fish_speed)
+        f.addRow("魚の大きさ", self.water_fish_size)
+        f.addRow("魚の透明度", self.water_fish_alpha)
+        f.addRow("鏡面反射", self.water_mirror_enabled)
+        f.addRow("鏡面反射具合", self.water_mirror_alpha)
+        f.addRow("反射ぼかし", self.water_mirror_blur)
+        f.addRow("反射の深さ", self.water_mirror_depth)
+        f.addRow("反射の揺らぎ", self.water_mirror_wave)
+        f.addRow("水色なじませ", self.water_mirror_tint_alpha)
+        f.addRow("エフェクト反射", self.water_mirror_reflect_effects_enabled)
+        f.addRow("反射: 雪", self.water_mirror_reflect_snow)
+        f.addRow("反射: 雪の結晶", self.water_mirror_reflect_snow_crystal)
+        f.addRow("反射: 花びら", self.water_mirror_reflect_petals)
+        f.addRow("反射: 竹", self.water_mirror_reflect_bamboo)
+        f.addRow("反射: 流れ星", self.water_mirror_reflect_shooting_star)
+        f.addRow("反射: 流星群", self.water_mirror_reflect_meteor_shower)
+        f.addRow("反射: 雨", self.water_mirror_reflect_rain)
+
         self._section(f, "竹林")
         self.bamboo_grove_enabled = QCheckBox("竹林を描画")
         self.bamboo_grove_enabled.setChecked(bool(getattr(self.settings, "bamboo_grove_enabled", False)))
@@ -955,6 +1254,9 @@ class EffectsOverlayEditorDialog(QDialog):
         milky_widget = getattr(self, "milky_way_enabled", None)
         if milky_widget is not None:
             milky_widget.setChecked(bool(value))
+        water_surface_widget = getattr(self, "water_surface_enabled", None)
+        if water_surface_widget is not None:
+            water_surface_widget.setChecked(bool(value))
         bamboo_widget = getattr(self, "bamboo_grove_enabled", None)
         if bamboo_widget is not None:
             bamboo_widget.setChecked(bool(value))
@@ -1032,6 +1334,179 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
+
+    def _theme_set_checked(self, name: str, value: bool):
+        widget = getattr(self, name, None)
+        if widget is not None and hasattr(widget, "setChecked"):
+            widget.setChecked(bool(value))
+
+    def _theme_set_value(self, name: str, value):
+        widget = getattr(self, name, None)
+        if widget is not None and hasattr(widget, "setValue"):
+            try:
+                widget.setValue(value)
+            except Exception:
+                pass
+
+    def _theme_set_text(self, name: str, value: str):
+        widget = getattr(self, name, None)
+        if widget is not None and hasattr(widget, "setText"):
+            widget.setText(str(value))
+
+    def _theme_disable_all_visual_effects(self):
+        self._set_toggle_values(False, False, False, False, False, False, False, False)
+        for name in [
+            "rain_ripple_enabled", "rose_petals_enabled", "rose_flowers_enabled", "blooming_roses_enabled",
+            "sakura_petals_enabled", "sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled",
+            "moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled", "milky_way_enabled",
+            "water_surface_enabled", "bamboo_grove_enabled",
+        ]:
+            self._theme_set_checked(name, False)
+        self._set_extra_effect_toggles(False)
+
+    def _theme_set_extra(self, prefix: str, enabled: bool = True, count=None, speed=None, size=None, alpha=None):
+        self._theme_set_checked(f"{prefix}_enabled", enabled)
+        if count is not None:
+            self._theme_set_value(f"{prefix}_count", count)
+        if speed is not None:
+            self._theme_set_value(f"{prefix}_speed", speed)
+        if size is not None:
+            self._theme_set_value(f"{prefix}_size", size)
+        if alpha is not None:
+            self._theme_set_value(f"{prefix}_alpha", alpha)
+
+    def _theme_apply_common_lightweight(self, fps: int = 30, quality: float = 0.70):
+        self._theme_set_checked("effect_frame_rate_enabled", True)
+        self._theme_set_value("effect_frame_rate", fps)
+        self._theme_set_checked("software_lightweight_enabled", True)
+        self._theme_set_value("software_quality_scale", quality)
+        self._theme_set_value("software_max_fps", fps)
+        self._theme_set_checked("software_disable_antialiasing", False)
+        self._theme_set_value("software_skip_reflection_frames", 2)
+        self._theme_set_value("software_max_extra_particles", 360)
+        self._theme_set_value("software_max_petals", 120)
+        self._theme_set_value("software_max_ripples", 36)
+
+    def apply_effect_theme(self, theme_id: str):
+        """Enable a curated group of effects as a theme preset."""
+        self._theme_disable_all_visual_effects()
+        self._theme_apply_common_lightweight()
+
+        if theme_id == "quiet_night":
+            self._theme_set_checked("moon_body_enabled", True)
+            self._theme_set_checked("moonlight_enabled", True)
+            self._theme_set_checked("moon_shadow_enabled", True)
+            self._theme_set_value("moon_alpha", 225)
+            self._theme_set_value("moonlight_alpha", 70)
+            self._theme_set_extra("star_sky", True, count=300, speed=0.28, size=1.4, alpha=215)
+            self._theme_set_checked("milky_way_enabled", True)
+            self._theme_set_value("milky_way_star_count", 180)
+            self._theme_set_value("milky_way_alpha", 92)
+            self._theme_set_extra("shooting_star", True, count=2, speed=0.72, size=15.0, alpha=210)
+
+        elif theme_id == "moonlit_water":
+            self._theme_set_checked("moon_body_enabled", True)
+            self._theme_set_checked("moonlight_enabled", True)
+            self._theme_set_checked("moon_shadow_enabled", True)
+            self._theme_set_extra("star_sky", True, count=220, speed=0.25, size=1.3, alpha=190)
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_checked("water_fish_enabled", True)
+            self._theme_set_value("water_fish_count", 3)
+            self._theme_set_value("water_fish_speed", 0.32)
+            self._theme_set_value("water_surface_alpha", 104)
+            self._theme_set_value("water_surface_wave_count", 12)
+            self._theme_set_value("water_surface_wave_height", 10.0)
+            self._theme_set_checked("water_mirror_enabled", True)
+            self._theme_set_value("water_mirror_alpha", 95)
+            self._theme_set_value("water_mirror_blur", 6.0)
+            self._theme_set_value("water_mirror_wave", 5.0)
+            self._theme_set_checked("water_mirror_reflect_effects_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_snow", False)
+            self._theme_set_checked("water_mirror_reflect_bamboo", False)
+
+        elif theme_id == "spring_petals":
+            self._theme_set_checked("rose_petals_enabled", True)
+            self._theme_set_value("rose_petal_count", 42)
+            self._theme_set_value("rose_petal_speed", 0.23)
+            self._theme_set_value("rose_petal_sway", 1.35)
+            self._theme_set_value("rose_petal_alpha", 220)
+            self._theme_set_checked("sakura_petals_enabled", True)
+            self._theme_set_value("sakura_petal_count", 64)
+            self._theme_set_value("sakura_petal_speed", 0.20)
+            self._theme_set_value("sakura_petal_sway", 1.50)
+            self._theme_set_value("sakura_petal_alpha", 210)
+            self._theme_set_checked("ripple_enabled", True)
+            self._theme_set_checked("rose_petal_ripple_enabled", True)
+
+        elif theme_id == "bamboo_path":
+            self._theme_set_checked("bamboo_grove_enabled", True)
+            self._theme_set_value("bamboo_count", 16)
+            self._theme_set_value("bamboo_thickness", 15.5)
+            self._theme_set_value("bamboo_bend", 0.42)
+            self._theme_set_value("bamboo_alpha", 230)
+            self._theme_set_value("bamboo_leaf_density", 5)
+            self._theme_set_value("bamboo_depth_strength", 0.92)
+            self._theme_set_value("bamboo_layer_spread", 0.50)
+            self._theme_set_checked("bamboo_ground_shadow_enabled", True)
+            self._theme_set_checked("bamboo_atmosphere_enabled", True)
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_checked("water_fish_enabled", True)
+            self._theme_set_value("water_fish_count", 3)
+            self._theme_set_value("water_surface_alpha", 70)
+            self._theme_set_checked("water_mirror_enabled", True)
+            self._theme_set_value("water_mirror_alpha", 58)
+            self._theme_set_checked("water_mirror_reflect_bamboo", True)
+
+        elif theme_id == "rain_ripples":
+            self._theme_set_toggle_values_for_rain = True
+            self._theme_set_checked("rain_enabled", True)
+            self._theme_set_value("rain_count", 85)
+            self._theme_set_value("rain_speed", 1.12)
+            self._theme_set_checked("ripple_enabled", True)
+            self._theme_set_checked("rain_ripple_enabled", True)
+            self._theme_set_value("rain_ripple_chance", 0.70)
+            self._theme_set_value("rain_ripple_cooldown", 0.035)
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_checked("water_fish_enabled", True)
+            self._theme_set_value("water_fish_count", 3)
+            self._theme_set_value("water_surface_alpha", 90)
+            self._theme_set_value("water_surface_wave_count", 16)
+            self._theme_set_extra("water_drop", True, count=36, speed=0.45, size=7.0, alpha=185)
+
+        elif theme_id == "snow_scene":
+            self._theme_set_extra("snow", True, count=120, speed=0.16, size=4.2, alpha=210)
+            self._theme_set_extra("snow_crystal", True, count=28, speed=0.11, size=13.0, alpha=220)
+            self._theme_set_checked("ripple_enabled", True)
+            self._theme_set_checked("moon_body_enabled", True)
+            self._theme_set_checked("moonlight_enabled", True)
+            self._theme_set_extra("star_sky", True, count=160, speed=0.18, size=1.1, alpha=150)
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_value("water_surface_alpha", 62)
+
+        elif theme_id == "meteor_sky":
+            self._theme_set_extra("star_sky", True, count=340, speed=0.34, size=1.5, alpha=220)
+            self._theme_set_checked("milky_way_enabled", True)
+            self._theme_set_value("milky_way_star_count", 220)
+            self._theme_set_value("milky_way_alpha", 112)
+            self._theme_set_extra("shooting_star", True, count=4, speed=0.90, size=17.0, alpha=230)
+            self._theme_set_extra("meteor_shower", True, count=18, speed=0.95, size=11.5, alpha=215)
+            self._theme_set_checked("moon_body_enabled", True)
+            self._theme_set_value("moon_alpha", 190)
+
+        elif theme_id == "fire_and_water":
+            self._theme_set_extra("flame", True, count=54, speed=0.55, size=21.0, alpha=205)
+            self._theme_set_extra("fireball", True, count=8, speed=0.32, size=18.0, alpha=220)
+            self._theme_set_extra("water_spray", True, count=52, speed=0.70, size=5.8, alpha=185)
+            self._theme_set_extra("bubble", True, count=34, speed=0.24, size=11.0, alpha=145)
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_value("water_surface_alpha", 88)
+            self._theme_set_value("water_surface_wave_count", 13)
+            self._theme_set_value("water_surface_wave_height", 12.0)
+
+        try:
+            self.apply_to_config()
+        except Exception:
+            pass
 
     def set_rose_petals_only(self):
         self._set_toggle_values(False, False, False, False, False, False, False, False)
@@ -1191,6 +1666,11 @@ class EffectsOverlayEditorDialog(QDialog):
             noise_enabled=self.noise_enabled.isChecked(),
             glow_enabled=self.glow_enabled.isChecked(),
             ripple_enabled=self.ripple_enabled.isChecked(),
+            gpu_acceleration_enabled=self.gpu_acceleration_enabled.isChecked(),
+            gpu_acceleration_prefer_opengl=self.gpu_acceleration_prefer_opengl.isChecked(),
+            gpu_acceleration_smooth_pixmaps=self.gpu_acceleration_smooth_pixmaps.isChecked(),
+            effect_frame_rate_enabled=self.effect_frame_rate_enabled.isChecked(),
+            effect_frame_rate=self.effect_frame_rate.value(),
             mouse_ripple_enabled=self.mouse_ripple_enabled.isChecked(),
             mouse_flee_enabled=self.mouse_flee_enabled.isChecked(),
             mouse_glow_enabled=self.mouse_glow_enabled.isChecked(),
@@ -1296,6 +1776,20 @@ class EffectsOverlayEditorDialog(QDialog):
             rose_petal_shadow_alpha=self.rose_petal_shadow_alpha.value(),
             rose_petal_highlight_alpha=self.rose_petal_highlight_alpha.value(),
             rose_petal_vein_alpha=self.rose_petal_vein_alpha.value(),
+            petal_night_enabled=self.petal_night_enabled.isChecked(),
+            petal_night_tint_color=self.petal_night_tint_color.text().strip() or "#101A3A",
+            petal_night_tint_strength=self.petal_night_tint_strength.value(),
+            petal_shadow_enabled=self.petal_shadow_enabled.isChecked(),
+            petal_outline_enabled=self.petal_outline_enabled.isChecked(),
+            petal_outline_strength=self.petal_outline_strength.value(),
+            petal_blizzard_enabled=self.petal_blizzard_enabled.isChecked(),
+            petal_wind_strength=self.petal_wind_strength.value(),
+            petal_wind_randomness=self.petal_wind_randomness.value(),
+            petal_gust_interval=self.petal_gust_interval.value(),
+            petal_gust_duration=self.petal_gust_duration.value(),
+            petal_gust_strength=self.petal_gust_strength.value(),
+            petal_mouse_flutter_enabled=self.petal_mouse_flutter_enabled.isChecked(),
+            petal_mouse_flutter_strength=self.petal_mouse_flutter_strength.value(),
             rose_flowers_enabled=self.rose_flowers_enabled.isChecked(),
             rose_flower_count=self.rose_flower_count.value(),
             rose_flower_size=self.rose_flower_size.value(),
@@ -1414,6 +1908,37 @@ class EffectsOverlayEditorDialog(QDialog):
             milky_way_width=self.milky_way_width.value(),
             milky_way_angle=self.milky_way_angle.value(),
             milky_way_color=self.milky_way_color.text().strip() or "#BFD7FF",
+            water_surface_enabled=self.water_surface_enabled.isChecked(),
+            water_surface_alpha=self.water_surface_alpha.value(),
+            water_surface_color=self.water_surface_color.text().strip() or "#4FC3FF",
+            water_surface_highlight_color=self.water_surface_highlight_color.text().strip() or "#D8FAFF",
+            water_surface_flow_angle=self.water_surface_flow_angle.value(),
+            water_surface_flow_speed=self.water_surface_flow_speed.value(),
+            water_surface_wave_count=self.water_surface_wave_count.value(),
+            water_surface_wave_height=self.water_surface_wave_height.value(),
+            water_surface_y=self.water_surface_y.value(),
+            water_surface_depth=self.water_surface_depth.value(),
+            water_fish_enabled=self.water_fish_enabled.isChecked(),
+            water_fish_count=self.water_fish_count.value(),
+            water_fish_speed=self.water_fish_speed.value(),
+            water_fish_size=self.water_fish_size.value(),
+            water_fish_alpha=self.water_fish_alpha.value(),
+            water_fish_color=self.water_fish_color.text().strip() or "#7FE7D1",
+            water_fish_secondary_color=self.water_fish_secondary_color.text().strip() or "#D8FFF3",
+            water_mirror_enabled=self.water_mirror_enabled.isChecked(),
+            water_mirror_alpha=self.water_mirror_alpha.value(),
+            water_mirror_blur=self.water_mirror_blur.value(),
+            water_mirror_depth=self.water_mirror_depth.value(),
+            water_mirror_wave=self.water_mirror_wave.value(),
+            water_mirror_tint_alpha=self.water_mirror_tint_alpha.value(),
+            water_mirror_reflect_effects_enabled=self.water_mirror_reflect_effects_enabled.isChecked(),
+            water_mirror_reflect_snow=self.water_mirror_reflect_snow.isChecked(),
+            water_mirror_reflect_snow_crystal=self.water_mirror_reflect_snow_crystal.isChecked(),
+            water_mirror_reflect_petals=self.water_mirror_reflect_petals.isChecked(),
+            water_mirror_reflect_bamboo=self.water_mirror_reflect_bamboo.isChecked(),
+            water_mirror_reflect_shooting_star=self.water_mirror_reflect_shooting_star.isChecked(),
+            water_mirror_reflect_meteor_shower=self.water_mirror_reflect_meteor_shower.isChecked(),
+            water_mirror_reflect_rain=self.water_mirror_reflect_rain.isChecked(),
             bamboo_grove_enabled=self.bamboo_grove_enabled.isChecked(),
             bamboo_count=self.bamboo_count.value(),
             bamboo_thickness=self.bamboo_thickness.value(),
@@ -1499,6 +2024,13 @@ class EffectsOverlayEditorDialog(QDialog):
         except Exception:
             pass
         try:
+            if hasattr(self.widget, "_water_fish"):
+                self.widget._water_fish.clear()
+            self.widget._water_fish_rect_key = None
+            self.widget._last_water_fish_update = 0.0
+        except Exception:
+            pass
+        try:
             parent = self.parent()
             if parent is not None and hasattr(parent, "canvas"):
                 parent.canvas.save_config()
@@ -1518,6 +2050,11 @@ class EffectOverlaySettings:
     noise_enabled: bool = False
     glow_enabled: bool = False
     ripple_enabled: bool = False
+    gpu_acceleration_enabled: bool = True
+    gpu_acceleration_prefer_opengl: bool = True
+    gpu_acceleration_smooth_pixmaps: bool = True
+    effect_frame_rate_enabled: bool = True
+    effect_frame_rate: int = 60
 
     mouse_ripple_enabled: bool = True
     mouse_flee_enabled: bool = True
@@ -1581,6 +2118,20 @@ class EffectOverlaySettings:
     rose_petal_shadow_alpha: int = 72
     rose_petal_highlight_alpha: int = 115
     rose_petal_vein_alpha: int = 95
+    petal_night_enabled: bool = False
+    petal_night_tint_color: str = "#101A3A"
+    petal_night_tint_strength: float = 0.35
+    petal_shadow_enabled: bool = False
+    petal_outline_enabled: bool = True
+    petal_outline_strength: float = 1.35
+    petal_blizzard_enabled: bool = False
+    petal_wind_strength: float = 1.0
+    petal_wind_randomness: float = 0.55
+    petal_gust_interval: float = 4.0
+    petal_gust_duration: float = 1.15
+    petal_gust_strength: float = 1.45
+    petal_mouse_flutter_enabled: bool = True
+    petal_mouse_flutter_strength: float = 1.0
 
     rose_flowers_enabled: bool = True
     rose_flower_count: int = 5
@@ -1796,6 +2347,37 @@ class EffectOverlaySettings:
     milky_way_width: float = 0.22
     milky_way_angle: float = -18.0
     milky_way_color: str = "#BFD7FF"
+    water_surface_enabled: bool = False
+    water_surface_alpha: int = 92
+    water_surface_color: str = "#4FC3FF"
+    water_surface_highlight_color: str = "#D8FAFF"
+    water_surface_flow_angle: float = 0.0
+    water_surface_flow_speed: float = 0.55
+    water_surface_wave_count: int = 14
+    water_surface_wave_height: float = 12.0
+    water_surface_y: float = 0.58
+    water_surface_depth: float = 0.42
+    water_fish_enabled: bool = True
+    water_fish_count: int = 4
+    water_fish_speed: float = 0.28
+    water_fish_size: float = 24.0
+    water_fish_alpha: int = 175
+    water_fish_color: str = "#7FE7D1"
+    water_fish_secondary_color: str = "#D8FFF3"
+    water_mirror_enabled: bool = False
+    water_mirror_alpha: int = 110
+    water_mirror_blur: float = 5.0
+    water_mirror_depth: float = 0.65
+    water_mirror_wave: float = 7.0
+    water_mirror_tint_alpha: int = 58
+    water_mirror_reflect_effects_enabled: bool = True
+    water_mirror_reflect_snow: bool = True
+    water_mirror_reflect_snow_crystal: bool = True
+    water_mirror_reflect_petals: bool = True
+    water_mirror_reflect_bamboo: bool = True
+    water_mirror_reflect_shooting_star: bool = True
+    water_mirror_reflect_meteor_shower: bool = True
+    water_mirror_reflect_rain: bool = True
     bamboo_grove_enabled: bool = False
     bamboo_count: int = 12
     bamboo_thickness: float = 16.0
@@ -1915,6 +2497,11 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         noise_enabled=bool(defaults.get("noise_enabled", False)),
         glow_enabled=bool(defaults.get("glow_enabled", True)),
         ripple_enabled=bool(defaults.get("ripple_enabled", True)),
+        gpu_acceleration_enabled=bool(defaults.get("gpu_acceleration_enabled", True)),
+        gpu_acceleration_prefer_opengl=bool(defaults.get("gpu_acceleration_prefer_opengl", True)),
+        gpu_acceleration_smooth_pixmaps=bool(defaults.get("gpu_acceleration_smooth_pixmaps", True)),
+        effect_frame_rate_enabled=bool(defaults.get("effect_frame_rate_enabled", True)),
+        effect_frame_rate=max(1, min(240, int(defaults.get("effect_frame_rate", 60)))),
         mouse_ripple_enabled=bool(defaults.get("mouse_ripple_enabled", True)),
         mouse_flee_enabled=bool(defaults.get("mouse_flee_enabled", True)),
         mouse_glow_enabled=bool(defaults.get("mouse_glow_enabled", True)),
@@ -1968,6 +2555,20 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         rose_petal_shadow_alpha=max(0, min(255, int(defaults.get("rose_petal_shadow_alpha", 72)))),
         rose_petal_highlight_alpha=max(0, min(255, int(defaults.get("rose_petal_highlight_alpha", 115)))),
         rose_petal_vein_alpha=max(0, min(255, int(defaults.get("rose_petal_vein_alpha", 95)))),
+        petal_night_enabled=bool(defaults.get("petal_night_enabled", False)),
+        petal_night_tint_color=str(defaults.get("petal_night_tint_color", "#101A3A")),
+        petal_night_tint_strength=float(defaults.get("petal_night_tint_strength", 0.35)),
+        petal_shadow_enabled=bool(defaults.get("petal_shadow_enabled", False)),
+        petal_outline_enabled=bool(defaults.get("petal_outline_enabled", True)),
+        petal_outline_strength=float(defaults.get("petal_outline_strength", 1.35)),
+        petal_blizzard_enabled=bool(defaults.get("petal_blizzard_enabled", False)),
+        petal_wind_strength=float(defaults.get("petal_wind_strength", 1.0)),
+        petal_wind_randomness=float(defaults.get("petal_wind_randomness", 0.55)),
+        petal_gust_interval=float(defaults.get("petal_gust_interval", 4.0)),
+        petal_gust_duration=float(defaults.get("petal_gust_duration", 1.15)),
+        petal_gust_strength=float(defaults.get("petal_gust_strength", 1.45)),
+        petal_mouse_flutter_enabled=bool(defaults.get("petal_mouse_flutter_enabled", True)),
+        petal_mouse_flutter_strength=float(defaults.get("petal_mouse_flutter_strength", 1.0)),
         rose_flowers_enabled=bool(defaults.get("rose_flowers_enabled", True)),
         rose_flower_count=max(0, int(defaults.get("rose_flower_count", 5))),
         rose_flower_size=float(defaults.get("rose_flower_size", 42.0)),
@@ -2171,6 +2772,37 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         milky_way_width=float(defaults.get("milky_way_width", 0.22)),
         milky_way_angle=float(defaults.get("milky_way_angle", -18.0)),
         milky_way_color=str(defaults.get("milky_way_color", "#BFD7FF")),
+        water_surface_enabled=bool(defaults.get("water_surface_enabled", False)),
+        water_surface_alpha=max(0, min(255, int(defaults.get("water_surface_alpha", 92)))),
+        water_surface_color=str(defaults.get("water_surface_color", "#4FC3FF")),
+        water_surface_highlight_color=str(defaults.get("water_surface_highlight_color", "#D8FAFF")),
+        water_surface_flow_angle=float(defaults.get("water_surface_flow_angle", 0.0)),
+        water_surface_flow_speed=float(defaults.get("water_surface_flow_speed", 0.55)),
+        water_surface_wave_count=max(0, int(defaults.get("water_surface_wave_count", 14))),
+        water_surface_wave_height=float(defaults.get("water_surface_wave_height", 12.0)),
+        water_surface_y=float(defaults.get("water_surface_y", 0.58)),
+        water_surface_depth=float(defaults.get("water_surface_depth", 0.42)),
+        water_fish_enabled=bool(defaults.get("water_fish_enabled", True)),
+        water_fish_count=max(0, int(defaults.get("water_fish_count", 4))),
+        water_fish_speed=float(defaults.get("water_fish_speed", 0.28)),
+        water_fish_size=float(defaults.get("water_fish_size", 24.0)),
+        water_fish_alpha=max(0, min(255, int(defaults.get("water_fish_alpha", 175)))),
+        water_fish_color=str(defaults.get("water_fish_color", "#7FE7D1")),
+        water_fish_secondary_color=str(defaults.get("water_fish_secondary_color", "#D8FFF3")),
+        water_mirror_enabled=bool(defaults.get("water_mirror_enabled", False)),
+        water_mirror_alpha=max(0, min(255, int(defaults.get("water_mirror_alpha", 110)))),
+        water_mirror_blur=float(defaults.get("water_mirror_blur", 5.0)),
+        water_mirror_depth=float(defaults.get("water_mirror_depth", 0.65)),
+        water_mirror_wave=float(defaults.get("water_mirror_wave", 7.0)),
+        water_mirror_tint_alpha=max(0, min(255, int(defaults.get("water_mirror_tint_alpha", 58)))),
+        water_mirror_reflect_effects_enabled=bool(defaults.get("water_mirror_reflect_effects_enabled", True)),
+        water_mirror_reflect_snow=bool(defaults.get("water_mirror_reflect_snow", True)),
+        water_mirror_reflect_snow_crystal=bool(defaults.get("water_mirror_reflect_snow_crystal", True)),
+        water_mirror_reflect_petals=bool(defaults.get("water_mirror_reflect_petals", True)),
+        water_mirror_reflect_bamboo=bool(defaults.get("water_mirror_reflect_bamboo", True)),
+        water_mirror_reflect_shooting_star=bool(defaults.get("water_mirror_reflect_shooting_star", True)),
+        water_mirror_reflect_meteor_shower=bool(defaults.get("water_mirror_reflect_meteor_shower", True)),
+        water_mirror_reflect_rain=bool(defaults.get("water_mirror_reflect_rain", True)),
         bamboo_grove_enabled=bool(defaults.get("bamboo_grove_enabled", False)),
         bamboo_count=max(0, int(defaults.get("bamboo_count", 12))),
         bamboo_thickness=float(defaults.get("bamboo_thickness", 16.0)),
@@ -3399,6 +4031,8 @@ class WidgetConfig:
     visualizer_glow_enabled: bool = True
     visualizer_bar_width_scale: float = 1.0
     visualizer_orientation: str = "horizontal"
+    visualizer_frame_rate_enabled: bool = True
+    visualizer_frame_rate: int = 60
     weather_location: str = ""
     network_down_color: str = "#5BE7FF"
     network_up_color: str = "#80FF9F"
@@ -3464,6 +4098,20 @@ class EffectsOverlayWidget(BaseWidget):
         self._bamboo_grove_cache = []
         self._milky_way_cache_signature = None
         self._milky_way_cache = {"blobs": [], "stars": []}
+        self._water_reflection_source_image = None
+        self._water_reflection_cache_signature = None
+        self._water_reflection_cache_image = None
+        self._water_fish = []
+        self._water_fish_rect_key = None
+        self._petal_wind_phase = 0.0
+        self._petal_wind_strength = 0.0
+        self._petal_wind_until = 0.0
+        self._next_petal_wind_event = time.time() + 1.5
+        self._last_petal_mouse_flutter = 0.0
+        self._petal_gust_active = False
+        self._petal_gust_started_at = 0.0
+        self._petal_gust_direction = 1.0
+        self._last_petal_gust_rollup_at = 0.0
 
     def _has_visible_moon_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
         """Return True when any moon-related visual is enabled."""
@@ -3686,6 +4334,12 @@ class EffectsOverlayWidget(BaseWidget):
 
     def paint(self, p: QPainter, ctx: Dict):
         settings = get_effect_overlay_settings(self.cfg)
+        if "_water_reflection_cache_key" in getattr(self, "__dict__", {}):
+            try:
+                delattr(self, "_water_reflection_cache_key")
+            except Exception:
+                pass
+        self._water_reflection_source_image = ctx.get("reflection_source_image") if isinstance(ctx, dict) else None
         r = self.rect
         now = time.time()
         dt = max(0.001, min(0.05, now - self._last_time))
@@ -3698,6 +4352,11 @@ class EffectsOverlayWidget(BaseWidget):
 
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if bool(getattr(settings, "gpu_acceleration_enabled", True)) and bool(getattr(settings, "gpu_acceleration_smooth_pixmaps", True)):
+            try:
+                p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            except Exception:
+                pass
 
         if settings.background_alpha > 0:
             bg = QColor(getattr(self.cfg, "bg", "#000000") or "#000000")
@@ -4212,6 +4871,8 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_extra_ripple_time = now
 
     def _draw_extra_effects(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if bool(getattr(settings, "water_surface_enabled", False)):
+            self._draw_water_surface(p, r, settings, now)
         if bool(getattr(settings, "milky_way_enabled", False)):
             self._draw_milky_way(p, r, settings, now)
         if not hasattr(self, "_extra_effects"):
@@ -4362,6 +5023,511 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(grad))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(item.x, item.y), item.size, item.size)
+
+    def _has_water_mirror_reflection(self, settings: EffectOverlaySettings) -> bool:
+        return bool(
+            getattr(settings, "water_surface_enabled", False)
+            and getattr(settings, "water_mirror_enabled", False)
+            and int(getattr(settings, "water_mirror_alpha", 0)) > 0
+        )
+
+    def _blur_reflection_image(self, image: QImage, blur: float) -> QImage:
+        blur = max(0.0, min(24.0, float(blur)))
+        if image.isNull() or blur <= 0.05:
+            return image
+        # 軽量な疑似ブラー: 縮小→拡大を1〜2回。QGraphicsEffectを使わないのでpaintEvent内でも安全。
+        factor = max(2, min(10, int(1.0 + blur * 0.45)))
+        w = max(1, image.width() // factor)
+        h = max(1, image.height() // factor)
+        small = image.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        blurred = small.scaled(image.width(), image.height(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        if blur >= 10.0:
+            w2 = max(1, image.width() // max(2, factor // 2))
+            h2 = max(1, image.height() // max(2, factor // 2))
+            blurred = blurred.scaled(w2, h2, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation).scaled(
+                image.width(), image.height(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+        return blurred
+
+    def _water_reflection_cache_key(self, source: QImage, water_rect: QRectF, settings: EffectOverlaySettings):
+        return (
+            int(source.cacheKey()) if source is not None and not source.isNull() else 0,
+            int(water_rect.left()), int(water_rect.top()), int(water_rect.width()), int(water_rect.height()),
+            round(float(getattr(settings, "water_mirror_blur", 5.0)), 2),
+            round(float(getattr(settings, "water_mirror_depth", 0.65)), 3),
+        )
+
+    def _make_water_reflection_image(self, source: QImage, water_rect: QRectF, settings: EffectOverlaySettings) -> QImage:
+        if source is None or source.isNull() or water_rect.width() <= 1 or water_rect.height() <= 1:
+            return QImage()
+        key_func = getattr(type(self), "_water_reflection_cache_key", None)
+        if key_func is None:
+            key = (
+                int(source.cacheKey()) if source is not None and not source.isNull() else 0,
+                int(water_rect.left()), int(water_rect.top()), int(water_rect.width()), int(water_rect.height()),
+                round(float(getattr(settings, "water_mirror_blur", 5.0)), 2),
+                round(float(getattr(settings, "water_mirror_depth", 0.65)), 3),
+            )
+        else:
+            key = key_func(self, source, water_rect, settings)
+        cached = getattr(self, "_water_reflection_cache_image", None)
+        if getattr(self, "_water_reflection_cache_signature", None) == key and cached is not None and not cached.isNull():
+            return cached
+        x = max(0, int(water_rect.left()))
+        w = max(1, min(int(water_rect.width()), source.width() - x))
+        if w <= 0:
+            return QImage()
+        target_h = max(1, int(water_rect.height() * max(0.05, min(1.0, float(getattr(settings, "water_mirror_depth", 0.65))))))
+        target_h = min(target_h, max(1, int(water_rect.height())))
+        y0 = max(0, int(water_rect.top()))
+        src_h = min(target_h, y0)
+        if src_h <= 1:
+            return QImage()
+        src_y = max(0, y0 - src_h)
+        reflected = source.copy(x, src_y, w, src_h).mirrored(False, True)
+        if reflected.height() != target_h:
+            reflected = reflected.scaled(w, target_h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        reflected = self._blur_reflection_image(reflected, float(getattr(settings, "water_mirror_blur", 5.0)))
+        self._water_reflection_cache_signature = key
+        self._water_reflection_cache_image = reflected
+        return reflected
+
+    def _water_reflected_point(self, x: float, y: float, water_rect: QRectF, wave: float, now: float):
+        surface_y = water_rect.top()
+        reflected_y = surface_y + (surface_y - y)
+        if reflected_y < water_rect.top() or reflected_y > water_rect.bottom():
+            return None
+        depth_t = max(0.0, min(1.0, (reflected_y - water_rect.top()) / max(1.0, water_rect.height())))
+        wobble = math.sin(now * 1.15 + reflected_y * 0.055 + x * 0.015) * wave * (1.0 - depth_t * 0.55)
+        return QPointF(x + wobble, reflected_y)
+
+    def _draw_reflected_snow_like(self, p: QPainter, item, water_rect: QRectF, settings: EffectOverlaySettings, now: float, color_name: str, default_color: str, alpha: int, crystal: bool = False):
+        pt = self._water_reflected_point(float(getattr(item, "x", 0.0)), float(getattr(item, "y", 0.0)), water_rect, float(getattr(settings, "water_mirror_wave", 7.0)), now)
+        if pt is None:
+            return
+        depth_t = max(0.0, min(1.0, (pt.y() - water_rect.top()) / max(1.0, water_rect.height())))
+        a = max(0, min(255, int(alpha * (0.52 - depth_t * 0.22))))
+        if a <= 0:
+            return
+        c = QColor(getattr(settings, color_name, default_color)); c.setAlpha(a)
+        size = max(1.0, float(getattr(item, "size", 3.0))) * (1.0 + depth_t * 0.18)
+        if crystal:
+            p.save(); p.translate(pt); p.rotate(math.degrees(float(getattr(item, "rotation", 0.0))))
+            pen = QPen(c, max(1.0, size * 0.06)); pen.setCapStyle(Qt.PenCapStyle.RoundCap); p.setPen(pen)
+            for i in range(6):
+                ang = math.tau * i / 6.0
+                p.drawLine(QPointF(0, 0), QPointF(math.cos(ang) * size, math.sin(ang) * size))
+            p.restore()
+        else:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(c)); p.drawEllipse(pt, size, size * 0.72)
+
+    def _draw_reflected_shooting_effect(self, p: QPainter, item, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha: int):
+        pt = self._water_reflected_point(float(getattr(item, "x", 0.0)), float(getattr(item, "y", 0.0)), water_rect, float(getattr(settings, "water_mirror_wave", 7.0)), now)
+        if pt is None:
+            return
+        vx = float(getattr(item, "vx", 1.0)); vy = -float(getattr(item, "vy", 0.48))
+        speed_len = max(1.0, math.hypot(vx, vy)); tx = -vx / speed_len; ty = -vy / speed_len
+        base_size = max(1.0, float(getattr(item, "size", 12.0)))
+        tail = base_size * (6.0 if getattr(item, "kind", "") == "meteor_shower" else 7.5)
+        a = max(0, min(255, int(alpha * 0.44)))
+        pen = QPen(QColor(190, 230, 255, a), max(1.0, base_size * 0.10)); pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawLine(QPointF(pt.x() + tx * tail, pt.y() + ty * tail), pt)
+        core = QColor(235, 250, 255, max(0, min(255, int(a * 0.8))))
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(core)); p.drawEllipse(pt, max(1.0, base_size * 0.22), max(1.0, base_size * 0.14))
+
+    def _draw_reflected_petals_on_water(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        rose_color = QColor(getattr(settings, "rose_petal_color", "#FF7AAE"))
+        sakura_color = QColor(getattr(settings, "sakura_petal_color", "#FFB7D5"))
+        for petal in list(getattr(self, "_rose_petals", [])):
+            pt = self._water_reflected_point(float(petal.x), float(petal.y), water_rect, float(getattr(settings, "water_mirror_wave", 7.0)), now)
+            if pt is None:
+                continue
+            c = QColor(rose_color); c.setAlpha(max(0, min(255, int(alpha_base * float(getattr(petal, "alpha", 1.0)) * 0.36))))
+            p.save(); p.translate(pt); p.rotate(math.degrees(float(getattr(petal, "rotation", 0.0))))
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(c))
+            s = max(1.0, float(getattr(petal, "size", 8.0)))
+            p.drawEllipse(QPointF(0, 0), s * 0.45, s * 0.78)
+            p.restore()
+        for petal in list(getattr(self, "_sakura_petals", [])):
+            pt = self._water_reflected_point(float(petal.x), float(petal.y), water_rect, float(getattr(settings, "water_mirror_wave", 7.0)), now)
+            if pt is None:
+                continue
+            c = QColor(sakura_color); c.setAlpha(max(0, min(255, int(alpha_base * float(getattr(petal, "alpha", 1.0)) * 0.34))))
+            p.save(); p.translate(pt); p.rotate(math.degrees(float(getattr(petal, "rotation", 0.0))))
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(c))
+            s = max(1.0, float(getattr(petal, "size", 7.0)))
+            p.drawEllipse(QPointF(0, 0), s * 0.50, s * 0.32)
+            p.restore()
+
+    def _draw_reflected_rain_on_water(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        color = QColor(getattr(settings, "rain_color", "#9FD7FF"))
+        base_length = float(getattr(settings, "rain_length", 16.0))
+        for drop in list(getattr(self, "_rain", [])):
+            pt = self._water_reflected_point(float(drop.x), float(drop.y), water_rect, float(getattr(settings, "water_mirror_wave", 7.0)), now)
+            if pt is None:
+                continue
+            a = max(0, min(255, int(alpha_base * float(getattr(drop, "alpha", 1.0)) * 0.32)))
+            c = QColor(color); c.setAlpha(a)
+            pen = QPen(c, max(1, int(round(float(getattr(drop, "size", 1.0)))))); pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            slant = float(getattr(drop, "vx", 0.0)) * 0.030
+            p.drawLine(QPointF(pt.x(), pt.y()), QPointF(pt.x() - slant, pt.y() + base_length * 0.72))
+
+    def _draw_reflected_bamboo_on_water(self, p: QPainter, r: QRectF, water_rect: QRectF, settings: EffectOverlaySettings, alpha_base: int):
+        if not bool(getattr(settings, "bamboo_grove_enabled", False)):
+            return
+        cache = self._get_bamboo_grove_cache(r, settings) if hasattr(self, "_get_bamboo_grove_cache") else []
+        if not cache:
+            return
+        stalk_src = QColor(getattr(settings, "bamboo_stalk_color", "#3EA65A"))
+        shadow_src = QColor(getattr(settings, "bamboo_shadow_color", "#1F6F3B"))
+        p.save(); p.setClipRect(water_rect); p.translate(0.0, water_rect.top() * 2.0); p.scale(1.0, -1.0)
+        for item in cache:
+            depth = float(item.get("depth", 1.0)); thickness = float(item.get("thickness", 8.0))
+            a = max(0, min(255, int(alpha_base * (0.18 + 0.18 * depth))))
+            shadow = QColor(shadow_src); shadow.setAlpha(max(0, min(255, int(a * 0.70))))
+            stalk = QColor(stalk_src); stalk.setAlpha(a)
+            pen_shadow = QPen(shadow, thickness * 1.08); pen_shadow.setCapStyle(Qt.PenCapStyle.RoundCap); pen_shadow.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen_shadow); p.setBrush(Qt.BrushStyle.NoBrush); p.drawPath(item.get("path", QPainterPath()))
+            pen_stalk = QPen(stalk, thickness * 0.88); pen_stalk.setCapStyle(Qt.PenCapStyle.RoundCap); pen_stalk.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen_stalk); p.drawPath(item.get("path", QPainterPath()))
+        p.restore()
+
+    def _draw_reflected_effects_on_water(self, p: QPainter, r: QRectF, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        if not bool(getattr(settings, "water_mirror_reflect_effects_enabled", True)):
+            return
+        wave = max(0.0, float(getattr(settings, "water_mirror_wave", 7.0)))
+        p.save(); p.setClipRect(water_rect)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        extra = getattr(self, "_extra_effects", {}) if hasattr(self, "_extra_effects") else {}
+        if bool(getattr(settings, "water_mirror_reflect_snow", True)):
+            for item in list(extra.get("snow", [])):
+                self._draw_reflected_snow_like(p, item, water_rect, settings, now, "snow_color", "#F5FCFF", alpha_base, False)
+        if bool(getattr(settings, "water_mirror_reflect_snow_crystal", True)):
+            for item in list(extra.get("snow_crystal", [])):
+                self._draw_reflected_snow_like(p, item, water_rect, settings, now, "snow_crystal_color", "#EBFAFF", alpha_base, True)
+        if bool(getattr(settings, "water_mirror_reflect_shooting_star", True)):
+            for item in list(extra.get("shooting_star", [])):
+                self._draw_reflected_shooting_effect(p, item, water_rect, settings, now, alpha_base)
+        if bool(getattr(settings, "water_mirror_reflect_meteor_shower", True)):
+            for item in list(extra.get("meteor_shower", [])):
+                self._draw_reflected_shooting_effect(p, item, water_rect, settings, now, alpha_base)
+        if bool(getattr(settings, "water_mirror_reflect_petals", True)):
+            self._draw_reflected_petals_on_water(p, water_rect, settings, now, alpha_base)
+        if bool(getattr(settings, "water_mirror_reflect_rain", True)):
+            self._draw_reflected_rain_on_water(p, water_rect, settings, now, alpha_base)
+        p.restore()
+        if bool(getattr(settings, "water_mirror_reflect_bamboo", True)):
+            self._draw_reflected_bamboo_on_water(p, r, water_rect, settings, alpha_base)
+
+    def _draw_water_mirror_reflection(self, p: QPainter, r: QRectF, water_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        if not self._has_water_mirror_reflection(settings):
+            return
+        alpha = max(0, min(255, int(getattr(settings, "water_mirror_alpha", 110) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0:
+            return
+        wave = max(0.0, float(getattr(settings, "water_mirror_wave", 7.0)))
+        source = getattr(self, "_water_reflection_source_image", None)
+        p.save()
+        p.setClipRect(water_rect)
+        if source is not None and not source.isNull():
+            reflected = self._make_water_reflection_image(source, water_rect, settings)
+            if not reflected.isNull():
+                p.setOpacity(alpha / 255.0)
+                slice_h = max(2, min(12, int(reflected.height() / 36) if reflected.height() > 0 else 4))
+                phase = now * (0.8 + max(0.0, float(getattr(settings, "water_surface_flow_speed", 0.55))) * 1.1)
+                y = 0
+                while y < reflected.height():
+                    h = min(slice_h, reflected.height() - y)
+                    yy = water_rect.top() + y
+                    fade = 1.0 - min(1.0, y / max(1.0, reflected.height())) * 0.48
+                    offset = math.sin(phase + y * 0.085) * wave * fade
+                    src_rect = QRectF(0, y, reflected.width(), h)
+                    dst_rect = QRectF(water_rect.left() + offset, yy, water_rect.width(), h)
+                    p.drawImage(dst_rect, reflected, src_rect)
+                    y += h
+                p.setOpacity(1.0)
+        p.restore()
+        self._draw_reflected_effects_on_water(p, r, water_rect, settings, now, alpha)
+        tint_alpha = max(0, min(255, int(getattr(settings, "water_mirror_tint_alpha", 58))))
+        if tint_alpha > 0:
+            p.save()
+            p.setClipRect(water_rect)
+            tint = QColor(getattr(settings, "water_surface_color", "#4FC3FF"))
+            tint.setAlpha(max(0, min(255, int(tint_alpha * max(0.0, float(getattr(settings, "intensity", 1.0)))))))
+            grad = QLinearGradient(water_rect.left(), water_rect.top(), water_rect.left(), water_rect.bottom())
+            c0 = QColor(tint); c0.setAlpha(max(0, min(255, int(tint.alpha() * 0.25))))
+            c1 = QColor(tint); c1.setAlpha(tint.alpha())
+            grad.setColorAt(0.0, c0)
+            grad.setColorAt(1.0, c1)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawRect(water_rect)
+            p.restore()
+
+    def _new_water_fish(self, water_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        rng = getattr(self, "_random", random.Random(20260505))
+        direction = -1.0 if rng.random() < 0.5 else 1.0
+        size = max(4.0, float(getattr(settings, "water_fish_size", 24.0))) * (0.70 + rng.random() * 0.65)
+        y = water_rect.top() + water_rect.height() * (0.18 + rng.random() * 0.70)
+        x = water_rect.left() + rng.random() * max(1.0, water_rect.width())
+        speed = max(0.0, float(getattr(settings, "water_fish_speed", 0.28)))
+        return {
+            "x": float(x),
+            "y": float(y),
+            "vx": direction * (14.0 + rng.random() * 26.0) * (0.25 + speed),
+            "size": float(size),
+            "phase": rng.random() * math.tau,
+            "depth": 0.55 + rng.random() * 0.45,
+            "seed": rng.random() * 999.0,
+        }
+
+    def _ensure_water_fish(self, water_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "water_fish_enabled", True)):
+            self._water_fish = []
+            self._water_fish_rect_key = None
+            return
+        target = max(0, min(60, int(getattr(settings, "water_fish_count", 6))))
+        if target <= 0:
+            self._water_fish = []
+            return
+        rect_key = (int(water_rect.left()), int(water_rect.top()), int(water_rect.width()), int(water_rect.height()))
+        if rect_key != getattr(self, "_water_fish_rect_key", None):
+            self._water_fish = []
+            self._water_fish_rect_key = rect_key
+        while len(self._water_fish) < target:
+            self._water_fish.append(self._new_water_fish(water_rect, settings, now))
+        if len(self._water_fish) > target:
+            self._water_fish = self._water_fish[:target]
+
+    def _update_water_fish(self, water_rect: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
+        self._ensure_water_fish(water_rect, settings, now)
+        if not getattr(self, "_water_fish", None):
+            return
+        pad = max(24.0, float(getattr(settings, "water_fish_size", 24.0)) * 4.0)
+        for fish in self._water_fish:
+            fish["x"] += fish["vx"] * dt
+            fish["phase"] += dt * (2.2 + abs(fish["vx"]) * 0.018)
+            fish["y"] += math.sin(fish["phase"] * 0.7 + fish["seed"]) * dt * 6.0
+            fish["y"] = max(water_rect.top() + fish["size"] * 1.1, min(water_rect.bottom() - fish["size"] * 1.1, fish["y"]))
+            if fish["vx"] > 0 and fish["x"] > water_rect.right() + pad:
+                fish.update(self._new_water_fish(water_rect, settings, now))
+                fish["x"] = water_rect.left() - pad
+                fish["vx"] = abs(fish["vx"])
+            elif fish["vx"] < 0 and fish["x"] < water_rect.left() - pad:
+                fish.update(self._new_water_fish(water_rect, settings, now))
+                fish["x"] = water_rect.right() + pad
+                fish["vx"] = -abs(fish["vx"])
+
+    def _draw_single_water_fish(self, p: QPainter, fish, settings: EffectOverlaySettings, alpha_base: int, now: float):
+        """Draw a normal-sized, plump fish using curved QPainterPath shapes."""
+        size = max(4.0, float(fish.get("size", 24.0)))
+        direction = 1.0 if float(fish.get("vx", 1.0)) >= 0 else -1.0
+        depth = max(0.15, min(1.0, float(fish.get("depth", 0.8))))
+        alpha = max(0, min(255, int(alpha_base * (0.50 + depth * 0.50))))
+        if alpha <= 0:
+            return
+
+        body = QColor(getattr(settings, "water_fish_color", "#7FE7D1"))
+        body.setAlpha(alpha)
+        hi = QColor(getattr(settings, "water_fish_secondary_color", "#D8FFF3"))
+        hi.setAlpha(max(0, min(255, int(alpha * 0.76))))
+        mid = QColor(
+            min(255, int(body.red() * 1.08)),
+            min(255, int(body.green() * 1.06)),
+            min(255, int(body.blue() * 1.04)),
+            alpha,
+        )
+        shade = QColor(
+            max(0, int(body.red() * 0.58)),
+            max(0, int(body.green() * 0.68)),
+            max(0, int(body.blue() * 0.78)),
+            max(0, min(255, int(alpha * 0.62))),
+        )
+        shadow = QColor(0, 48, 64, max(0, min(255, int(alpha * 0.18))))
+
+        x = float(fish.get("x", 0.0))
+        y = float(fish.get("y", 0.0))
+        seed = float(fish.get("seed", 0.0))
+        tail_wag = math.sin(now * 6.2 + seed) * size * 0.18
+        body_bob = math.sin(now * 2.0 + seed * 0.07) * size * 0.04
+
+        p.save()
+        p.translate(x, y + body_bob)
+        if direction < 0:
+            p.scale(-1.0, 1.0)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setPen(Qt.PenStyle.NoPen)
+
+        # soft water shadow, also curved/rounded
+        p.setBrush(QBrush(shadow))
+        p.drawEllipse(QPointF(size * 0.04, size * 0.25), size * 1.10, size * 0.36)
+
+        # Rounded body: drawn entirely with cubic curves for a plump silhouette.
+        body_path = QPainterPath()
+        body_path.moveTo(-size * 0.88, 0.0)
+        body_path.cubicTo(-size * 0.70, -size * 0.68, size * 0.10, -size * 0.78, size * 0.88, -size * 0.18)
+        body_path.cubicTo(size * 1.05, -size * 0.04, size * 1.04, size * 0.12, size * 0.88, size * 0.24)
+        body_path.cubicTo(size * 0.22, size * 0.78, -size * 0.64, size * 0.68, -size * 0.88, 0.0)
+        body_path.closeSubpath()
+
+        body_grad = QRadialGradient(QPointF(size * 0.10, -size * 0.22), size * 1.28)
+        body_grad.setColorAt(0.0, hi)
+        body_grad.setColorAt(0.42, mid)
+        body_grad.setColorAt(1.0, shade)
+        p.setBrush(QBrush(body_grad))
+        p.drawPath(body_path)
+
+        # Tail: curved fan with wagging tip.
+        tail = QPainterPath()
+        tail.moveTo(-size * 0.74, 0.0)
+        tail.cubicTo(-size * 1.02, -size * 0.56 + tail_wag, -size * 1.42, -size * 0.42 + tail_wag, -size * 1.28, -size * 0.02 + tail_wag * 0.30)
+        tail.cubicTo(-size * 1.48, size * 0.42 + tail_wag, -size * 1.02, size * 0.56 + tail_wag, -size * 0.74, 0.0)
+        tail.closeSubpath()
+        tail_color = QColor(body)
+        tail_color.setAlpha(max(0, min(255, int(alpha * 0.82))))
+        p.setBrush(QBrush(tail_color))
+        p.drawPath(tail)
+
+        # Dorsal fin: rounded curve, not triangular.
+        dorsal = QPainterPath()
+        dorsal.moveTo(-size * 0.18, -size * 0.48)
+        dorsal.cubicTo(-size * 0.02, -size * 0.92, size * 0.30, -size * 0.82, size * 0.44, -size * 0.38)
+        dorsal.cubicTo(size * 0.18, -size * 0.50, size * 0.02, -size * 0.50, -size * 0.18, -size * 0.48)
+        dorsal.closeSubpath()
+        p.setBrush(QBrush(hi))
+        p.drawPath(dorsal)
+
+        # Lower fin, also a soft curve.
+        lower_fin = QPainterPath()
+        lower_fin.moveTo(-size * 0.02, size * 0.24)
+        lower_fin.cubicTo(size * 0.10, size * 0.64, size * 0.44, size * 0.58, size * 0.42, size * 0.20)
+        lower_fin.cubicTo(size * 0.26, size * 0.34, size * 0.12, size * 0.32, -size * 0.02, size * 0.24)
+        lower_fin.closeSubpath()
+        fin_color = QColor(hi)
+        fin_color.setAlpha(max(0, min(255, int(alpha * 0.68))))
+        p.setBrush(QBrush(fin_color))
+        p.drawPath(lower_fin)
+
+        # Curved cheek highlight.
+        shine = QPainterPath()
+        shine.moveTo(size * 0.18, -size * 0.33)
+        shine.cubicTo(size * 0.42, -size * 0.45, size * 0.68, -size * 0.32, size * 0.78, -size * 0.12)
+        shine.cubicTo(size * 0.50, -size * 0.22, size * 0.34, -size * 0.22, size * 0.18, -size * 0.33)
+        shine.closeSubpath()
+        shine_color = QColor(255, 255, 255, max(0, min(255, int(alpha * 0.28))))
+        p.setBrush(QBrush(shine_color))
+        p.drawPath(shine)
+
+        # Eye and tiny curved mouth.
+        eye = QColor(4, 22, 28, max(0, min(255, int(alpha * 0.90))))
+        p.setBrush(QBrush(eye))
+        p.drawEllipse(QPointF(size * 0.62, -size * 0.12), max(1.2, size * 0.055), max(1.2, size * 0.055))
+        p.setBrush(QBrush(QColor(255, 255, 255, max(0, min(255, int(alpha * 0.72))))))
+        p.drawEllipse(QPointF(size * 0.64, -size * 0.14), max(0.45, size * 0.018), max(0.45, size * 0.018))
+        mouth_pen = QPen(QColor(8, 42, 48, max(0, min(255, int(alpha * 0.50)))), max(1.0, size * 0.035))
+        mouth_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(mouth_pen)
+        mouth = QPainterPath()
+        mouth.moveTo(size * 0.80, size * 0.03)
+        mouth.cubicTo(size * 0.88, size * 0.08, size * 0.93, size * 0.04, size * 0.96, -size * 0.01)
+        p.drawPath(mouth)
+
+        p.restore()
+
+
+    def _draw_water_fish(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "water_fish_enabled", True)):
+            return
+        alpha = max(0, min(255, int(getattr(settings, "water_fish_alpha", 175) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0:
+            return
+        now_last = float(getattr(self, "_last_water_fish_update", now))
+        dt = max(0.001, min(0.05, now - now_last))
+        self._last_water_fish_update = now
+        self._update_water_fish(water_rect, settings, dt, now)
+        if not getattr(self, "_water_fish", None):
+            return
+        p.save()
+        p.setClipRect(water_rect)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for fish in list(self._water_fish):
+            self._draw_single_water_fish(p, fish, settings, alpha, now)
+        p.restore()
+
+    def _draw_water_surface(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        alpha = max(0, min(255, int(getattr(settings, "water_surface_alpha", 92) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0 or r.width() <= 0 or r.height() <= 0:
+            return
+        surface_ratio = max(0.0, min(1.0, float(getattr(settings, "water_surface_y", 0.58))))
+        depth_ratio = max(0.05, min(1.0, float(getattr(settings, "water_surface_depth", 0.42))))
+        y0 = r.top() + r.height() * surface_ratio
+        y1 = min(r.bottom(), y0 + r.height() * depth_ratio)
+        if y1 <= y0:
+            return
+        water_rect = QRectF(r.left(), y0, r.width(), y1 - y0)
+        base = QColor(getattr(settings, "water_surface_color", "#4FC3FF"))
+        hi = QColor(getattr(settings, "water_surface_highlight_color", "#D8FAFF"))
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setClipRect(water_rect)
+        self._draw_water_mirror_reflection(p, r, water_rect, settings, now)
+        grad = QLinearGradient(water_rect.left(), water_rect.top(), water_rect.left(), water_rect.bottom())
+        c0 = QColor(base); c0.setAlpha(max(0, min(255, int(alpha * 0.28))))
+        c1 = QColor(base); c1.setAlpha(max(0, min(255, int(alpha * 0.76))))
+        c2 = QColor(base); c2.setAlpha(max(0, min(255, int(alpha * 0.44))))
+        grad.setColorAt(0.0, c0)
+        grad.setColorAt(0.45, c1)
+        grad.setColorAt(1.0, c2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawRect(water_rect)
+        self._draw_water_fish(p, water_rect, settings, now)
+        wave_count = max(0, min(120, int(getattr(settings, "water_surface_wave_count", 14))))
+        if wave_count <= 0:
+            p.restore()
+            return
+        angle = float(getattr(settings, "water_surface_flow_angle", 0.0))
+        speed = max(0.0, float(getattr(settings, "water_surface_flow_speed", 0.55)))
+        wave_height = max(0.0, float(getattr(settings, "water_surface_wave_height", 12.0)))
+        span = math.hypot(max(1.0, r.width()), max(1.0, r.height())) * 1.35
+        phase = now * (0.65 + speed * 1.75)
+        center = water_rect.center()
+        p.translate(center)
+        p.rotate(angle)
+        p.translate(-center)
+        line_alpha = max(0, min(255, int(alpha * 0.62)))
+        hi.setAlpha(line_alpha)
+        base_line = QColor(base)
+        base_line.setAlpha(max(0, min(255, int(alpha * 0.36))))
+        step_y = max(4.0, water_rect.height() / max(1, wave_count))
+        samples = 32
+        for i in range(wave_count):
+            y = water_rect.top() + (i + 0.5) * step_y
+            amp = wave_height * (0.22 + 0.78 * (i + 1) / max(1, wave_count))
+            wobble = math.sin(phase * 0.73 + i * 1.71)
+            path = QPainterPath()
+            for s in range(samples + 1):
+                t = s / samples
+                x = center.x() - span * 0.5 + span * t
+                yy = y + math.sin(t * math.tau * (1.5 + (i % 4) * 0.35) + phase + i * 0.91) * amp * 0.35 + wobble * amp * 0.22
+                if s == 0:
+                    path.moveTo(x, yy)
+                else:
+                    path.lineTo(x, yy)
+            pen_color = hi if i % 2 == 0 else base_line
+            pen = QPen(pen_color, max(1.0, 0.8 + amp * 0.035))
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPath(path)
+        # 水面境界のきらめき線
+        edge = QColor(hi)
+        edge.setAlpha(max(0, min(255, int(alpha * 0.78))))
+        p.setPen(QPen(edge, max(1.0, 1.3 + wave_height * 0.025)))
+        p.drawLine(QPointF(r.left() - span * 0.15, y0), QPointF(r.right() + span * 0.15, y0 + math.sin(phase) * max(1.0, wave_height * 0.08)))
+        p.restore()
 
     def _bamboo_curve_point(self, base: QPointF, top: QPointF, bend: float, side: float, t: float):
         t = max(0.0, min(1.0, float(t)))
@@ -4779,8 +5945,9 @@ class EffectsOverlayWidget(BaseWidget):
 
         for petal in list(self._sakura_petals):
             prev_y = petal.y
-            petal.x += (petal.vx + math.sin(now * 1.3 + petal.sway_phase) * 34.0 * sway) * dt
-            petal.y += petal.vy * dt
+            wind_x, wind_y = self._petal_wind_velocity(settings, now, petal.seed, rose=False)
+            petal.x += (petal.vx + math.sin(now * 1.3 + petal.sway_phase) * 34.0 * sway + wind_x) * dt
+            petal.y += (petal.vy + wind_y) * dt
             petal.rotation += petal.rotation_speed * dt
 
             hit_surface = prev_y < surface_y <= petal.y
@@ -4856,10 +6023,25 @@ class EffectsOverlayWidget(BaseWidget):
             c.setAlpha(max(0, min(255, alpha)))
             ec = QColor(edge)
             ec.setAlpha(max(0, min(255, int(alpha * 0.72))))
-            self._draw_single_sakura_petal(p, petal.x, petal.y, petal.size, petal.rotation, c, ec)
+            self._draw_single_sakura_petal(p, petal.x, petal.y, petal.size, petal.rotation, c, ec, settings)
 
     def _draw_single_sakura_petal(self, p: QPainter, x: float, y: float, size: float, rotation: float, color: QColor,
-                                  edge_color: QColor):
+                                  edge_color: QColor, settings: Optional[EffectOverlaySettings] = None):
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        color = self._apply_petal_night_tint(color, settings, edge=False)
+        edge_color = self._apply_petal_night_tint(edge_color, settings, edge=True)
+        outline_strength = max(0.5, min(4.0, float(getattr(settings, "petal_outline_strength", 1.35))))
+        outline_enabled = bool(getattr(settings, "petal_outline_enabled", True))
+        if outline_enabled:
+            edge_color.setAlpha(max(edge_color.alpha(), min(255, int(color.alpha() * 0.92))))
+        if False and bool(getattr(settings, "petal_shadow_enabled", False)):
+            shadow_alpha = max(0, min(255, int(color.alpha() * (0.18 + 0.20 * max(0.0, min(1.0, float(getattr(settings, "petal_night_tint_strength", 0.35))))))))
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(8, 10, 24, shadow_alpha)))
+            p.drawEllipse(QPointF(x + size * 0.16, y + size * 0.25), max(1.0, size * 0.52), max(1.0, size * 0.20))
+            p.restore()
         p.save()
         p.translate(x, y)
         p.rotate(math.degrees(rotation))
@@ -4883,7 +6065,7 @@ class EffectsOverlayWidget(BaseWidget):
         grad.setColorAt(1.0, c2)
 
         p.setBrush(QBrush(grad))
-        p.setPen(QPen(edge_color, max(1, int(size * 0.055))))
+        p.setPen(QPen(edge_color, max(1.0, size * 0.055 * (outline_strength if outline_enabled else 1.0))))
         p.drawPath(path)
 
         notch_pen = QPen(edge_color, max(1, int(size * 0.035)))
@@ -5315,8 +6497,10 @@ class EffectsOverlayWidget(BaseWidget):
 
             prev_y = petal.y
             side_sway = math.sin(now * 1.2 + petal.sway_phase) * 24.0 * sway
+            wind_x, wind_y = self._petal_wind_velocity(settings, now, petal.seed, rose=True)
+            side_sway += wind_x
             petal.x += (petal.vx + side_sway) * dt
-            petal.y += petal.vy * dt
+            petal.y += (petal.vy + wind_y) * dt
             petal.rotation += petal.rotation_speed * dt
 
             hit_surface = prev_y < surface_y <= petal.y
@@ -5439,6 +6623,16 @@ class EffectsOverlayWidget(BaseWidget):
         highlight_alpha = max(0, min(255, int(getattr(settings, "rose_petal_highlight_alpha", 115))))
         vein_alpha = max(0, min(255, int(getattr(settings, "rose_petal_vein_alpha", 95))))
         internal_shadow_alpha = max(0, min(255, int(getattr(settings, "rose_petal_shadow_alpha", 28))))
+        color = self._apply_petal_night_tint(color, settings, edge=False)
+        edge_color = self._apply_petal_night_tint(edge_color, settings, edge=True)
+        if False and bool(getattr(settings, "petal_shadow_enabled", False)):
+            external_shadow_alpha = max(0, min(255, int(color.alpha() * (0.22 + 0.18 * max(0.0, min(1.0, float(getattr(settings, "petal_night_tint_strength", 0.35))))))))
+            shadow_color = QColor(8, 10, 24, external_shadow_alpha)
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(shadow_color))
+            p.drawEllipse(QPointF(x + size * 0.18, y + size * 0.30), max(1.0, size * 0.62), max(1.0, size * 0.24))
+            p.restore()
         p.save()
         p.translate(x, y)
         p.rotate(math.degrees(rotation))
@@ -5550,9 +6744,134 @@ class EffectsOverlayWidget(BaseWidget):
 
         p.restore()
 
+    def _update_petal_wind(self, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "petal_blizzard_enabled", False)):
+            self._petal_wind_strength = 0.0
+            self._petal_gust_active = False
+            return
+        base_strength = max(0.0, float(getattr(settings, "petal_wind_strength", 1.0)))
+        randomness = max(0.0, min(1.0, float(getattr(settings, "petal_wind_randomness", 0.55))))
+        interval = max(0.8, float(getattr(settings, "petal_gust_interval", 4.0)))
+        duration = max(0.2, float(getattr(settings, "petal_gust_duration", 1.15)))
+        gust_strength = max(0.2, float(getattr(settings, "petal_gust_strength", 1.45)))
+        if not hasattr(self, "_next_petal_wind_event") or getattr(self, "_next_petal_wind_event", 0.0) <= 0.0:
+            self._next_petal_wind_event = now + interval
+        if now >= getattr(self, "_next_petal_wind_event", 0.0):
+            self._petal_wind_phase = self._random.random() * math.tau
+            self._petal_gust_direction = 1.0 if self._random.random() >= 0.5 else -1.0
+            self._petal_wind_strength = (240.0 + self._random.random() * 260.0) * base_strength * gust_strength * (0.80 + randomness * 0.55)
+            self._petal_wind_until = now + duration * (0.88 + self._random.random() * 0.34)
+            self._petal_gust_active = True
+            self._petal_gust_started_at = now
+            self._next_petal_wind_event = self._petal_wind_until + interval * (0.90 + self._random.random() * 0.20)
+            self._rollup_all_petals_by_gust(settings, now)
+        if now > getattr(self, "_petal_wind_until", 0.0):
+            self._petal_gust_active = False
+            self._petal_wind_strength *= 0.82
+            if self._petal_wind_strength < 1.0:
+                self._petal_wind_strength = 0.0
+        else:
+            elapsed = max(0.0, now - getattr(self, "_petal_gust_started_at", now))
+            life = max(0.2, getattr(self, "_petal_wind_until", now) - getattr(self, "_petal_gust_started_at", now))
+            t = max(0.0, min(1.0, elapsed / life))
+            envelope = math.sin(t * math.pi)
+            self._petal_wind_strength = max(0.0, self._petal_wind_strength * (0.92 + 0.08 * envelope))
+
+
+    def _petal_wind_velocity(self, settings: EffectOverlaySettings, now: float, seed: float, rose: bool = True):
+        self._update_petal_wind(settings, now)
+        base = float(getattr(self, "_petal_wind_strength", 0.0))
+        if base <= 0.0:
+            return 0.0, 0.0
+        phase = float(getattr(self, "_petal_wind_phase", 0.0))
+        gusting = bool(getattr(self, "_petal_gust_active", False))
+        direction = float(getattr(self, "_petal_gust_direction", 1.0))
+        wave = math.sin(now * (1.65 if rose else 1.85) + phase + seed * 0.013)
+        fine = math.sin(now * 4.7 + seed * 0.031) * 0.18
+        # 突風中は全体を同じ横方向へ強く流し、少しだけ上方向へ巻き上げる
+        x = direction * base * (0.92 + 0.18 * wave + fine)
+        lift = 0.18 if gusting else 0.06
+        y = -abs(base) * (lift + 0.05 * math.sin(now * 2.0 + seed))
+        return x, y
+
+
+    def _rollup_all_petals_by_gust(self, settings: EffectOverlaySettings, now: float):
+        if now - getattr(self, "_last_petal_gust_rollup_at", 0.0) < 0.12:
+            return
+        self._last_petal_gust_rollup_at = now
+        direction = float(getattr(self, "_petal_gust_direction", 1.0))
+        base = max(80.0, float(getattr(self, "_petal_wind_strength", 240.0)))
+        gust_strength = max(0.2, float(getattr(settings, "petal_gust_strength", 1.45)))
+        randomness = max(0.0, min(1.0, float(getattr(settings, "petal_wind_randomness", 0.55))))
+        for seq_name in ("_rose_petals", "_sakura_petals"):
+            petals = getattr(self, seq_name, [])
+            for petal in list(petals):
+                seed = float(getattr(petal, "seed", self._random.random() * 10000.0))
+                individual = 0.78 + randomness * 0.44 + 0.18 * math.sin(seed)
+                petal.vx = direction * (base * 0.92 * individual + self._random.random() * 90.0 * gust_strength)
+                petal.vy = -abs(base) * (0.30 + 0.16 * self._random.random()) * gust_strength
+                petal.rotation_speed += direction * (2.5 + self._random.random() * 5.5) * gust_strength
+                petal.rotation += direction * (0.15 + self._random.random() * 0.55)
+                if hasattr(petal, "resting"):
+                    petal.resting = False
+                if hasattr(petal, "fading"):
+                    petal.fading = False
+                if hasattr(petal, "rest_created_at"):
+                    petal.rest_created_at = 0.0
+
+    def _apply_petal_night_tint(self, color: QColor, settings: EffectOverlaySettings, edge: bool = False):
+        c = QColor(color)
+        if not bool(getattr(settings, "petal_night_enabled", False)):
+            return c
+        tint = QColor(getattr(settings, "petal_night_tint_color", "#101A3A"))
+        strength = max(0.0, min(1.0, float(getattr(settings, "petal_night_tint_strength", 0.35))))
+        if edge:
+            strength = min(1.0, strength * 1.15)
+        mixed = QColor(
+            max(0, min(255, int(c.red() * (1.0 - strength) + tint.red() * strength))),
+            max(0, min(255, int(c.green() * (1.0 - strength) + tint.green() * strength))),
+            max(0, min(255, int(c.blue() * (1.0 - strength) + tint.blue() * strength))),
+            c.alpha(),
+        )
+        return mixed
+
+    def _apply_petal_mouse_flutter(self, pos: QPointF, settings: EffectOverlaySettings, now: float, strong: bool = False):
+        if not bool(getattr(settings, "petal_mouse_flutter_enabled", True)):
+            return
+        if not strong and now - getattr(self, "_last_petal_mouse_flutter", 0.0) < 0.045:
+            return
+        self._last_petal_mouse_flutter = now
+        strength = max(0.0, float(getattr(settings, "petal_mouse_flutter_strength", 1.0))) * (1.45 if strong else 0.85)
+        radius = 120.0 + 70.0 * strength
+        for seq_name in ("_rose_petals", "_sakura_petals"):
+            petals = getattr(self, seq_name, [])
+            for petal in list(petals):
+                dx = float(petal.x) - float(pos.x())
+                dy = float(petal.y) - float(pos.y())
+                dist = math.hypot(dx, dy)
+                if dist > radius or dist <= 1.0:
+                    continue
+                power = (1.0 - dist / radius) * strength
+                if power <= 0.0:
+                    continue
+                nx = dx / dist
+                ny = dy / dist
+                petal.vx += nx * (90.0 + 150.0 * power) + (-35.0 + self._random.random() * 70.0) * power
+                petal.vy += min(-28.0, ny * 95.0 - (75.0 + self._random.random() * 90.0) * power)
+                petal.rotation_speed += (-3.5 + self._random.random() * 7.0) * power
+                if hasattr(petal, "resting"):
+                    petal.resting = False
+                if hasattr(petal, "fading"):
+                    petal.fading = False
+
     def on_mouse_move(self, pos: QPoint):
         self._mouse_pos = QPointF(pos)
         self._mouse_active_until = time.time() + 0.7
+        try:
+            settings = get_effect_overlay_settings(self.cfg)
+            self._apply_petal_mouse_flutter(QPointF(pos), settings, time.time(), strong=False)
+        except Exception:
+            pass
 
     def on_mouse_press(self, pos: QPoint):
         self._mouse_pos = QPointF(pos)
@@ -5573,6 +6892,8 @@ class EffectsOverlayWidget(BaseWidget):
 
         if settings.mouse_flee_enabled:
             self._push_particles_away(QPointF(pos), strength=420.0)
+
+        self._apply_petal_mouse_flutter(QPointF(pos), settings, time.time(), strong=True)
 
     def on_mouse_release(self, pos: QPoint):
         self._mouse_pos = QPointF(pos)
@@ -5897,6 +7218,9 @@ class VisualizerWidget(BaseWidget):
         super().__init__(cfg)
         self._peak_levels = []
         self._last_peak_update = time.time()
+        self._last_visualizer_frame_time = 0.0
+        self._visualizer_frame_cache = None
+        self._visualizer_frame_cache_key = None
 
     def _ensure_peak_levels(self, count):
         if len(self._peak_levels) != count:
@@ -5914,7 +7238,65 @@ class VisualizerWidget(BaseWidget):
             scale = 1.0
         return max(0.35, min(2.4, scale))
 
+    def _visualizer_frame_interval_seconds(self) -> float:
+        if not bool(getattr(self.cfg, "visualizer_frame_rate_enabled", True)):
+            return 0.0
+        try:
+            fps = int(getattr(self.cfg, "visualizer_frame_rate", 60))
+        except Exception:
+            fps = 60
+        fps = max(1, min(240, fps))
+        return 1.0 / fps
+
+    def _visualizer_frame_cache_key_for(self, ctx: Dict):
+        r = self.rect
+        return (
+            int(r.x()), int(r.y()), int(r.width()), int(r.height()),
+            self.cfg.color, self.cfg.bg, int(getattr(self.cfg, "bg_alpha", 155)),
+            bool(getattr(self.cfg, "visualizer_flip_vertical", False)),
+            bool(getattr(self.cfg, "visualizer_peak_bar_enabled", True)),
+            bool(getattr(self.cfg, "visualizer_glow_enabled", True)),
+            round(float(getattr(self.cfg, "visualizer_bar_width_scale", 1.0)), 3),
+            str(getattr(self.cfg, "visualizer_orientation", "horizontal")),
+            bool(getattr(self, "selected", False)),
+            bool(ctx.get("edit_mode", True)) if isinstance(ctx, dict) else True,
+        )
+
     def paint(self, p: QPainter, ctx: Dict):
+        now = time.time()
+        interval = self._visualizer_frame_interval_seconds()
+        r = self.rect
+        key = self._visualizer_frame_cache_key_for(ctx)
+        cached = getattr(self, "_visualizer_frame_cache", None)
+        due = (
+            interval <= 0.0
+            or cached is None
+            or cached.isNull()
+            or key != getattr(self, "_visualizer_frame_cache_key", None)
+            or now - float(getattr(self, "_last_visualizer_frame_time", 0.0)) >= interval
+        )
+        if due:
+            w = max(1, int(round(r.width())))
+            h = max(1, int(round(r.height())))
+            image = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+            image.fill(Qt.GlobalColor.transparent)
+            ip = QPainter(image)
+            try:
+                ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                ip.translate(-r.left(), -r.top())
+                self._paint_visualizer_direct(ip, ctx)
+            finally:
+                ip.end()
+            self._visualizer_frame_cache = image
+            self._visualizer_frame_cache_key = key
+            self._last_visualizer_frame_time = now
+            cached = image
+        if cached is not None and not cached.isNull():
+            p.drawImage(QPointF(r.left(), r.top()), cached)
+        else:
+            self._paint_visualizer_direct(p, ctx)
+
+    def _paint_visualizer_direct(self, p: QPainter, ctx: Dict):
         audio: AudioEngine = ctx["audio"]
         bars = audio.get_spectrum()
         count = max(1, len(bars))
@@ -7781,7 +9163,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle("Lite Desktop Studio v1.5.3 - ウィジェット編集")
+        self.setWindowTitle("Lite Desktop Studio v1.5.5 - ウィジェット編集")
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -7946,7 +9328,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.3")
+        self.setWindowTitle("Lite Desktop Studio v1.5.5")
         self.resize(960, 640)
 
         self.build_ui()
@@ -8286,6 +9668,11 @@ class LiteDeskStudio(QMainWindow):
         self.prop_visualizer_orientation.addItem("横向きに展開", "horizontal")
         self.prop_visualizer_orientation.addItem("縦向きに展開", "vertical")
         self.prop_visualizer_orientation.currentIndexChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_frame_rate_enabled = QCheckBox("🎞️ FPS制限を使う")
+        self.prop_visualizer_frame_rate_enabled.stateChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_frame_rate = QSpinBox()
+        self.prop_visualizer_frame_rate.setRange(1, 500)
+        self.prop_visualizer_frame_rate.valueChanged.connect(self.apply_properties_live)
         self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
         self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
         self.prop_weather_location = QLineEdit()
@@ -8343,12 +9730,16 @@ class LiteDeskStudio(QMainWindow):
         form.addRow("", self.prop_visualizer_glow_enabled)
         form.addRow("📏 スペクトルバー幅", self.prop_visualizer_bar_width_scale)
         form.addRow("🧭 スペクトル展開方向", self.prop_visualizer_orientation)
+        form.addRow("", self.prop_visualizer_frame_rate_enabled)
+        form.addRow("🎞️ FPS", self.prop_visualizer_frame_rate)
         self.visualizer_only_property_widgets = [
             self.prop_visualizer_flip_vertical,
             self.prop_visualizer_peak_bar_enabled,
             self.prop_visualizer_glow_enabled,
             self.prop_visualizer_bar_width_scale,
             self.prop_visualizer_orientation,
+            self.prop_visualizer_frame_rate_enabled,
+            self.prop_visualizer_frame_rate,
         ]
 
         self.clock_only_property_widgets = [
@@ -8568,6 +9959,8 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_visualizer_glow_enabled", None),
             getattr(self, "prop_visualizer_bar_width_scale", None),
             getattr(self, "prop_visualizer_orientation", None),
+            getattr(self, "prop_visualizer_frame_rate_enabled", None),
+            getattr(self, "prop_visualizer_frame_rate", None),
             getattr(self, "prop_network_down_color", None),
             getattr(self, "prop_network_up_color", None),
         ]
@@ -8606,6 +9999,8 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_glow_enabled.setChecked(True)
                 self.prop_visualizer_bar_width_scale.setValue(1.0)
                 self.prop_visualizer_orientation.setCurrentIndex(0)
+                self.prop_visualizer_frame_rate_enabled.setChecked(True)
+                self.prop_visualizer_frame_rate.setValue(60)
                 self.set_visualizer_controls_visible(False)
                 self.set_weather_controls_visible(False)
                 self.prop_network_down_color.setText("")
@@ -8669,6 +10064,8 @@ class LiteDeskStudio(QMainWindow):
                 orientation = str(getattr(cfg, "visualizer_orientation", "horizontal") or "horizontal").lower()
                 idx = self.prop_visualizer_orientation.findData("vertical" if orientation == "vertical" else "horizontal")
                 self.prop_visualizer_orientation.setCurrentIndex(max(0, idx))
+                self.prop_visualizer_frame_rate_enabled.setChecked(bool(getattr(cfg, "visualizer_frame_rate_enabled", True)))
+                self.prop_visualizer_frame_rate.setValue(max(1, min(240, int(getattr(cfg, "visualizer_frame_rate", 60)))))
             else:
                 self.prop_visualizer_flip_vertical.setChecked(False)
                 self.prop_visualizer_peak_bar_enabled.setChecked(True)
@@ -8780,6 +10177,8 @@ class LiteDeskStudio(QMainWindow):
             "prop_visualizer_glow_enabled",
             "prop_visualizer_bar_width_scale",
             "prop_visualizer_orientation",
+            "prop_visualizer_frame_rate_enabled",
+            "prop_visualizer_frame_rate",
             "prop_network_down_color",
             "prop_network_up_color",
 
@@ -8840,6 +10239,11 @@ class LiteDeskStudio(QMainWindow):
                 cfg.visualizer_glow_enabled = self.prop_visualizer_glow_enabled.isChecked()
                 cfg.visualizer_bar_width_scale = self.prop_visualizer_bar_width_scale.value()
                 cfg.visualizer_orientation = self.prop_visualizer_orientation.currentData() or "horizontal"
+                cfg.visualizer_frame_rate_enabled = self.prop_visualizer_frame_rate_enabled.isChecked()
+                cfg.visualizer_frame_rate = max(1, min(240, self.prop_visualizer_frame_rate.value()))
+                if hasattr(widget, "_visualizer_frame_cache"):
+                    widget._visualizer_frame_cache = None
+                    widget._visualizer_frame_cache_key = None
 
             if cfg.type == "network":
                 cfg.network_down_color = self.prop_network_down_color.text().strip() or "#5BE7FF"
@@ -9062,7 +10466,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v1.5.3 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v1.5.5 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -9177,6 +10581,8 @@ class DesktopCanvas(QWidget):
         self.studio_theme = DEFAULT_STUDIO_THEME
         self.volume_sliding = False
         self.setWindowTitle(APP_NAME)
+        self.setProperty("effectGpuStatus", effect_gpu_status_text())
+        self.setProperty("effectFrameIntervalMs", self._effective_effect_frame_interval_ms() if hasattr(self, "_effective_effect_frame_interval_ms") else 16)
         self.setMouseTracking(True)
         self.js_html_views = JSHtmlViewManager(self)
         choose_canvas_window_flags(self)
@@ -9203,7 +10609,7 @@ class DesktopCanvas(QWidget):
         self.right_double_click_interval = QApplication.doubleClickInterval() / 1000.0
         self.render_timer = QTimer(self)
         self.render_timer.timeout.connect(self.on_frame)
-        self.render_timer.start(1000 // 60)
+        self.render_timer.start(self._effective_effect_frame_interval_ms())
 
         self.theme_timer = QTimer(self)
         self.theme_timer.timeout.connect(self.check_theme)
@@ -9217,6 +10623,29 @@ class DesktopCanvas(QWidget):
         except Exception:
             pass
         self.update_platform_hit_mask()
+
+    def _effective_effect_frame_interval_ms(self) -> int:
+        """Return the current canvas timer interval from enabled effect FPS settings.
+
+        The canvas is painted as a single transparent window, so the safest way to
+        control effect FPS without OpenGL is to throttle the shared render timer.
+        When multiple effect overlays have FPS limits, the lowest enabled FPS is
+        used to reduce load consistently.
+        """
+        fps_values = []
+        try:
+            for widget in getattr(self, "widgets", []):
+                if isinstance(widget, EffectsOverlayWidget):
+                    settings = get_effect_overlay_settings(widget.cfg)
+                    if bool(getattr(settings, "effect_frame_rate_enabled", True)):
+                        fps_values.append(max(1, min(240, int(getattr(settings, "effect_frame_rate", 60)))))
+                elif isinstance(widget, VisualizerWidget):
+                    if bool(getattr(widget.cfg, "visualizer_frame_rate_enabled", True)):
+                        fps_values.append(max(1, min(240, int(getattr(widget.cfg, "visualizer_frame_rate", 60)))))
+        except Exception:
+            fps_values = []
+        fps = min(fps_values) if fps_values else 60
+        return max(4, int(round(1000.0 / max(1, fps))))
 
     def notify_effect_widgets_mouse_move(self, pos):
         for widget in self.widgets:
@@ -9482,6 +10911,13 @@ class DesktopCanvas(QWidget):
             self.update()
 
     def on_frame(self):
+        try:
+            interval = self._effective_effect_frame_interval_ms()
+            if self.render_timer.interval() != interval:
+                self.render_timer.setInterval(interval)
+            self.setProperty("effectFrameIntervalMs", interval)
+        except Exception:
+            pass
         self.js_html_views.sync(self.widgets)
         self.update()
 
@@ -9499,6 +10935,29 @@ class DesktopCanvas(QWidget):
             "dark": self.dark_mode,
             "edit_mode": self.edit_mode,
         }
+
+        reflection_source_image = None
+        try:
+            needs_reflection_source = any(
+                isinstance(w, EffectsOverlayWidget)
+                and bool(getattr(get_effect_overlay_settings(w.cfg), "water_mirror_enabled", False))
+                and bool(getattr(get_effect_overlay_settings(w.cfg), "water_surface_enabled", False))
+                for w in self.widgets
+            )
+            if needs_reflection_source:
+                reflection_source_image = QImage(self.size(), QImage.Format.Format_ARGB32_Premultiplied)
+                reflection_source_image.fill(Qt.GlobalColor.transparent)
+                rp = QPainter(reflection_source_image)
+                rp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                source_ctx = dict(ctx)
+                source_ctx["reflection_source_image"] = None
+                for src_w in self.widgets:
+                    if not isinstance(src_w, EffectsOverlayWidget):
+                        src_w.paint(rp, source_ctx)
+                rp.end()
+        except Exception:
+            reflection_source_image = None
+        ctx["reflection_source_image"] = reflection_source_image
 
         for w in self.widgets:
             w.paint(p, ctx)
@@ -9966,7 +11425,9 @@ class DesktopCanvas(QWidget):
         event.accept()
 
 def main():
+    configure_effect_gpu_backend_before_app(True)
     app = QApplication(sys.argv)
+    detect_effect_gpu_backend()
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
 
