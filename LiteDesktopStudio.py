@@ -80,7 +80,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "LiteDesktopStudio v1.5.5"
+APP_NAME = "LiteDesktopStudio v1.5.6"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
@@ -361,6 +361,17 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_surface_wave_height": 12.0,
     "water_surface_y": 0.58,
     "water_surface_depth": 0.42,
+    "water_depth_enabled": True,
+    "water_depth_strength": 0.75,
+    "water_depth_haze_alpha": 48,
+    "water_depth_color": "#1A5B70",
+    "water_morning_fog_enabled": True,
+    "water_morning_fog_follow_sunrise": True,
+    "water_morning_fog_strength": 0.65,
+    "water_morning_fog_alpha": 95,
+    "water_morning_fog_height": 0.22,
+    "water_morning_fog_drift": 0.35,
+    "water_morning_fog_color": "#E9F6FF",
     "water_fish_enabled": True,
     "water_fish_count": 4,
     "water_fish_speed": 0.28,
@@ -375,6 +386,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_mirror_wave": 7.0,
     "water_mirror_tint_alpha": 58,
     "water_mirror_reflect_effects_enabled": True,
+    "water_mirror_reflect_widgets_enabled": True,
     "water_mirror_reflect_snow": True,
     "water_mirror_reflect_snow_crystal": True,
     "water_mirror_reflect_petals": True,
@@ -382,6 +394,58 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_mirror_reflect_shooting_star": True,
     "water_mirror_reflect_meteor_shower": True,
     "water_mirror_reflect_rain": True,
+    "puddle_enabled": False,
+    "puddle_x": 0.50,
+    "puddle_y": 0.84,
+    "puddle_width": 0.72,
+    "puddle_height": 0.22,
+    "puddle_edge_softness": 0.18,
+    "puddle_count": 5,
+    "puddle_spread": 0.72,
+    "puddles_json": "",
+    "ice_enabled": False,
+    "ice_lightweight_enabled": True,
+    "ice_static_cache_enabled": True,
+    "ice_quality_scale": 0.58,
+    "ice_max_facets": 72,
+    "ice_max_cracks": 16,
+    "ice_max_bubbles": 34,
+    "ice_skip_reflected_effect_frames": 2,
+    "ice_mirror_skip_frames": 2,
+    "ice_x": 0.50,
+    "ice_width": 1.00,
+    "ice_reflect_widgets_enabled": True,
+    "ice_reflect_snow": True,
+    "ice_reflect_snow_crystal": True,
+    "ice_reflect_petals": True,
+    "ice_reflect_bamboo": True,
+    "ice_reflect_shooting_star": True,
+    "ice_reflect_meteor_shower": True,
+    "ice_reflect_rain": True,
+    "ice_alpha": 178,
+    "ice_color": "#9BDDF2",
+    "ice_edge_color": "#E8FBFF",
+    "ice_highlight_color": "#F7FFFF",
+    "ice_shadow_color": "#2C6F93",
+    "ice_fog_color": "#EEF9FF",
+    "ice_size": 185.0,
+    "ice_angle": -6.0,
+    "ice_y": 0.58,
+    "ice_depth": 0.42,
+    "ice_crack_intensity": 0.46,
+    "ice_internal_bubble_intensity": 0.36,
+    "ice_glacier_roughness": 0.55,
+    "ice_mirror_enabled": True,
+    "ice_mirror_alpha": 118,
+    "ice_mirror_blur": 3.5,
+    "ice_mirror_depth": 0.68,
+    "ice_mirror_wave": 2.2,
+    "ice_mirror_tint_alpha": 70,
+    "ice_reflect_effects_enabled": True,
+    "ice_fog_enabled": True,
+    "ice_fog_alpha": 72,
+    "ice_fog_height": 0.24,
+    "ice_fog_drift": 0.30,
     "bamboo_grove_enabled": False,
     "bamboo_count": 12,
     "bamboo_thickness": 16.0,
@@ -483,7 +547,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.5 - エフェクト設定")
+        self.setWindowTitle("Lite Desktop Studio v1.5.6 - エフェクト設定")
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -522,6 +586,7 @@ class EffectsOverlayEditorDialog(QDialog):
             ("🎋 竹林の小径", "bamboo_path"),
             ("🌧 雨と波紋", "rain_ripples"),
             ("❄ 雪景色", "snow_scene"),
+            ("🧊 氷河の鏡面", "glacier_mirror"),
             ("☄ 流星群", "meteor_sky"),
             ("🔥 炎と水", "fire_and_water"),
         ]
@@ -1058,6 +1123,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self.water_spray_edge_color = self._color_row_on(f, "水の吹き出し縁色", getattr(self.settings, "water_spray_edge_color", "#D7FAFF"))
         self.water_surface_color = self._color_row_on(f, "水面色", getattr(self.settings, "water_surface_color", "#4FC3FF"))
         self.water_surface_highlight_color = self._color_row_on(f, "水面ハイライト色", getattr(self.settings, "water_surface_highlight_color", "#D8FAFF"))
+        self.water_depth_color = self._color_row_on(f, "水面奥行き色", getattr(self.settings, "water_depth_color", "#1A5B70"))
+        self.water_morning_fog_color = self._color_row_on(f, "朝もや色", getattr(self.settings, "water_morning_fog_color", "#E9F6FF"))
         self.water_fish_color = self._color_row_on(f, "魚の色", getattr(self.settings, "water_fish_color", "#7FE7D1"))
         self.water_fish_secondary_color = self._color_row_on(f, "魚のハイライト色", getattr(self.settings, "water_fish_secondary_color", "#D8FFF3"))
         self.fireball_core_color = self._color_row_on(f, "火の玉中心色", getattr(self.settings, "fireball_core_color", "#FFFFBE"))
@@ -1144,6 +1211,15 @@ class EffectsOverlayEditorDialog(QDialog):
         self._section(f, "水面")
         self.water_surface_enabled = QCheckBox("水面を描画")
         self.water_surface_enabled.setChecked(bool(getattr(self.settings, "water_surface_enabled", False)))
+        self.puddle_enabled = QCheckBox("水たまり（横長の楕円で水面を限定）")
+        self.puddle_enabled.setChecked(bool(getattr(self.settings, "puddle_enabled", False)))
+        self.puddle_x = self._double_spin(0.0, 1.0, getattr(self.settings, "puddle_x", 0.50), 0.01)
+        self.puddle_y = self._double_spin(0.0, 1.0, getattr(self.settings, "puddle_y", 0.84), 0.01)
+        self.puddle_width = self._double_spin(0.05, 1.20, getattr(self.settings, "puddle_width", 0.72), 0.01)
+        self.puddle_height = self._double_spin(0.02, 0.70, getattr(self.settings, "puddle_height", 0.22), 0.01)
+        self.puddle_edge_softness = self._double_spin(0.0, 1.0, getattr(self.settings, "puddle_edge_softness", 0.18), 0.01)
+        self.puddle_count = self._int_spin(1, 12, getattr(self.settings, "puddle_count", 5))
+        self.puddle_spread = self._double_spin(0.0, 1.0, getattr(self.settings, "puddle_spread", 0.72), 0.01)
         self.water_surface_alpha = self._int_spin(0, 255, getattr(self.settings, "water_surface_alpha", 92))
         self.water_surface_flow_angle = self._double_spin(-180.0, 180.0, getattr(self.settings, "water_surface_flow_angle", 0.0), 1.0)
         self.water_surface_flow_speed = self._double_spin(0.0, 300.0, getattr(self.settings, "water_surface_flow_speed", 0.55), 0.01)
@@ -1151,6 +1227,18 @@ class EffectsOverlayEditorDialog(QDialog):
         self.water_surface_wave_height = self._double_spin(0.0, 80.0, getattr(self.settings, "water_surface_wave_height", 12.0), 0.5)
         self.water_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "water_surface_y", 0.58), 0.01)
         self.water_surface_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "water_surface_depth", 0.42), 0.01)
+        self.water_depth_enabled = QCheckBox("水面に奥行きを追加")
+        self.water_depth_enabled.setChecked(bool(getattr(self.settings, "water_depth_enabled", True)))
+        self.water_depth_strength = self._double_spin(0.0, 2.0, getattr(self.settings, "water_depth_strength", 0.75), 0.01)
+        self.water_depth_haze_alpha = self._int_spin(0, 255, getattr(self.settings, "water_depth_haze_alpha", 48))
+        self.water_morning_fog_enabled = QCheckBox("朝もや/霧を水面に追加")
+        self.water_morning_fog_enabled.setChecked(bool(getattr(self.settings, "water_morning_fog_enabled", True)))
+        self.water_morning_fog_follow_sunrise = QCheckBox("朝焼けON時のみ")
+        self.water_morning_fog_follow_sunrise.setChecked(bool(getattr(self.settings, "water_morning_fog_follow_sunrise", True)))
+        self.water_morning_fog_strength = self._double_spin(0.0, 2.0, getattr(self.settings, "water_morning_fog_strength", 0.65), 0.01)
+        self.water_morning_fog_alpha = self._int_spin(0, 255, getattr(self.settings, "water_morning_fog_alpha", 95))
+        self.water_morning_fog_height = self._double_spin(0.05, 0.60, getattr(self.settings, "water_morning_fog_height", 0.22), 0.01)
+        self.water_morning_fog_drift = self._double_spin(0.0, 3.0, getattr(self.settings, "water_morning_fog_drift", 0.35), 0.01)
         self.water_fish_enabled = QCheckBox("水面ON時に曲線で描いた丸々とした魚を泳がせる")
         self.water_fish_enabled.setChecked(bool(getattr(self.settings, "water_fish_enabled", True)))
         self.water_fish_count = self._int_spin(0, 60, getattr(self.settings, "water_fish_count", 4))
@@ -1165,6 +1253,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self.water_mirror_wave = self._double_spin(0.0, 40.0, getattr(self.settings, "water_mirror_wave", 7.0), 0.5)
         self.water_mirror_tint_alpha = self._int_spin(0, 255, getattr(self.settings, "water_mirror_tint_alpha", 58))
         self.water_mirror_reflect_effects_enabled = QCheckBox("指定エフェクトも反射")
+        self.water_mirror_reflect_widgets_enabled = QCheckBox("通常ウィジェットを反射")
+        self.water_mirror_reflect_widgets_enabled.setChecked(bool(getattr(self.settings, "water_mirror_reflect_widgets_enabled", True)))
         self.water_mirror_reflect_effects_enabled.setChecked(bool(getattr(self.settings, "water_mirror_reflect_effects_enabled", True)))
         self.water_mirror_reflect_snow = QCheckBox("雪を反射")
         self.water_mirror_reflect_snow.setChecked(bool(getattr(self.settings, "water_mirror_reflect_snow", True)))
@@ -1181,6 +1271,14 @@ class EffectsOverlayEditorDialog(QDialog):
         self.water_mirror_reflect_rain = QCheckBox("雨を反射")
         self.water_mirror_reflect_rain.setChecked(bool(getattr(self.settings, "water_mirror_reflect_rain", True)))
         f.addRow("水面", self.water_surface_enabled)
+        f.addRow("水たまり", self.puddle_enabled)
+        f.addRow("水たまりX", self.puddle_x)
+        f.addRow("水たまりY", self.puddle_y)
+        f.addRow("水たまり幅", self.puddle_width)
+        f.addRow("水たまり高さ", self.puddle_height)
+        f.addRow("水たまり縁なじみ", self.puddle_edge_softness)
+        f.addRow("水たまり数", self.puddle_count)
+        f.addRow("水たまり点在幅", self.puddle_spread)
         f.addRow("水面透明度", self.water_surface_alpha)
         f.addRow("流れ角度", self.water_surface_flow_angle)
         f.addRow("流れ速度", self.water_surface_flow_speed)
@@ -1188,6 +1286,15 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("波の高さ", self.water_surface_wave_height)
         f.addRow("水面Y", self.water_surface_y)
         f.addRow("水面の深さ", self.water_surface_depth)
+        f.addRow("奥行き", self.water_depth_enabled)
+        f.addRow("奥行き強度", self.water_depth_strength)
+        f.addRow("奥の霞(α)", self.water_depth_haze_alpha)
+        f.addRow("朝もや/霧", self.water_morning_fog_enabled)
+        f.addRow("朝焼け連動", self.water_morning_fog_follow_sunrise)
+        f.addRow("もや強度", self.water_morning_fog_strength)
+        f.addRow("もや透明度", self.water_morning_fog_alpha)
+        f.addRow("もや高さ", self.water_morning_fog_height)
+        f.addRow("もや流れ", self.water_morning_fog_drift)
         f.addRow("丸々とした魚", self.water_fish_enabled)
         f.addRow("魚の数", self.water_fish_count)
         f.addRow("魚の速度", self.water_fish_speed)
@@ -1200,6 +1307,7 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("反射の揺らぎ", self.water_mirror_wave)
         f.addRow("水色なじませ", self.water_mirror_tint_alpha)
         f.addRow("エフェクト反射", self.water_mirror_reflect_effects_enabled)
+        f.addRow("通常ウィジェット反射", self.water_mirror_reflect_widgets_enabled)
         f.addRow("反射: 雪", self.water_mirror_reflect_snow)
         f.addRow("反射: 雪の結晶", self.water_mirror_reflect_snow_crystal)
         f.addRow("反射: 花びら", self.water_mirror_reflect_petals)
@@ -1207,6 +1315,102 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow("反射: 流れ星", self.water_mirror_reflect_shooting_star)
         f.addRow("反射: 流星群", self.water_mirror_reflect_meteor_shower)
         f.addRow("反射: 雨", self.water_mirror_reflect_rain)
+        self._section(f, "氷・氷河")
+        self.ice_enabled = QCheckBox("リアル寄りの氷・氷河を描画")
+        self.ice_enabled.setChecked(bool(getattr(self.settings, "ice_enabled", False)))
+        self.ice_lightweight_enabled = QCheckBox("軽量描画を使う")
+        self.ice_lightweight_enabled.setChecked(bool(getattr(self.settings, "ice_lightweight_enabled", True)))
+        self.ice_static_cache_enabled = QCheckBox("静的な氷模様をキャッシュする")
+        self.ice_static_cache_enabled.setChecked(bool(getattr(self.settings, "ice_static_cache_enabled", True)))
+        self.ice_quality_scale = self._double_spin(0.25, 1.0, getattr(self.settings, "ice_quality_scale", 0.58), 0.01)
+        self.ice_max_facets = self._int_spin(8, 600, getattr(self.settings, "ice_max_facets", 72))
+        self.ice_max_cracks = self._int_spin(0, 200, getattr(self.settings, "ice_max_cracks", 16))
+        self.ice_max_bubbles = self._int_spin(0, 400, getattr(self.settings, "ice_max_bubbles", 34))
+        self.ice_skip_reflected_effect_frames = self._int_spin(0, 12, getattr(self.settings, "ice_skip_reflected_effect_frames", 2))
+        self.ice_mirror_skip_frames = self._int_spin(0, 12, getattr(self.settings, "ice_mirror_skip_frames", 2))
+        self.ice_alpha = self._int_spin(0, 255, getattr(self.settings, "ice_alpha", 178))
+        self.ice_size = self._double_spin(20.0, 900.0, getattr(self.settings, "ice_size", 185.0), 2.0)
+        self.ice_angle = self._double_spin(-180.0, 180.0, getattr(self.settings, "ice_angle", -6.0), 1.0)
+        self.ice_y = self._double_spin(0.0, 1.0, getattr(self.settings, "ice_y", 0.58), 0.01)
+        self.ice_x = self._double_spin(0.0, 1.0, getattr(self.settings, "ice_x", 0.50), 0.01)
+        self.ice_width = self._double_spin(0.05, 1.50, getattr(self.settings, "ice_width", 1.00), 0.01)
+        self.ice_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "ice_depth", 0.42), 0.01)
+        self.ice_crack_intensity = self._double_spin(0.0, 2.0, getattr(self.settings, "ice_crack_intensity", 0.46), 0.01)
+        self.ice_internal_bubble_intensity = self._double_spin(0.0, 2.0, getattr(self.settings, "ice_internal_bubble_intensity", 0.36), 0.01)
+        self.ice_glacier_roughness = self._double_spin(0.0, 1.5, getattr(self.settings, "ice_glacier_roughness", 0.55), 0.01)
+        self.ice_mirror_enabled = QCheckBox("氷面に他ウィジェット/エフェクトを鏡面反射")
+        self.ice_mirror_enabled.setChecked(bool(getattr(self.settings, "ice_mirror_enabled", True)))
+        self.ice_mirror_alpha = self._int_spin(0, 255, getattr(self.settings, "ice_mirror_alpha", 118))
+        self.ice_mirror_blur = self._double_spin(0.0, 24.0, getattr(self.settings, "ice_mirror_blur", 3.5), 0.5)
+        self.ice_mirror_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "ice_mirror_depth", 0.68), 0.01)
+        self.ice_mirror_wave = self._double_spin(0.0, 30.0, getattr(self.settings, "ice_mirror_wave", 2.2), 0.25)
+        self.ice_mirror_tint_alpha = self._int_spin(0, 255, getattr(self.settings, "ice_mirror_tint_alpha", 70))
+        self.ice_reflect_effects_enabled = QCheckBox("エフェクトも反射対象に含める")
+        self.ice_reflect_widgets_enabled = QCheckBox("通常ウィジェットを反射")
+        self.ice_reflect_widgets_enabled.setChecked(bool(getattr(self.settings, "ice_reflect_widgets_enabled", True)))
+        self.ice_reflect_snow = QCheckBox("雪を反射")
+        self.ice_reflect_snow.setChecked(bool(getattr(self.settings, "ice_reflect_snow", True)))
+        self.ice_reflect_snow_crystal = QCheckBox("雪の結晶を反射")
+        self.ice_reflect_snow_crystal.setChecked(bool(getattr(self.settings, "ice_reflect_snow_crystal", True)))
+        self.ice_reflect_petals = QCheckBox("花びらを反射")
+        self.ice_reflect_petals.setChecked(bool(getattr(self.settings, "ice_reflect_petals", True)))
+        self.ice_reflect_bamboo = QCheckBox("竹林を反射")
+        self.ice_reflect_bamboo.setChecked(bool(getattr(self.settings, "ice_reflect_bamboo", True)))
+        self.ice_reflect_shooting_star = QCheckBox("流れ星を反射")
+        self.ice_reflect_shooting_star.setChecked(bool(getattr(self.settings, "ice_reflect_shooting_star", True)))
+        self.ice_reflect_meteor_shower = QCheckBox("流星群を反射")
+        self.ice_reflect_meteor_shower.setChecked(bool(getattr(self.settings, "ice_reflect_meteor_shower", True)))
+        self.ice_reflect_rain = QCheckBox("雨を反射")
+        self.ice_reflect_rain.setChecked(bool(getattr(self.settings, "ice_reflect_rain", True)))
+        self.ice_reflect_effects_enabled.setChecked(bool(getattr(self.settings, "ice_reflect_effects_enabled", True)))
+        self.ice_fog_enabled = QCheckBox("表面に薄い霧を掛ける")
+        self.ice_fog_enabled.setChecked(bool(getattr(self.settings, "ice_fog_enabled", True)))
+        self.ice_fog_alpha = self._int_spin(0, 255, getattr(self.settings, "ice_fog_alpha", 72))
+        self.ice_fog_height = self._double_spin(0.02, 0.80, getattr(self.settings, "ice_fog_height", 0.24), 0.01)
+        self.ice_fog_drift = self._double_spin(0.0, 3.0, getattr(self.settings, "ice_fog_drift", 0.30), 0.01)
+        self.ice_color = self._color_row_on(f, "氷色", getattr(self.settings, "ice_color", "#9BDDF2"))
+        self.ice_edge_color = self._color_row_on(f, "氷の縁/亀裂色", getattr(self.settings, "ice_edge_color", "#E8FBFF"))
+        self.ice_highlight_color = self._color_row_on(f, "氷ハイライト色", getattr(self.settings, "ice_highlight_color", "#F7FFFF"))
+        self.ice_shadow_color = self._color_row_on(f, "氷の奥影色", getattr(self.settings, "ice_shadow_color", "#2C6F93"))
+        self.ice_fog_color = self._color_row_on(f, "霧色", getattr(self.settings, "ice_fog_color", "#EEF9FF"))
+        f.addRow("氷・氷河", self.ice_enabled)
+        f.addRow("軽量描画", self.ice_lightweight_enabled)
+        f.addRow("静的模様キャッシュ", self.ice_static_cache_enabled)
+        f.addRow("描画品質", self.ice_quality_scale)
+        f.addRow("最大氷面パーツ", self.ice_max_facets)
+        f.addRow("最大亀裂数", self.ice_max_cracks)
+        f.addRow("最大気泡数", self.ice_max_bubbles)
+        f.addRow("反射エフェクト間引き", self.ice_skip_reflected_effect_frames)
+        f.addRow("通常ウィジェット反射間引き", self.ice_mirror_skip_frames)
+        f.addRow("氷透明度", self.ice_alpha)
+        f.addRow("氷塊サイズ", self.ice_size)
+        f.addRow("氷角度", self.ice_angle)
+        f.addRow("氷面X", self.ice_x)
+        f.addRow("氷面幅", self.ice_width)
+        f.addRow("氷面Y", self.ice_y)
+        f.addRow("氷の深さ", self.ice_depth)
+        f.addRow("亀裂強度", self.ice_crack_intensity)
+        f.addRow("内部気泡/白濁", self.ice_internal_bubble_intensity)
+        f.addRow("氷河の凹凸", self.ice_glacier_roughness)
+        f.addRow("鏡面反射", self.ice_mirror_enabled)
+        f.addRow("反射透明度", self.ice_mirror_alpha)
+        f.addRow("反射ぼかし", self.ice_mirror_blur)
+        f.addRow("反射の深さ", self.ice_mirror_depth)
+        f.addRow("反射の揺らぎ", self.ice_mirror_wave)
+        f.addRow("氷色なじませ", self.ice_mirror_tint_alpha)
+        f.addRow("エフェクト反射", self.ice_reflect_effects_enabled)
+        f.addRow("通常ウィジェット反射", self.ice_reflect_widgets_enabled)
+        f.addRow("反射: 雪", self.ice_reflect_snow)
+        f.addRow("反射: 雪の結晶", self.ice_reflect_snow_crystal)
+        f.addRow("反射: 花びら", self.ice_reflect_petals)
+        f.addRow("反射: 竹", self.ice_reflect_bamboo)
+        f.addRow("反射: 流れ星", self.ice_reflect_shooting_star)
+        f.addRow("反射: 流星群", self.ice_reflect_meteor_shower)
+        f.addRow("反射: 雨", self.ice_reflect_rain)
+        f.addRow("薄霧", self.ice_fog_enabled)
+        f.addRow("霧透明度", self.ice_fog_alpha)
+        f.addRow("霧高さ", self.ice_fog_height)
+        f.addRow("霧流れ", self.ice_fog_drift)
 
         self._section(f, "竹林")
         self.bamboo_grove_enabled = QCheckBox("竹林を描画")
@@ -1247,6 +1451,7 @@ class EffectsOverlayEditorDialog(QDialog):
         for name in [
             "snow", "snow_crystal", "water_drop", "bubble", "flame", "water_spray",
             "fireball", "star_sky", "shooting_star", "meteor_shower", "balloon",
+        "ice",
         ]:
             widget = getattr(self, f"{name}_enabled", None)
             if widget is not None:
@@ -1359,7 +1564,7 @@ class EffectsOverlayEditorDialog(QDialog):
             "rain_ripple_enabled", "rose_petals_enabled", "rose_flowers_enabled", "blooming_roses_enabled",
             "sakura_petals_enabled", "sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled",
             "moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled", "milky_way_enabled",
-            "water_surface_enabled", "bamboo_grove_enabled",
+            "water_surface_enabled", "ice_enabled", "bamboo_grove_enabled",
         ]:
             self._theme_set_checked(name, False)
         self._set_extra_effect_toggles(False)
@@ -1467,10 +1672,24 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("rain_ripple_chance", 0.70)
             self._theme_set_value("rain_ripple_cooldown", 0.035)
             self._theme_set_checked("water_surface_enabled", True)
-            self._theme_set_checked("water_fish_enabled", True)
-            self._theme_set_value("water_fish_count", 3)
-            self._theme_set_value("water_surface_alpha", 90)
-            self._theme_set_value("water_surface_wave_count", 16)
+            self._theme_set_checked("puddle_enabled", True)
+            self._theme_set_value("puddle_x", 0.50)
+            self._theme_set_value("puddle_y", 0.84)
+            self._theme_set_value("puddle_width", 0.72)
+            self._theme_set_value("puddle_height", 0.22)
+            self._theme_set_value("puddle_edge_softness", 0.18)
+            self._theme_set_value("puddle_count", 5)
+            self._theme_set_value("puddle_spread", 0.72)
+            self._theme_set_checked("water_mirror_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_widgets_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_effects_enabled", True)
+            self._theme_set_value("water_mirror_alpha", 116)
+            self._theme_set_value("water_mirror_blur", 3.5)
+            self._theme_set_value("water_mirror_wave", 4.5)
+            self._theme_set_checked("water_fish_enabled", False)
+            self._theme_set_value("water_fish_count", 0)
+            self._theme_set_value("water_surface_alpha", 96)
+            self._theme_set_value("water_surface_wave_count", 14)
             self._theme_set_extra("water_drop", True, count=36, speed=0.45, size=7.0, alpha=185)
 
         elif theme_id == "snow_scene":
@@ -1483,6 +1702,39 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_checked("water_surface_enabled", True)
             self._theme_set_value("water_surface_alpha", 62)
 
+        elif theme_id == "glacier_mirror":
+            self._theme_set_checked("ice_enabled", True)
+            self._theme_set_checked("ice_lightweight_enabled", True)
+            self._theme_set_checked("ice_static_cache_enabled", True)
+            self._theme_set_value("ice_quality_scale", 0.58)
+            self._theme_set_value("ice_max_facets", 72)
+            self._theme_set_value("ice_max_cracks", 16)
+            self._theme_set_value("ice_max_bubbles", 34)
+            self._theme_set_value("ice_skip_reflected_effect_frames", 2)
+            self._theme_set_value("ice_mirror_skip_frames", 2)
+            self._theme_set_value("ice_alpha", 185)
+            self._theme_set_value("ice_size", 210.0)
+            self._theme_set_value("ice_angle", -7.0)
+            self._theme_set_value("ice_y", 0.56)
+            self._theme_set_value("ice_depth", 0.44)
+            self._theme_set_value("ice_crack_intensity", 0.58)
+            self._theme_set_value("ice_internal_bubble_intensity", 0.42)
+            self._theme_set_value("ice_glacier_roughness", 0.70)
+            self._theme_set_checked("ice_mirror_enabled", True)
+            self._theme_set_checked("ice_reflect_widgets_enabled", True)
+            self._theme_set_checked("ice_reflect_effects_enabled", True)
+            self._theme_set_checked("ice_reflect_snow", True)
+            self._theme_set_checked("ice_reflect_snow_crystal", True)
+            self._theme_set_checked("ice_reflect_petals", True)
+            self._theme_set_checked("ice_reflect_rain", True)
+            self._theme_set_value("ice_mirror_alpha", 130)
+            self._theme_set_value("ice_mirror_blur", 3.0)
+            self._theme_set_value("ice_mirror_wave", 1.7)
+            self._theme_set_checked("ice_fog_enabled", True)
+            self._theme_set_value("ice_fog_alpha", 76)
+            self._theme_set_extra("snow", True, count=70, speed=0.13, size=3.8, alpha=185)
+            self._theme_set_extra("snow_crystal", True, count=14, speed=0.09, size=12.0, alpha=200)
+            self._theme_set_extra("star_sky", True, count=180, speed=0.18, size=1.1, alpha=150)
         elif theme_id == "meteor_sky":
             self._theme_set_extra("star_sky", True, count=340, speed=0.34, size=1.5, alpha=220)
             self._theme_set_checked("milky_way_enabled", True)
@@ -1909,6 +2161,15 @@ class EffectsOverlayEditorDialog(QDialog):
             milky_way_angle=self.milky_way_angle.value(),
             milky_way_color=self.milky_way_color.text().strip() or "#BFD7FF",
             water_surface_enabled=self.water_surface_enabled.isChecked(),
+            puddle_enabled=self.puddle_enabled.isChecked(),
+            puddle_x=self.puddle_x.value(),
+            puddle_y=self.puddle_y.value(),
+            puddle_width=self.puddle_width.value(),
+            puddle_height=self.puddle_height.value(),
+            puddle_edge_softness=self.puddle_edge_softness.value(),
+            puddle_count=self.puddle_count.value(),
+            puddle_spread=self.puddle_spread.value(),
+            puddles_json=getattr(self.settings, "puddles_json", ""),
             water_surface_alpha=self.water_surface_alpha.value(),
             water_surface_color=self.water_surface_color.text().strip() or "#4FC3FF",
             water_surface_highlight_color=self.water_surface_highlight_color.text().strip() or "#D8FAFF",
@@ -1918,6 +2179,17 @@ class EffectsOverlayEditorDialog(QDialog):
             water_surface_wave_height=self.water_surface_wave_height.value(),
             water_surface_y=self.water_surface_y.value(),
             water_surface_depth=self.water_surface_depth.value(),
+            water_depth_enabled=self.water_depth_enabled.isChecked(),
+            water_depth_strength=self.water_depth_strength.value(),
+            water_depth_haze_alpha=self.water_depth_haze_alpha.value(),
+            water_depth_color=self.water_depth_color.text().strip() or "#1A5B70",
+            water_morning_fog_enabled=self.water_morning_fog_enabled.isChecked(),
+            water_morning_fog_follow_sunrise=self.water_morning_fog_follow_sunrise.isChecked(),
+            water_morning_fog_strength=self.water_morning_fog_strength.value(),
+            water_morning_fog_alpha=self.water_morning_fog_alpha.value(),
+            water_morning_fog_height=self.water_morning_fog_height.value(),
+            water_morning_fog_drift=self.water_morning_fog_drift.value(),
+            water_morning_fog_color=self.water_morning_fog_color.text().strip() or "#E9F6FF",
             water_fish_enabled=self.water_fish_enabled.isChecked(),
             water_fish_count=self.water_fish_count.value(),
             water_fish_speed=self.water_fish_speed.value(),
@@ -1932,6 +2204,7 @@ class EffectsOverlayEditorDialog(QDialog):
             water_mirror_wave=self.water_mirror_wave.value(),
             water_mirror_tint_alpha=self.water_mirror_tint_alpha.value(),
             water_mirror_reflect_effects_enabled=self.water_mirror_reflect_effects_enabled.isChecked(),
+            water_mirror_reflect_widgets_enabled=self.water_mirror_reflect_widgets_enabled.isChecked(),
             water_mirror_reflect_snow=self.water_mirror_reflect_snow.isChecked(),
             water_mirror_reflect_snow_crystal=self.water_mirror_reflect_snow_crystal.isChecked(),
             water_mirror_reflect_petals=self.water_mirror_reflect_petals.isChecked(),
@@ -1939,6 +2212,49 @@ class EffectsOverlayEditorDialog(QDialog):
             water_mirror_reflect_shooting_star=self.water_mirror_reflect_shooting_star.isChecked(),
             water_mirror_reflect_meteor_shower=self.water_mirror_reflect_meteor_shower.isChecked(),
             water_mirror_reflect_rain=self.water_mirror_reflect_rain.isChecked(),
+            ice_enabled=self.ice_enabled.isChecked(),
+            ice_lightweight_enabled=self.ice_lightweight_enabled.isChecked(),
+            ice_static_cache_enabled=self.ice_static_cache_enabled.isChecked(),
+            ice_quality_scale=self.ice_quality_scale.value(),
+            ice_max_facets=self.ice_max_facets.value(),
+            ice_max_cracks=self.ice_max_cracks.value(),
+            ice_max_bubbles=self.ice_max_bubbles.value(),
+            ice_skip_reflected_effect_frames=self.ice_skip_reflected_effect_frames.value(),
+            ice_mirror_skip_frames=self.ice_mirror_skip_frames.value(),
+            ice_alpha=self.ice_alpha.value(),
+            ice_color=self.ice_color.text().strip() or "#9BDDF2",
+            ice_edge_color=self.ice_edge_color.text().strip() or "#E8FBFF",
+            ice_highlight_color=self.ice_highlight_color.text().strip() or "#F7FFFF",
+            ice_shadow_color=self.ice_shadow_color.text().strip() or "#2C6F93",
+            ice_fog_color=self.ice_fog_color.text().strip() or "#EEF9FF",
+            ice_size=self.ice_size.value(),
+            ice_angle=self.ice_angle.value(),
+            ice_x=self.ice_x.value(),
+            ice_width=self.ice_width.value(),
+            ice_y=self.ice_y.value(),
+            ice_depth=self.ice_depth.value(),
+            ice_crack_intensity=self.ice_crack_intensity.value(),
+            ice_internal_bubble_intensity=self.ice_internal_bubble_intensity.value(),
+            ice_glacier_roughness=self.ice_glacier_roughness.value(),
+            ice_mirror_enabled=self.ice_mirror_enabled.isChecked(),
+            ice_mirror_alpha=self.ice_mirror_alpha.value(),
+            ice_mirror_blur=self.ice_mirror_blur.value(),
+            ice_mirror_depth=self.ice_mirror_depth.value(),
+            ice_mirror_wave=self.ice_mirror_wave.value(),
+            ice_mirror_tint_alpha=self.ice_mirror_tint_alpha.value(),
+            ice_reflect_effects_enabled=self.ice_reflect_effects_enabled.isChecked(),
+            ice_reflect_widgets_enabled=self.ice_reflect_widgets_enabled.isChecked(),
+            ice_reflect_snow=self.ice_reflect_snow.isChecked(),
+            ice_reflect_snow_crystal=self.ice_reflect_snow_crystal.isChecked(),
+            ice_reflect_petals=self.ice_reflect_petals.isChecked(),
+            ice_reflect_bamboo=self.ice_reflect_bamboo.isChecked(),
+            ice_reflect_shooting_star=self.ice_reflect_shooting_star.isChecked(),
+            ice_reflect_meteor_shower=self.ice_reflect_meteor_shower.isChecked(),
+            ice_reflect_rain=self.ice_reflect_rain.isChecked(),
+            ice_fog_enabled=self.ice_fog_enabled.isChecked(),
+            ice_fog_alpha=self.ice_fog_alpha.value(),
+            ice_fog_height=self.ice_fog_height.value(),
+            ice_fog_drift=self.ice_fog_drift.value(),
             bamboo_grove_enabled=self.bamboo_grove_enabled.isChecked(),
             bamboo_count=self.bamboo_count.value(),
             bamboo_thickness=self.bamboo_thickness.value(),
@@ -2021,6 +2337,14 @@ class EffectsOverlayEditorDialog(QDialog):
             if hasattr(self.widget, "_extra_effects"):
                 self.widget._extra_effects.clear()
             self.widget._last_extra_ripple_time = 0.0
+        except Exception:
+            pass
+        try:
+            if hasattr(self.widget, "_ice_surface_cache_signature"):
+                self.widget._ice_surface_cache_signature = None
+                self.widget._ice_surface_cache_image = None
+                self.widget._ice_reflected_effects_cache_signature = None
+                self.widget._ice_reflected_effects_cache_image = None
         except Exception:
             pass
         try:
@@ -2357,6 +2681,17 @@ class EffectOverlaySettings:
     water_surface_wave_height: float = 12.0
     water_surface_y: float = 0.58
     water_surface_depth: float = 0.42
+    water_depth_enabled: bool = True
+    water_depth_strength: float = 0.75
+    water_depth_haze_alpha: int = 48
+    water_depth_color: str = "#1A5B70"
+    water_morning_fog_enabled: bool = True
+    water_morning_fog_follow_sunrise: bool = True
+    water_morning_fog_strength: float = 0.65
+    water_morning_fog_alpha: int = 95
+    water_morning_fog_height: float = 0.22
+    water_morning_fog_drift: float = 0.35
+    water_morning_fog_color: str = "#E9F6FF"
     water_fish_enabled: bool = True
     water_fish_count: int = 4
     water_fish_speed: float = 0.28
@@ -2371,6 +2706,7 @@ class EffectOverlaySettings:
     water_mirror_wave: float = 7.0
     water_mirror_tint_alpha: int = 58
     water_mirror_reflect_effects_enabled: bool = True
+    water_mirror_reflect_widgets_enabled: bool = True
     water_mirror_reflect_snow: bool = True
     water_mirror_reflect_snow_crystal: bool = True
     water_mirror_reflect_petals: bool = True
@@ -2378,6 +2714,58 @@ class EffectOverlaySettings:
     water_mirror_reflect_shooting_star: bool = True
     water_mirror_reflect_meteor_shower: bool = True
     water_mirror_reflect_rain: bool = True
+    puddle_enabled: bool = False
+    puddle_x: float = 0.50
+    puddle_y: float = 0.84
+    puddle_width: float = 0.72
+    puddle_height: float = 0.22
+    puddle_edge_softness: float = 0.18
+    puddle_count: int = 5
+    puddle_spread: float = 0.72
+    puddles_json: str = ""
+    ice_enabled: bool = False
+    ice_lightweight_enabled: bool = True
+    ice_static_cache_enabled: bool = True
+    ice_quality_scale: float = 0.58
+    ice_max_facets: int = 72
+    ice_max_cracks: int = 16
+    ice_max_bubbles: int = 34
+    ice_skip_reflected_effect_frames: int = 2
+    ice_mirror_skip_frames: int = 2
+    ice_alpha: int = 178
+    ice_color: str = "#9BDDF2"
+    ice_edge_color: str = "#E8FBFF"
+    ice_highlight_color: str = "#F7FFFF"
+    ice_shadow_color: str = "#2C6F93"
+    ice_fog_color: str = "#EEF9FF"
+    ice_size: float = 185.0
+    ice_angle: float = -6.0
+    ice_x: float = 0.50
+    ice_width: float = 1.00
+    ice_y: float = 0.58
+    ice_depth: float = 0.42
+    ice_crack_intensity: float = 0.46
+    ice_internal_bubble_intensity: float = 0.36
+    ice_glacier_roughness: float = 0.55
+    ice_mirror_enabled: bool = True
+    ice_mirror_alpha: int = 118
+    ice_mirror_blur: float = 3.5
+    ice_mirror_depth: float = 0.68
+    ice_mirror_wave: float = 2.2
+    ice_mirror_tint_alpha: int = 70
+    ice_reflect_effects_enabled: bool = True
+    ice_reflect_widgets_enabled: bool = True
+    ice_reflect_snow: bool = True
+    ice_reflect_snow_crystal: bool = True
+    ice_reflect_petals: bool = True
+    ice_reflect_bamboo: bool = True
+    ice_reflect_shooting_star: bool = True
+    ice_reflect_meteor_shower: bool = True
+    ice_reflect_rain: bool = True
+    ice_fog_enabled: bool = True
+    ice_fog_alpha: int = 72
+    ice_fog_height: float = 0.24
+    ice_fog_drift: float = 0.30
     bamboo_grove_enabled: bool = False
     bamboo_count: int = 12
     bamboo_thickness: float = 16.0
@@ -2773,6 +3161,15 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         milky_way_angle=float(defaults.get("milky_way_angle", -18.0)),
         milky_way_color=str(defaults.get("milky_way_color", "#BFD7FF")),
         water_surface_enabled=bool(defaults.get("water_surface_enabled", False)),
+        puddle_enabled=bool(defaults.get("puddle_enabled", False)),
+        puddle_x=max(0.0, min(1.0, float(defaults.get("puddle_x", 0.50)))),
+        puddle_y=max(0.0, min(1.0, float(defaults.get("puddle_y", 0.84)))),
+        puddle_width=max(0.05, min(1.20, float(defaults.get("puddle_width", 0.72)))),
+        puddle_height=max(0.02, min(0.70, float(defaults.get("puddle_height", 0.22)))),
+        puddle_edge_softness=max(0.0, min(1.0, float(defaults.get("puddle_edge_softness", 0.18)))),
+        puddle_count=max(1, min(12, int(defaults.get("puddle_count", 5)))),
+        puddle_spread=max(0.0, min(1.0, float(defaults.get("puddle_spread", 0.72)))),
+        puddles_json=str(defaults.get("puddles_json", "") or ""),
         water_surface_alpha=max(0, min(255, int(defaults.get("water_surface_alpha", 92)))),
         water_surface_color=str(defaults.get("water_surface_color", "#4FC3FF")),
         water_surface_highlight_color=str(defaults.get("water_surface_highlight_color", "#D8FAFF")),
@@ -2782,6 +3179,17 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         water_surface_wave_height=float(defaults.get("water_surface_wave_height", 12.0)),
         water_surface_y=float(defaults.get("water_surface_y", 0.58)),
         water_surface_depth=float(defaults.get("water_surface_depth", 0.42)),
+        water_depth_enabled=bool(defaults.get("water_depth_enabled", True)),
+        water_depth_strength=float(defaults.get("water_depth_strength", 0.75)),
+        water_depth_haze_alpha=max(0, min(255, int(defaults.get("water_depth_haze_alpha", 48)))),
+        water_depth_color=str(defaults.get("water_depth_color", "#1A5B70")),
+        water_morning_fog_enabled=bool(defaults.get("water_morning_fog_enabled", True)),
+        water_morning_fog_follow_sunrise=bool(defaults.get("water_morning_fog_follow_sunrise", True)),
+        water_morning_fog_strength=float(defaults.get("water_morning_fog_strength", 0.65)),
+        water_morning_fog_alpha=max(0, min(255, int(defaults.get("water_morning_fog_alpha", 95)))),
+        water_morning_fog_height=float(defaults.get("water_morning_fog_height", 0.22)),
+        water_morning_fog_drift=float(defaults.get("water_morning_fog_drift", 0.35)),
+        water_morning_fog_color=str(defaults.get("water_morning_fog_color", "#E9F6FF")),
         water_fish_enabled=bool(defaults.get("water_fish_enabled", True)),
         water_fish_count=max(0, int(defaults.get("water_fish_count", 4))),
         water_fish_speed=float(defaults.get("water_fish_speed", 0.28)),
@@ -2796,6 +3204,7 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         water_mirror_wave=float(defaults.get("water_mirror_wave", 7.0)),
         water_mirror_tint_alpha=max(0, min(255, int(defaults.get("water_mirror_tint_alpha", 58)))),
         water_mirror_reflect_effects_enabled=bool(defaults.get("water_mirror_reflect_effects_enabled", True)),
+        water_mirror_reflect_widgets_enabled=bool(defaults.get("water_mirror_reflect_widgets_enabled", True)),
         water_mirror_reflect_snow=bool(defaults.get("water_mirror_reflect_snow", True)),
         water_mirror_reflect_snow_crystal=bool(defaults.get("water_mirror_reflect_snow_crystal", True)),
         water_mirror_reflect_petals=bool(defaults.get("water_mirror_reflect_petals", True)),
@@ -2803,6 +3212,49 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         water_mirror_reflect_shooting_star=bool(defaults.get("water_mirror_reflect_shooting_star", True)),
         water_mirror_reflect_meteor_shower=bool(defaults.get("water_mirror_reflect_meteor_shower", True)),
         water_mirror_reflect_rain=bool(defaults.get("water_mirror_reflect_rain", True)),
+        ice_enabled=bool(defaults.get("ice_enabled", False)),
+        ice_lightweight_enabled=bool(defaults.get("ice_lightweight_enabled", True)),
+        ice_static_cache_enabled=bool(defaults.get("ice_static_cache_enabled", True)),
+        ice_quality_scale=max(0.25, min(1.0, float(defaults.get("ice_quality_scale", 0.58)))),
+        ice_max_facets=max(8, int(defaults.get("ice_max_facets", 72))),
+        ice_max_cracks=max(0, int(defaults.get("ice_max_cracks", 16))),
+        ice_max_bubbles=max(0, int(defaults.get("ice_max_bubbles", 34))),
+        ice_skip_reflected_effect_frames=max(0, min(12, int(defaults.get("ice_skip_reflected_effect_frames", 2)))),
+        ice_mirror_skip_frames=max(0, min(12, int(defaults.get("ice_mirror_skip_frames", 2)))),
+        ice_alpha=max(0, min(255, int(defaults.get("ice_alpha", 178)))),
+        ice_color=str(defaults.get("ice_color", "#9BDDF2")),
+        ice_edge_color=str(defaults.get("ice_edge_color", "#E8FBFF")),
+        ice_highlight_color=str(defaults.get("ice_highlight_color", "#F7FFFF")),
+        ice_shadow_color=str(defaults.get("ice_shadow_color", "#2C6F93")),
+        ice_fog_color=str(defaults.get("ice_fog_color", "#EEF9FF")),
+        ice_size=float(defaults.get("ice_size", 185.0)),
+        ice_angle=float(defaults.get("ice_angle", -6.0)),
+        ice_x=float(defaults.get("ice_x", 0.50)),
+        ice_width=float(defaults.get("ice_width", 1.00)),
+        ice_y=float(defaults.get("ice_y", 0.58)),
+        ice_depth=float(defaults.get("ice_depth", 0.42)),
+        ice_crack_intensity=float(defaults.get("ice_crack_intensity", 0.46)),
+        ice_internal_bubble_intensity=float(defaults.get("ice_internal_bubble_intensity", 0.36)),
+        ice_glacier_roughness=float(defaults.get("ice_glacier_roughness", 0.55)),
+        ice_mirror_enabled=bool(defaults.get("ice_mirror_enabled", True)),
+        ice_mirror_alpha=max(0, min(255, int(defaults.get("ice_mirror_alpha", 118)))),
+        ice_mirror_blur=float(defaults.get("ice_mirror_blur", 3.5)),
+        ice_mirror_depth=float(defaults.get("ice_mirror_depth", 0.68)),
+        ice_mirror_wave=float(defaults.get("ice_mirror_wave", 2.2)),
+        ice_mirror_tint_alpha=max(0, min(255, int(defaults.get("ice_mirror_tint_alpha", 70)))),
+        ice_reflect_effects_enabled=bool(defaults.get("ice_reflect_effects_enabled", True)),
+        ice_reflect_widgets_enabled=bool(defaults.get("ice_reflect_widgets_enabled", True)),
+        ice_reflect_snow=bool(defaults.get("ice_reflect_snow", True)),
+        ice_reflect_snow_crystal=bool(defaults.get("ice_reflect_snow_crystal", True)),
+        ice_reflect_petals=bool(defaults.get("ice_reflect_petals", True)),
+        ice_reflect_bamboo=bool(defaults.get("ice_reflect_bamboo", True)),
+        ice_reflect_shooting_star=bool(defaults.get("ice_reflect_shooting_star", True)),
+        ice_reflect_meteor_shower=bool(defaults.get("ice_reflect_meteor_shower", True)),
+        ice_reflect_rain=bool(defaults.get("ice_reflect_rain", True)),
+        ice_fog_enabled=bool(defaults.get("ice_fog_enabled", True)),
+        ice_fog_alpha=max(0, min(255, int(defaults.get("ice_fog_alpha", 72)))),
+        ice_fog_height=float(defaults.get("ice_fog_height", 0.24)),
+        ice_fog_drift=float(defaults.get("ice_fog_drift", 0.30)),
         bamboo_grove_enabled=bool(defaults.get("bamboo_grove_enabled", False)),
         bamboo_count=max(0, int(defaults.get("bamboo_count", 12))),
         bamboo_thickness=float(defaults.get("bamboo_thickness", 16.0)),
@@ -4016,6 +4468,7 @@ class WidgetConfig:
     font_size: int = 14
 
     bg_alpha: int = 155
+    mirror_reflect_enabled: bool = True
     """
     [bg_alpha]
         0   = 完全透明
@@ -4070,6 +4523,19 @@ class BaseWidget:
     def to_config(self) -> WidgetConfig:
         return self.cfg
 
+    def reflects_in_mirrors(self) -> bool:
+        """Return whether this widget should be included in water/ice mirror source images."""
+        try:
+            return bool(getattr(self.cfg, "mirror_reflect_enabled", True))
+        except Exception:
+            return True
+
+    def set_reflects_in_mirrors(self, value: bool):
+        try:
+            self.cfg.mirror_reflect_enabled = bool(value)
+        except Exception:
+            pass
+
 class EffectsOverlayWidget(BaseWidget):
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -4101,8 +4567,17 @@ class EffectsOverlayWidget(BaseWidget):
         self._water_reflection_source_image = None
         self._water_reflection_cache_signature = None
         self._water_reflection_cache_image = None
+        self._ice_reflection_cache_signature = None
+        self._ice_reflection_cache_image = None
+        self._ice_surface_cache_signature = None
+        self._ice_surface_cache_image = None
+        self._ice_reflected_effects_cache_signature = None
+        self._ice_reflected_effects_cache_image = None
         self._water_fish = []
         self._water_fish_rect_key = None
+        self._water_morning_fog = []
+        self._water_morning_fog_rect_key = None
+        self._last_water_morning_fog_update = 0.0
         self._petal_wind_phase = 0.0
         self._petal_wind_strength = 0.0
         self._petal_wind_until = 0.0
@@ -4174,12 +4649,16 @@ class EffectsOverlayWidget(BaseWidget):
             rects.append(self.sun_interaction_rect(settings))
         if self._has_visible_moon_effect(settings):
             rects.append(self.moon_interaction_rect(settings))
+        if self._has_visible_ice_effect(settings):
+            rects.append(self.ice_interaction_rect(settings))
+        if self._has_visible_puddle_effect(settings):
+            rects.append(self.puddle_interaction_rect(settings))
         bounds = self._united_interaction_rects(rects)
         return bounds if not bounds.isNull() else self.rect
 
     def contains(self, pos: QPoint) -> bool:
         settings = get_effect_overlay_settings(self.cfg)
-        if self._has_visible_sun_effect(settings) or self._has_visible_moon_effect(settings):
+        if self._has_visible_sun_effect(settings) or self._has_visible_moon_effect(settings) or self._has_visible_ice_effect(settings) or self._has_visible_puddle_effect(settings):
             return self.interaction_rect().contains(QPointF(pos))
         return self.rect.contains(pos)
 
@@ -4204,6 +4683,54 @@ class EffectsOverlayWidget(BaseWidget):
         new_center_y = float(pos.y()) - float(offset.y())
         settings.moon_x = max(0.0, min(1.0, (new_center_x - r.left()) / max(1.0, r.width())))
         settings.moon_y = max(0.0, min(1.0, (new_center_y - r.top()) / max(1.0, r.height())))
+        set_effect_overlay_settings(self.cfg, settings)
+
+    def _has_visible_ice_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        return bool(getattr(settings, "ice_enabled", False))
+
+    def ice_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not self._has_visible_ice_effect(settings):
+            return QRectF()
+        rect_func = getattr(type(self), "_ice_surface_rect", None)
+        if rect_func is None:
+            return QRectF(self.rect)
+        ice_rect = rect_func(self, self.rect, settings)
+        if ice_rect.isNull() or not ice_rect.isValid():
+            return QRectF()
+        return ice_rect.adjusted(-10.0, -10.0, 10.0, 10.0)
+
+    def is_ice_hit(self, pos: QPoint) -> bool:
+        settings = get_effect_overlay_settings(self.cfg)
+        return self._has_visible_ice_effect(settings) and self.ice_interaction_rect(settings).contains(QPointF(pos))
+
+    def ice_drag_offset_from_pos(self, pos: QPoint) -> QPointF:
+        settings = get_effect_overlay_settings(self.cfg)
+        ice_rect = self.ice_interaction_rect(settings)
+        center = ice_rect.center() if ice_rect.isValid() and not ice_rect.isNull() else self.rect.center()
+        return QPointF(float(pos.x()) - center.x(), float(pos.y()) - center.y())
+
+    def move_ice_center_to(self, pos: QPoint, offset: Optional[QPointF] = None):
+        """Move only the ice/glacier surface without moving the entire overlay widget."""
+        settings = get_effect_overlay_settings(self.cfg)
+        r = self.rect
+        if r.width() <= 0 or r.height() <= 0:
+            return
+        if offset is None:
+            offset = QPointF(0.0, 0.0)
+        new_center_x = float(pos.x()) - float(offset.x())
+        new_center_y = float(pos.y()) - float(offset.y())
+        width_ratio = max(0.05, min(1.50, float(getattr(settings, "ice_width", 1.0))))
+        depth_ratio = max(0.05, min(1.0, float(getattr(settings, "ice_depth", 0.42))))
+        ice_w = r.width() * width_ratio
+        ice_h = r.height() * depth_ratio
+        new_left = new_center_x - ice_w * 0.5
+        new_top = new_center_y - ice_h * 0.5
+        settings.ice_x = max(0.0, min(1.0, (new_center_x - r.left()) / max(1.0, r.width())))
+        settings.ice_y = max(0.0, min(1.0, (new_top - r.top()) / max(1.0, r.height())))
         set_effect_overlay_settings(self.cfg, settings)
 
     def _has_visible_sun_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
@@ -4827,6 +5354,8 @@ class EffectsOverlayWidget(BaseWidget):
                 continue
             surface_attr = f"{kind}_surface_y"
             surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, surface_attr, 0.86))))
+            puddle_rect = self._puddle_rect(r, settings) if bool(getattr(settings, "puddle_enabled", False)) else QRectF()
+            puddle_active = puddle_rect.isValid() and not puddle_rect.isNull()
             for item in list(items):
                 prev_y = item.y
                 if kind == "star_sky":
@@ -4842,10 +5371,11 @@ class EffectsOverlayWidget(BaseWidget):
                 if kind in ("flame", "water_spray") and now - item.created_at > item.life:
                     item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
                     continue
-                hit_surface = kind in ("snow", "snow_crystal", "water_drop") and prev_y < surface_y <= item.y
+                impact_y = self._puddle_impact_y_for_x(r, settings, item.x) if puddle_active else surface_y
+                hit_surface = kind in ("snow", "snow_crystal", "water_drop") and impact_y is not None and prev_y < impact_y <= item.y
                 out = (item.y > r.bottom()+120 or item.y < r.top()-220 or item.x < r.left()-220 or item.x > r.right()+220)
                 if hit_surface:
-                    self._maybe_spawn_extra_ripple(kind, item, surface_y, settings, now)
+                    self._maybe_spawn_extra_ripple(kind, item, float(impact_y), settings, now)
                     item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
                     continue
                 if out:
@@ -4860,6 +5390,9 @@ class EffectsOverlayWidget(BaseWidget):
             return
         if now - getattr(self, "_last_extra_ripple_time", 0.0) < 0.018:
             return
+        if bool(getattr(settings, "puddle_enabled", False)):
+            if not self._point_in_any_puddle(float(item.x), float(surface_y), self.rect, settings):
+                return
         base = max(12.0, float(item.size) * (4.2 if kind == "snow_crystal" else 3.2))
         if kind == "water_drop":
             color = getattr(settings, "water_drop_color", "#9FE7FF")
@@ -4871,8 +5404,10 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_extra_ripple_time = now
 
     def _draw_extra_effects(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
-        if bool(getattr(settings, "water_surface_enabled", False)):
+        if bool(getattr(settings, "water_surface_enabled", False)) or bool(getattr(settings, "puddle_enabled", False)):
             self._draw_water_surface(p, r, settings, now)
+        if bool(getattr(settings, "ice_enabled", False)):
+            self._draw_ice_surface(p, r, settings, now)
         if bool(getattr(settings, "milky_way_enabled", False)):
             self._draw_milky_way(p, r, settings, now)
         if not hasattr(self, "_extra_effects"):
@@ -5048,6 +5583,253 @@ class EffectsOverlayWidget(BaseWidget):
                 image.width(), image.height(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
             )
         return blurred
+
+
+    def _puddle_specs(self, settings: EffectOverlaySettings):
+        """Return normalized puddle specs. First puddle follows puddle_x/y; the rest are scattered deterministically."""
+        count = max(1, min(12, int(getattr(settings, "puddle_count", 1))))
+        base_x = max(0.0, min(1.0, float(getattr(settings, "puddle_x", 0.50))))
+        base_y = max(0.0, min(1.0, float(getattr(settings, "puddle_y", 0.84))))
+        base_w = max(0.05, min(1.20, float(getattr(settings, "puddle_width", 0.72))))
+        base_h = max(0.02, min(0.70, float(getattr(settings, "puddle_height", 0.22))))
+        spread = max(0.0, min(1.0, float(getattr(settings, "puddle_spread", 0.72))))
+        loaded = []
+        raw = getattr(settings, "puddles_json", "") or ""
+        try:
+            data = json.loads(raw) if raw else []
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        loaded.append({
+                            "x": max(0.0, min(1.0, float(item.get("x", base_x)))),
+                            "y": max(0.0, min(1.0, float(item.get("y", base_y)))),
+                            "width": max(0.03, min(1.20, float(item.get("width", base_w)))),
+                            "height": max(0.015, min(0.70, float(item.get("height", base_h)))),
+                        })
+        except Exception:
+            loaded = []
+        if len(loaded) >= count:
+            return loaded[:count]
+        offsets = [
+            (0.00, 0.00, 1.00, 1.00), (-0.26, -0.05, 0.54, 0.70),
+            (0.28, 0.03, 0.48, 0.64), (-0.12, 0.13, 0.42, 0.56),
+            (0.15, -0.14, 0.36, 0.50), (0.39, 0.13, 0.30, 0.46),
+            (-0.42, 0.10, 0.32, 0.48), (0.02, -0.24, 0.28, 0.42),
+            (0.45, -0.10, 0.25, 0.38), (-0.48, -0.16, 0.24, 0.36),
+            (0.30, 0.25, 0.22, 0.34), (-0.28, 0.27, 0.22, 0.34),
+        ]
+        specs = list(loaded)
+        for i in range(len(specs), count):
+            ox, oy, sw, sh = offsets[i % len(offsets)]
+            if count == 1:
+                w = base_w
+                h = base_h
+            else:
+                w = max(0.035, min(0.55, base_w * sw * 0.62))
+                h = max(0.018, min(0.32, base_h * sh * 0.74))
+            specs.append({
+                "x": max(0.02, min(0.98, base_x + ox * spread)),
+                "y": max(0.02, min(0.98, base_y + oy * spread)),
+                "width": w,
+                "height": h,
+            })
+        return specs
+
+    def _set_puddle_specs(self, settings: EffectOverlaySettings, specs):
+        cleaned = []
+        for item in list(specs or [])[:12]:
+            if isinstance(item, dict):
+                cleaned.append({
+                    "x": max(0.0, min(1.0, float(item.get("x", 0.5)))),
+                    "y": max(0.0, min(1.0, float(item.get("y", 0.84)))),
+                    "width": max(0.03, min(1.20, float(item.get("width", 0.20)))),
+                    "height": max(0.015, min(0.70, float(item.get("height", 0.08)))),
+                })
+        settings.puddles_json = json.dumps(cleaned, ensure_ascii=False)
+        if cleaned:
+            settings.puddle_x = cleaned[0]["x"]
+            settings.puddle_y = cleaned[0]["y"]
+            if len(cleaned) == 1:
+                settings.puddle_width = cleaned[0]["width"]
+                settings.puddle_height = cleaned[0]["height"]
+
+    def _puddle_rects(self, r: QRectF, settings: EffectOverlaySettings):
+        rects = []
+        if not bool(getattr(settings, "puddle_enabled", False)) or r.width() <= 0 or r.height() <= 0:
+            return rects
+        for i, spec in enumerate(self._puddle_specs(settings)):
+            cx = r.left() + r.width() * max(0.0, min(1.0, float(spec.get("x", 0.5))))
+            cy = r.top() + r.height() * max(0.0, min(1.0, float(spec.get("y", 0.84))))
+            w = r.width() * max(0.03, min(1.20, float(spec.get("width", 0.2))))
+            h = r.height() * max(0.015, min(0.70, float(spec.get("height", 0.08))))
+            rects.append((i, QRectF(cx - w * 0.5, cy - h * 0.5, w, h)))
+        return rects
+
+    def _puddle_union_rect(self, r: QRectF, settings: EffectOverlaySettings) -> QRectF:
+        rects = [rect for _, rect in self._puddle_rects(r, settings)]
+        if not rects:
+            return QRectF()
+        union = QRectF(rects[0])
+        for rect in rects[1:]:
+            union = union.united(rect)
+        return union
+
+    def _puddle_rect(self, r: QRectF, settings: EffectOverlaySettings) -> QRectF:
+        """Return the union bounds of all oval puddles."""
+        return self._puddle_union_rect(r, settings)
+
+    def _puddle_path(self, r: QRectF, settings: EffectOverlaySettings) -> QPainterPath:
+        path = QPainterPath()
+        for _, puddle_rect in self._puddle_rects(r, settings):
+            if puddle_rect.isValid() and not puddle_rect.isNull():
+                path.addEllipse(puddle_rect)
+        return path
+
+    def _point_in_puddle(self, x: float, y: float, puddle_rect: QRectF) -> bool:
+        if puddle_rect is None or puddle_rect.isNull() or not puddle_rect.isValid():
+            return False
+        rx = max(1.0, puddle_rect.width() * 0.5)
+        ry = max(1.0, puddle_rect.height() * 0.5)
+        cx = puddle_rect.center().x()
+        cy = puddle_rect.center().y()
+        nx = (float(x) - cx) / rx
+        ny = (float(y) - cy) / ry
+        return nx * nx + ny * ny <= 1.0
+
+    def _puddle_surface_y_for_x(self, x: float, puddle_rect: QRectF) -> Optional[float]:
+        if puddle_rect is None or puddle_rect.isNull() or not puddle_rect.isValid():
+            return None
+        rx = max(1.0, puddle_rect.width() * 0.5)
+        ry = max(1.0, puddle_rect.height() * 0.5)
+        cx = puddle_rect.center().x()
+        cy = puddle_rect.center().y()
+        nx = (float(x) - cx) / rx
+        if abs(nx) > 1.0:
+            return None
+        return cy - ry * math.sqrt(max(0.0, 1.0 - nx * nx))
+
+    def _puddle_impact_y_for_x(self, r: QRectF, settings: EffectOverlaySettings, x: float) -> Optional[float]:
+        best_y = None
+        for _, rect in self._puddle_rects(r, settings):
+            y = self._puddle_surface_y_for_x(x, rect)
+            if y is not None and (best_y is None or y < best_y):
+                best_y = y
+        return best_y
+
+    def _point_in_any_puddle(self, x: float, y: float, r: QRectF, settings: EffectOverlaySettings) -> bool:
+        for _, rect in self._puddle_rects(r, settings):
+            if self._point_in_puddle(x, y, rect):
+                return True
+        return False
+
+    def _has_visible_puddle_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        return bool(getattr(settings, "puddle_enabled", False))
+
+    def puddle_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        rect = self._puddle_union_rect(self.rect, settings)
+        if rect.isNull() or not rect.isValid():
+            return QRectF()
+        return rect.adjusted(-10.0, -10.0, 10.0, 10.0)
+
+    def _puddle_hit_index(self, pos: QPoint, settings: Optional[EffectOverlaySettings] = None):
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        p = QPointF(pos)
+        for index, rect in reversed(self._puddle_rects(self.rect, settings)):
+            if rect.contains(p) and self._point_in_puddle(p.x(), p.y(), rect):
+                return index
+        return None
+
+    def is_puddle_hit(self, pos: QPoint) -> bool:
+        settings = get_effect_overlay_settings(self.cfg)
+        return self._has_visible_puddle_effect(settings) and self._puddle_hit_index(pos, settings) is not None
+
+    def puddle_drag_offset_from_pos(self, pos: QPoint):
+        settings = get_effect_overlay_settings(self.cfg)
+        index = self._puddle_hit_index(pos, settings)
+        rects = dict(self._puddle_rects(self.rect, settings))
+        rect = rects.get(index) if index is not None else self._puddle_rect(self.rect, settings)
+        center = rect.center() if rect is not None and rect.isValid() and not rect.isNull() else self.rect.center()
+        return index, QPointF(float(pos.x()) - center.x(), float(pos.y()) - center.y())
+
+    def move_puddle_center_to(self, pos: QPoint, offset: Optional[QPointF] = None, index: Optional[int] = None):
+        settings = get_effect_overlay_settings(self.cfg)
+        r = self.rect
+        if r.width() <= 0 or r.height() <= 0:
+            return
+        if offset is None:
+            offset = QPointF(0.0, 0.0)
+        specs = self._puddle_specs(settings)
+        if not specs:
+            return
+        if index is None or index < 0 or index >= len(specs):
+            index = 0
+        new_center_x = float(pos.x()) - float(offset.x())
+        new_center_y = float(pos.y()) - float(offset.y())
+        specs[index]["x"] = max(0.0, min(1.0, (new_center_x - r.left()) / max(1.0, r.width())))
+        specs[index]["y"] = max(0.0, min(1.0, (new_center_y - r.top()) / max(1.0, r.height())))
+        self._set_puddle_specs(settings, specs)
+        set_effect_overlay_settings(self.cfg, settings)
+
+    def _puddle_resize_handles(self, rect: QRectF):
+        """編集モード用: 個別水たまりのサイズ変更ハンドル。"""
+        handle = max(8.0, min(16.0, min(rect.width(), rect.height()) * 0.12))
+        return {
+            "right": QRectF(rect.right() - handle * 0.5, rect.center().y() - handle * 0.5, handle, handle),
+            "bottom": QRectF(rect.center().x() - handle * 0.5, rect.bottom() - handle * 0.5, handle, handle),
+            "corner": QRectF(rect.right() - handle * 0.5, rect.bottom() - handle * 0.5, handle, handle),
+        }
+
+    def puddle_resize_hit_kind(self, pos: QPoint, settings: Optional[EffectOverlaySettings] = None):
+        """サイズ変更ハンドルに当たった場合は (水たまりindex, handle_kind) を返す。"""
+        if settings is None:
+            settings = get_effect_overlay_settings(self.cfg)
+        if not self._has_visible_puddle_effect(settings):
+            return None, None
+        point = QPointF(pos)
+        for index, rect in reversed(self._puddle_rects(self.rect, settings)):
+            handles = self._puddle_resize_handles(rect)
+            for kind in ("corner", "right", "bottom"):
+                if handles[kind].adjusted(-4.0, -4.0, 4.0, 4.0).contains(point):
+                    return index, kind
+        return None, None
+
+    def is_puddle_resize_hit(self, pos: QPoint) -> bool:
+        index, kind = self.puddle_resize_hit_kind(pos)
+        return index is not None and kind is not None
+
+    def resize_puddle_to(self, pos: QPoint, index: Optional[int] = None, kind: str = "corner"):
+        """右/下/右下ハンドルのドラッグ位置から、指定した水たまりだけをリサイズする。"""
+        settings = get_effect_overlay_settings(self.cfg)
+        r = self.rect
+        if r.width() <= 0 or r.height() <= 0:
+            return
+        specs = self._puddle_specs(settings)
+        if not specs:
+            return
+        if index is None or index < 0 or index >= len(specs):
+            index = 0
+        spec = dict(specs[index])
+        cx = r.left() + r.width() * max(0.0, min(1.0, float(spec.get("x", 0.5))))
+        cy = r.top() + r.height() * max(0.0, min(1.0, float(spec.get("y", 0.84))))
+        current_w = max(0.03, min(1.20, float(spec.get("width", getattr(settings, "puddle_width", 0.20)))))
+        current_h = max(0.015, min(0.70, float(spec.get("height", getattr(settings, "puddle_height", 0.08)))))
+        kind = str(kind or "corner")
+        if kind in ("right", "corner"):
+            spec["width"] = max(0.03, min(1.20, abs(float(pos.x()) - cx) * 2.0 / max(1.0, r.width())))
+        else:
+            spec["width"] = current_w
+        if kind in ("bottom", "corner"):
+            spec["height"] = max(0.015, min(0.70, abs(float(pos.y()) - cy) * 2.0 / max(1.0, r.height())))
+        else:
+            spec["height"] = current_h
+        specs[index] = spec
+        self._set_puddle_specs(settings, specs)
+        set_effect_overlay_settings(self.cfg, settings)
 
     def _water_reflection_cache_key(self, source: QImage, water_rect: QRectF, settings: EffectOverlaySettings):
         return (
@@ -5231,7 +6013,7 @@ class EffectsOverlayWidget(BaseWidget):
         source = getattr(self, "_water_reflection_source_image", None)
         p.save()
         p.setClipRect(water_rect)
-        if source is not None and not source.isNull():
+        if bool(getattr(settings, "water_mirror_reflect_widgets_enabled", True)) and source is not None and not source.isNull():
             reflected = self._make_water_reflection_image(source, water_rect, settings)
             if not reflected.isNull():
                 p.setOpacity(alpha / 255.0)
@@ -5456,22 +6238,570 @@ class EffectsOverlayWidget(BaseWidget):
             self._draw_single_water_fish(p, fish, settings, alpha, now)
         p.restore()
 
+    def _should_draw_morning_fog(self, settings: EffectOverlaySettings) -> bool:
+        if not bool(getattr(settings, "water_morning_fog_enabled", True)):
+            return False
+        if bool(getattr(settings, "water_morning_fog_follow_sunrise", True)):
+            return bool(getattr(settings, "sunrise_enabled", False))
+        return True
+
+    def _ensure_water_morning_fog(self, water_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        if not self._should_draw_morning_fog(settings):
+            self._water_morning_fog = []
+            self._water_morning_fog_rect_key = None
+            return
+        strength = max(0.0, float(getattr(settings, "water_morning_fog_strength", 0.65)))
+        target = max(0, min(48, int(8 + strength * 12)))
+        rect_key = (int(water_rect.left()), int(water_rect.top()), int(water_rect.width()), int(water_rect.height()))
+        if rect_key != getattr(self, "_water_morning_fog_rect_key", None):
+            self._water_morning_fog = []
+            self._water_morning_fog_rect_key = rect_key
+        rng = getattr(self, "_random", random.Random(20260505))
+        height_ratio = max(0.05, min(0.60, float(getattr(settings, "water_morning_fog_height", 0.22))))
+        while len(self._water_morning_fog) < target:
+            self._water_morning_fog.append({
+                "x": water_rect.left() + rng.random() * max(1.0, water_rect.width()),
+                "y": water_rect.top() + rng.random() * max(1.0, water_rect.height() * height_ratio),
+                "r": (18.0 + rng.random() * 54.0) * (0.55 + strength * 0.70),
+                "seed": rng.random() * 999.0,
+            })
+        if len(self._water_morning_fog) > target:
+            self._water_morning_fog = self._water_morning_fog[:target]
+
+    def _update_water_morning_fog(self, water_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        self._ensure_water_morning_fog(water_rect, settings, now)
+        if not getattr(self, "_water_morning_fog", None):
+            return
+        now_last = float(getattr(self, "_last_water_morning_fog_update", now))
+        dt = max(0.001, min(0.05, now - now_last))
+        self._last_water_morning_fog_update = now
+        drift = max(0.0, float(getattr(settings, "water_morning_fog_drift", 0.35)))
+        speed = (6.0 + drift * 18.0) * dt
+        height_ratio = max(0.05, min(0.60, float(getattr(settings, "water_morning_fog_height", 0.22))))
+        max_y = water_rect.top() + water_rect.height() * height_ratio
+        for blob in self._water_morning_fog:
+            blob["x"] += speed * (0.75 + 0.45 * math.sin(now * 0.35 + blob["seed"]))
+            blob["y"] += math.sin(now * 0.55 + blob["seed"] * 0.03) * dt * (1.2 + drift * 2.0)
+            if blob["x"] > water_rect.right() + blob["r"]:
+                blob["x"] = water_rect.left() - blob["r"]
+            if blob["y"] < water_rect.top() - blob["r"]:
+                blob["y"] = water_rect.top() + blob["r"]
+            blob["y"] = max(water_rect.top(), min(max_y, blob["y"]))
+
+    def _draw_water_depth(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, alpha_base: int):
+        if not bool(getattr(settings, "water_depth_enabled", True)):
+            return
+        strength = max(0.0, min(2.0, float(getattr(settings, "water_depth_strength", 0.75))))
+        if strength <= 0.01:
+            return
+        deep = QColor(getattr(settings, "water_depth_color", "#1A5B70"))
+        haze_alpha = max(0, min(255, int(getattr(settings, "water_depth_haze_alpha", 48))))
+        grad = QLinearGradient(water_rect.left(), water_rect.top(), water_rect.left(), water_rect.bottom())
+        c0 = QColor(deep); c0.setAlpha(max(0, min(255, int(alpha_base * 0.06 * strength))))
+        c1 = QColor(deep); c1.setAlpha(max(0, min(255, int(alpha_base * 0.18 * strength))))
+        c2 = QColor(deep); c2.setAlpha(max(0, min(255, int(alpha_base * 0.34 * strength))))
+        grad.setColorAt(0.0, c0)
+        grad.setColorAt(0.55, c1)
+        grad.setColorAt(1.0, c2)
+        p.save()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawRect(water_rect)
+        if haze_alpha > 0:
+            haze = QColor(255, 255, 255, max(0, min(255, int(haze_alpha * 0.55 * strength))))
+            hgrad = QLinearGradient(water_rect.left(), water_rect.top(), water_rect.left(), water_rect.top() + water_rect.height() * 0.55)
+            h0 = QColor(haze); h0.setAlpha(haze.alpha())
+            h1 = QColor(haze); h1.setAlpha(0)
+            hgrad.setColorAt(0.0, h0)
+            hgrad.setColorAt(1.0, h1)
+            p.setBrush(QBrush(hgrad))
+            p.drawRect(QRectF(water_rect.left(), water_rect.top(), water_rect.width(), water_rect.height() * 0.55))
+        p.restore()
+
+    def _draw_water_morning_fog(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        if not self._should_draw_morning_fog(settings):
+            return
+        strength = max(0.0, min(2.0, float(getattr(settings, "water_morning_fog_strength", 0.65))))
+        alpha = max(0, min(255, int(getattr(settings, "water_morning_fog_alpha", 95) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0:
+            return
+        self._update_water_morning_fog(water_rect, settings, now)
+        if not getattr(self, "_water_morning_fog", None):
+            return
+        fog_color = QColor(getattr(settings, "water_morning_fog_color", "#E9F6FF"))
+        height_ratio = max(0.05, min(0.60, float(getattr(settings, "water_morning_fog_height", 0.22))))
+        p.save()
+        p.setClipRect(QRectF(water_rect.left(), water_rect.top(), water_rect.width(), water_rect.height() * height_ratio))
+        p.setPen(Qt.PenStyle.NoPen)
+        for blob in self._water_morning_fog:
+            rr = float(blob.get("r", 28.0))
+            x = float(blob.get("x", 0.0))
+            y = float(blob.get("y", 0.0))
+            fade = 0.65 + 0.35 * math.sin(now * 0.32 + float(blob.get("seed", 0.0)))
+            a = max(0, min(255, int(alpha * 0.22 * strength * fade)))
+            if a <= 0:
+                continue
+            c0 = QColor(fog_color); c0.setAlpha(a)
+            c1 = QColor(fog_color); c1.setAlpha(0)
+            g = QRadialGradient(QPointF(x, y), rr)
+            g.setColorAt(0.0, c0)
+            g.setColorAt(1.0, c1)
+            p.setBrush(QBrush(g))
+            p.drawEllipse(QPointF(x, y), rr, rr * (0.62 + 0.18 * strength))
+        line_alpha = max(0, min(255, int(alpha * 0.28 * strength)))
+        if line_alpha > 0:
+            l = QColor(fog_color); l.setAlpha(line_alpha)
+            lg = QLinearGradient(water_rect.left(), water_rect.top(), water_rect.left(), water_rect.top() + water_rect.height() * 0.22)
+            l0 = QColor(l); l0.setAlpha(line_alpha)
+            l1 = QColor(l); l1.setAlpha(0)
+            lg.setColorAt(0.0, l0)
+            lg.setColorAt(1.0, l1)
+            p.setBrush(QBrush(lg))
+            p.drawRect(QRectF(water_rect.left(), water_rect.top(), water_rect.width(), water_rect.height() * 0.22))
+        p.restore()
+
+
+    def _ice_reflected_effects_cache_key(self, ice_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        skip = max(0, min(12, int(getattr(settings, "ice_skip_reflected_effect_frames", 2))))
+        bucket = int(now * 60.0) // max(1, skip + 1)
+        extra = getattr(self, "_extra_effects", {}) if hasattr(self, "_extra_effects") else {}
+        return (
+            int(ice_rect.left()), int(ice_rect.top()), int(ice_rect.width()), int(ice_rect.height()),
+            int(alpha_base), bucket,
+            bool(getattr(settings, "ice_reflect_effects_enabled", True)),
+            bool(getattr(settings, "ice_reflect_snow", True)), len(extra.get("snow", [])),
+            bool(getattr(settings, "ice_reflect_snow_crystal", True)), len(extra.get("snow_crystal", [])),
+            bool(getattr(settings, "ice_reflect_petals", True)), len(getattr(self, "_rose_petals", [])), len(getattr(self, "_sakura_petals", [])),
+            bool(getattr(settings, "ice_reflect_bamboo", True)),
+            bool(getattr(settings, "ice_reflect_shooting_star", True)), len(extra.get("shooting_star", [])),
+            bool(getattr(settings, "ice_reflect_meteor_shower", True)), len(extra.get("meteor_shower", [])),
+            bool(getattr(settings, "ice_reflect_rain", True)), len(getattr(self, "_rain", [])),
+            round(float(getattr(settings, "ice_mirror_wave", 2.2)), 2),
+        )
+
+    def _draw_reflected_effects_on_ice(self, p: QPainter, r: QRectF, ice_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        """氷面の個別エフェクト反射を必要に応じて数フレームキャッシュする。"""
+        if not bool(getattr(settings, "ice_reflect_effects_enabled", True)):
+            return
+        skip = max(0, min(12, int(getattr(settings, "ice_skip_reflected_effect_frames", 2))))
+        if skip <= 0 or ice_rect.width() <= 1 or ice_rect.height() <= 1:
+            self._draw_reflected_effects_on_ice_direct(p, r, ice_rect, settings, now, alpha_base)
+            return
+        key = self._ice_reflected_effects_cache_key(ice_rect, settings, now, alpha_base)
+        cached = getattr(self, "_ice_reflected_effects_cache_image", None)
+        if getattr(self, "_ice_reflected_effects_cache_signature", None) == key and cached is not None and not cached.isNull():
+            p.drawImage(QPointF(ice_rect.left(), ice_rect.top()), cached)
+            return
+        img_w = max(1, int(math.ceil(ice_rect.width())))
+        img_h = max(1, int(math.ceil(ice_rect.height())))
+        image = QImage(img_w, img_h, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        ip = QPainter(image)
+        try:
+            ip.setRenderHint(QPainter.RenderHint.Antialiasing, not bool(getattr(settings, "ice_lightweight_enabled", True)))
+            ip.translate(-ice_rect.left(), -ice_rect.top())
+            ip.setClipRect(ice_rect)
+            self._draw_reflected_effects_on_ice_direct(ip, r, ice_rect, settings, now, alpha_base)
+        finally:
+            ip.end()
+        self._ice_reflected_effects_cache_signature = key
+        self._ice_reflected_effects_cache_image = image
+        p.drawImage(QPointF(ice_rect.left(), ice_rect.top()), image)
+
+    def _draw_reflected_effects_on_ice_direct(self, p: QPainter, r: QRectF, ice_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        """氷面専用の個別エフェクト反射。水面用の既存反射描画を流用しつつ、氷用ON/OFFで分岐する。"""
+        if not bool(getattr(settings, "ice_reflect_effects_enabled", True)):
+            return
+        old_wave = getattr(settings, "water_mirror_wave", 7.0)
+        try:
+            settings.water_mirror_wave = float(getattr(settings, "ice_mirror_wave", 2.2))
+            if bool(getattr(settings, "ice_reflect_snow", True)):
+                for item in list(getattr(self, "_extra_effects", {}).get("snow", [])):
+                    self._draw_reflected_snow_like(p, item, ice_rect, settings, now, "snow_color", "#F5FCFF", alpha_base, crystal=False)
+            if bool(getattr(settings, "ice_reflect_snow_crystal", True)):
+                for item in list(getattr(self, "_extra_effects", {}).get("snow_crystal", [])):
+                    self._draw_reflected_snow_like(p, item, ice_rect, settings, now, "snow_crystal_color", "#EBFAFF", alpha_base, crystal=True)
+            if bool(getattr(settings, "ice_reflect_petals", True)):
+                self._draw_reflected_petals_on_water(p, ice_rect, settings, now, alpha_base)
+            if bool(getattr(settings, "ice_reflect_bamboo", True)):
+                self._draw_reflected_bamboo_on_water(p, r, ice_rect, settings, alpha_base)
+            if bool(getattr(settings, "ice_reflect_shooting_star", True)):
+                for item in list(getattr(self, "_extra_effects", {}).get("shooting_star", [])):
+                    self._draw_reflected_shooting_effect(p, item, ice_rect, settings, now, alpha_base)
+            if bool(getattr(settings, "ice_reflect_meteor_shower", True)):
+                for item in list(getattr(self, "_extra_effects", {}).get("meteor_shower", [])):
+                    self._draw_reflected_shooting_effect(p, item, ice_rect, settings, now, alpha_base)
+            if bool(getattr(settings, "ice_reflect_rain", True)):
+                self._draw_reflected_rain_on_water(p, ice_rect, settings, now, alpha_base)
+        finally:
+            try:
+                settings.water_mirror_wave = old_wave
+            except Exception:
+                pass
+
+    def _ice_surface_rect(self, r: QRectF, settings: EffectOverlaySettings) -> QRectF:
+        """氷・氷河の描画領域を返す。水面とは独立してY/深さを調整できる。"""
+        if r.width() <= 0 or r.height() <= 0:
+            return QRectF()
+        surface_ratio = max(0.0, min(1.0, float(getattr(settings, "ice_y", getattr(settings, "water_surface_y", 0.58)))))
+        depth_ratio = max(0.05, min(1.0, float(getattr(settings, "ice_depth", getattr(settings, "water_surface_depth", 0.42)))))
+        width_ratio = max(0.05, min(1.50, float(getattr(settings, "ice_width", 1.0))))
+        center_ratio = max(0.0, min(1.0, float(getattr(settings, "ice_x", 0.50))))
+        ice_w = max(1.0, r.width() * width_ratio)
+        center_x = r.left() + r.width() * center_ratio
+        x0 = center_x - ice_w * 0.5
+        y0 = r.top() + r.height() * surface_ratio
+        y1 = min(r.bottom(), y0 + r.height() * depth_ratio)
+        if y1 <= y0:
+            return QRectF()
+        return QRectF(x0, y0, ice_w, y1 - y0)
+
+    def _ice_reflection_cache_key(self, source: QImage, ice_rect: QRectF, settings: EffectOverlaySettings):
+        skip = max(0, min(12, int(getattr(settings, "ice_mirror_skip_frames", 2))))
+        if skip > 0:
+            source_token = int(getattr(self, "_ice_reflection_frame_bucket", 0))
+        else:
+            source_token = int(source.cacheKey()) if source is not None and not source.isNull() else 0
+        return (
+            source_token,
+            int(ice_rect.left()), int(ice_rect.top()), int(ice_rect.width()), int(ice_rect.height()),
+            round(float(getattr(settings, "ice_mirror_blur", 3.5)), 2),
+            round(float(getattr(settings, "ice_mirror_depth", 0.68)), 3),
+            skip,
+        )
+
+    def _make_ice_reflection_image(self, source: QImage, ice_rect: QRectF, settings: EffectOverlaySettings) -> QImage:
+        """氷面用の上下反転反射画像を作る。既存水面反射と同じ考え方だが、氷用パラメータで独立制御する。"""
+        if source is None or source.isNull() or ice_rect.width() <= 1 or ice_rect.height() <= 1:
+            return QImage()
+        key = self._ice_reflection_cache_key(source, ice_rect, settings)
+        cached = getattr(self, "_ice_reflection_cache_image", None)
+        if getattr(self, "_ice_reflection_cache_signature", None) == key and cached is not None and not cached.isNull():
+            return cached
+        x = max(0, int(ice_rect.left()))
+        w = max(1, min(int(ice_rect.width()), source.width() - x))
+        if w <= 0:
+            return QImage()
+        target_h = max(1, int(ice_rect.height() * max(0.05, min(1.0, float(getattr(settings, "ice_mirror_depth", 0.68))))))
+        target_h = min(target_h, max(1, int(ice_rect.height())))
+        y0 = max(0, int(ice_rect.top()))
+        src_h = min(target_h, y0)
+        if src_h <= 1:
+            return QImage()
+        src_y = max(0, y0 - src_h)
+        reflected = source.copy(x, src_y, w, src_h).mirrored(False, True)
+        if reflected.height() != target_h:
+            reflected = reflected.scaled(w, target_h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        reflected = self._blur_reflection_image(reflected, float(getattr(settings, "ice_mirror_blur", 3.5)))
+        self._ice_reflection_cache_signature = key
+        self._ice_reflection_cache_image = reflected
+        return reflected
+
+    def _draw_ice_mirror_reflection(self, p: QPainter, r: QRectF, ice_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "ice_mirror_enabled", True)):
+            return
+        alpha = max(0, min(255, int(getattr(settings, "ice_mirror_alpha", 118) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0:
+            return
+        source = getattr(self, "_water_reflection_source_image", None)
+        if not bool(getattr(settings, "ice_reflect_widgets_enabled", True)):
+            return
+        if source is None or source.isNull():
+            return
+        skip = max(0, min(12, int(getattr(settings, "ice_mirror_skip_frames", 2))))
+        self._ice_reflection_frame_bucket = int(now * 60.0) // max(1, skip + 1)
+        reflected = self._make_ice_reflection_image(source, ice_rect, settings)
+        if reflected.isNull():
+            return
+        wave = max(0.0, float(getattr(settings, "ice_mirror_wave", 2.2)))
+        p.save()
+        p.setClipRect(ice_rect)
+        p.setOpacity(alpha / 255.0)
+        slice_h = max(2, min(10, int(reflected.height() / 42) if reflected.height() > 0 else 4))
+        phase = now * (0.55 + max(0.0, float(getattr(settings, "water_surface_flow_speed", 0.55))) * 0.55)
+        y = 0
+        while y < reflected.height():
+            h = min(slice_h, reflected.height() - y)
+            fade = 1.0 - min(1.0, y / max(1.0, reflected.height())) * 0.62
+            # 水面より硬い氷面に見せるため、揺らぎは小さく角張った周期にする
+            offset = math.sin(phase + y * 0.045) * wave * fade
+            offset += math.sin(phase * 0.37 + y * 0.135) * wave * 0.32 * fade
+            src_rect = QRectF(0, y, reflected.width(), h)
+            dst_rect = QRectF(ice_rect.left() + offset, ice_rect.top() + y, ice_rect.width(), h)
+            p.drawImage(dst_rect, reflected, src_rect)
+            y += h
+        p.setOpacity(1.0)
+        tint_alpha = max(0, min(255, int(getattr(settings, "ice_mirror_tint_alpha", 70))))
+        if tint_alpha > 0:
+            tint = QColor(getattr(settings, "ice_color", "#9BDDF2"))
+            tint.setAlpha(tint_alpha)
+            grad = QLinearGradient(ice_rect.left(), ice_rect.top(), ice_rect.left(), ice_rect.bottom())
+            t0 = QColor(tint); t0.setAlpha(max(0, min(255, int(tint_alpha * 0.22))))
+            t1 = QColor(tint); t1.setAlpha(tint_alpha)
+            t2 = QColor(tint); t2.setAlpha(max(0, min(255, int(tint_alpha * 0.45))))
+            grad.setColorAt(0.0, t0)
+            grad.setColorAt(0.52, t1)
+            grad.setColorAt(1.0, t2)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawRect(ice_rect)
+        p.restore()
+
+    def _ice_static_cache_key(self, ice_rect: QRectF, settings: EffectOverlaySettings, alpha: int):
+        q = max(0.25, min(1.0, float(getattr(settings, "ice_quality_scale", 0.58))))
+        return (
+            int(ice_rect.width()), int(ice_rect.height()), int(alpha), round(q, 3),
+            str(getattr(settings, "ice_color", "#9BDDF2")),
+            str(getattr(settings, "ice_edge_color", "#E8FBFF")),
+            str(getattr(settings, "ice_highlight_color", "#F7FFFF")),
+            str(getattr(settings, "ice_shadow_color", "#2C6F93")),
+            round(float(getattr(settings, "ice_angle", -6.0)), 2),
+            round(float(getattr(settings, "ice_size", 185.0)), 2),
+            round(float(getattr(settings, "ice_crack_intensity", 0.46)), 3),
+            round(float(getattr(settings, "ice_internal_bubble_intensity", 0.36)), 3),
+            round(float(getattr(settings, "ice_glacier_roughness", 0.55)), 3),
+            bool(getattr(settings, "ice_lightweight_enabled", True)),
+            int(getattr(settings, "ice_max_facets", 72)),
+            int(getattr(settings, "ice_max_cracks", 16)),
+            int(getattr(settings, "ice_max_bubbles", 34)),
+        )
+
+    def _render_ice_static_surface_image(self, ice_rect: QRectF, settings: EffectOverlaySettings, alpha: int) -> QImage:
+        """Render static ice geometry once into a small transparent image."""
+        quality = max(0.25, min(1.0, float(getattr(settings, "ice_quality_scale", 0.58))))
+        lightweight = bool(getattr(settings, "ice_lightweight_enabled", True))
+        img_w = max(1, int(math.ceil(ice_rect.width() * quality)))
+        img_h = max(1, int(math.ceil(ice_rect.height() * quality)))
+        image = QImage(img_w, img_h, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        ip = QPainter(image)
+        try:
+            ip.setRenderHint(QPainter.RenderHint.Antialiasing, not lightweight)
+            local = QRectF(0.0, 0.0, float(img_w), float(img_h))
+            base = QColor(getattr(settings, "ice_color", "#9BDDF2"))
+            edge = QColor(getattr(settings, "ice_edge_color", "#E8FBFF"))
+            hi = QColor(getattr(settings, "ice_highlight_color", "#F7FFFF"))
+            shadow = QColor(getattr(settings, "ice_shadow_color", "#2C6F93"))
+            angle = float(getattr(settings, "ice_angle", -6.0))
+            block = max(20.0, float(getattr(settings, "ice_size", 185.0))) * quality
+            roughness = max(0.0, min(1.5, float(getattr(settings, "ice_glacier_roughness", 0.55))))
+            if lightweight:
+                roughness *= 0.80
+            grad = QLinearGradient(local.left(), local.top(), local.left(), local.bottom())
+            c0 = QColor(hi); c0.setAlpha(max(0, min(255, int(alpha * 0.38))))
+            c1 = QColor(base); c1.setAlpha(max(0, min(255, int(alpha * 0.64))))
+            c2 = QColor(shadow); c2.setAlpha(max(0, min(255, int(alpha * 0.50))))
+            grad.setColorAt(0.0, c0)
+            grad.setColorAt(0.46, c1)
+            grad.setColorAt(1.0, c2)
+            ip.setPen(Qt.PenStyle.NoPen)
+            ip.setBrush(QBrush(grad))
+            ip.drawRect(local)
+
+            rng_seed = 220515 + int(ice_rect.width()) * 7 + int(ice_rect.height()) * 11 + int(float(getattr(settings, "ice_size", 185.0))) * 13
+            rng = random.Random(rng_seed)
+            ip.save()
+            center = local.center()
+            ip.translate(center)
+            ip.rotate(angle)
+            ip.translate(-center)
+            desired_cols = max(3, int(local.width() / max(24.0, block * 0.62)) + 2)
+            desired_rows = max(2, int(local.height() / max(22.0, block * 0.42)) + 2)
+            max_facets = max(8, int(getattr(settings, "ice_max_facets", 72)))
+            if lightweight:
+                max_facets = min(max_facets, 72)
+            while desired_cols * desired_rows > max_facets and (desired_cols > 3 or desired_rows > 2):
+                if desired_cols >= desired_rows and desired_cols > 3:
+                    desired_cols -= 1
+                elif desired_rows > 2:
+                    desired_rows -= 1
+                else:
+                    break
+            cols, rows = desired_cols, desired_rows
+            cell_w = local.width() / max(1, cols - 1)
+            cell_h = local.height() / max(1, rows - 1)
+            start_x = local.left() - cell_w
+            start_y = local.top() - cell_h
+            facet_pen_width = max(0.5, block * (0.004 if lightweight else 0.006))
+            for row in range(rows):
+                for col in range(cols):
+                    x = start_x + col * cell_w + rng.uniform(-cell_w, cell_w) * 0.14 * roughness
+                    y = start_y + row * cell_h + rng.uniform(-cell_h, cell_h) * 0.17 * roughness
+                    w = cell_w * rng.uniform(0.78, 1.25)
+                    h = cell_h * rng.uniform(0.76, 1.30)
+                    path = QPainterPath()
+                    path.moveTo(x + rng.uniform(-w, w) * 0.04, y + rng.uniform(-h, h) * 0.04)
+                    path.lineTo(x + w * rng.uniform(0.86, 1.14), y + h * rng.uniform(-0.06, 0.10))
+                    path.lineTo(x + w * rng.uniform(0.80, 1.12), y + h * rng.uniform(0.84, 1.14))
+                    path.lineTo(x + w * rng.uniform(-0.12, 0.15), y + h * rng.uniform(0.84, 1.12))
+                    path.closeSubpath()
+                    shade_pick = rng.random()
+                    if shade_pick < 0.44:
+                        fill = QColor(hi); fill.setAlpha(max(0, min(255, int(alpha * rng.uniform(0.06, 0.14)))))
+                    elif shade_pick < 0.78:
+                        fill = QColor(base); fill.setAlpha(max(0, min(255, int(alpha * rng.uniform(0.08, 0.20)))))
+                    else:
+                        fill = QColor(shadow); fill.setAlpha(max(0, min(255, int(alpha * rng.uniform(0.06, 0.14)))))
+                    outline = QColor(edge); outline.setAlpha(max(0, min(255, int(alpha * rng.uniform(0.08, 0.20)))))
+                    ip.setBrush(QBrush(fill))
+                    ip.setPen(QPen(outline, facet_pen_width))
+                    ip.drawPath(path)
+            ip.restore()
+
+            bubble_intensity = max(0.0, min(2.0, float(getattr(settings, "ice_internal_bubble_intensity", 0.36))))
+            if bubble_intensity > 0.01:
+                rng = random.Random(rng_seed + 101)
+                count = int((local.width() * local.height()) / 14500.0 * bubble_intensity)
+                count = min(max(0, count), max(0, int(getattr(settings, "ice_max_bubbles", 34))))
+                for _ in range(count):
+                    x = local.left() + rng.random() * local.width()
+                    y = local.top() + rng.random() * local.height()
+                    rr = rng.uniform(1.0, max(1.5, block * 0.030))
+                    c = QColor(255, 255, 255, max(8, min(95, int(alpha * rng.uniform(0.06, 0.22)))))
+                    ip.setPen(Qt.PenStyle.NoPen)
+                    ip.setBrush(QBrush(c))
+                    ip.drawEllipse(QPointF(x, y), rr, rr * rng.uniform(0.55, 1.05))
+
+            crack_intensity = max(0.0, min(2.0, float(getattr(settings, "ice_crack_intensity", 0.46))))
+            if crack_intensity > 0.01:
+                rng = random.Random(rng_seed + 202)
+                crack_count = int((local.width() / 150.0 + local.height() / 90.0) * crack_intensity)
+                crack_count = min(max(1, crack_count), max(0, int(getattr(settings, "ice_max_cracks", 16))))
+                for _ in range(crack_count):
+                    x = local.left() + rng.random() * local.width()
+                    y = local.top() + rng.random() * local.height()
+                    length = rng.uniform(block * 0.32, block * 0.95) * (0.55 + crack_intensity * 0.30)
+                    dir_angle = math.radians(angle + rng.uniform(-42, 42))
+                    pts = [QPointF(x, y)]
+                    segments = rng.randint(2 if lightweight else 3, 5 if lightweight else 7)
+                    for _seg in range(segments):
+                        step = length / max(1, segments) * rng.uniform(0.65, 1.14)
+                        dir_angle += rng.uniform(-0.55, 0.55)
+                        x += math.cos(dir_angle) * step
+                        y += math.sin(dir_angle) * step
+                        pts.append(QPointF(x, y))
+                    crack_col = QColor(edge); crack_col.setAlpha(max(0, min(255, int(alpha * rng.uniform(0.28, 0.62)))))
+                    pen = QPen(crack_col, rng.uniform(0.6, 1.8) * (0.80 + crack_intensity * 0.18))
+                    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    ip.setPen(pen)
+                    for a, b in zip(pts, pts[1:]):
+                        ip.drawLine(a, b)
+                        if (not lightweight) and rng.random() < 0.35:
+                            branch_angle = math.atan2(b.y() - a.y(), b.x() - a.x()) + rng.choice([-1, 1]) * rng.uniform(0.55, 1.05)
+                            branch_len = length * rng.uniform(0.06, 0.18)
+                            ip.drawLine(b, QPointF(b.x() + math.cos(branch_angle) * branch_len, b.y() + math.sin(branch_angle) * branch_len))
+
+            ip.save()
+            ip.translate(local.center())
+            ip.rotate(angle)
+            ip.translate(-local.center())
+            highlight_pen = QPen(QColor(255, 255, 255, max(0, min(255, int(alpha * 0.22)))), max(0.8, block * 0.006))
+            highlight_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            ip.setPen(highlight_pen)
+            line_count = max(3, min(10, int(local.width() / max(80.0 * quality, block * 0.55))))
+            for i in range(line_count):
+                yy = local.top() + local.height() * (0.12 + 0.70 * (i + 0.4) / max(1, line_count))
+                ip.drawLine(QPointF(local.left() + block * 0.10, yy), QPointF(local.right() - block * 0.12, yy + math.sin(i) * block * 0.05))
+            ip.restore()
+
+            top_pen = QPen(QColor(edge.red(), edge.green(), edge.blue(), max(0, min(255, int(alpha * 0.68)))), max(1.0, block * 0.008))
+            top_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            ip.setPen(top_pen)
+            ip.drawLine(QPointF(local.left(), local.top() + 1.0), QPointF(local.right(), local.top() + 1.0))
+        finally:
+            ip.end()
+        return image
+
+    def _draw_ice_static_surface_cached(self, p: QPainter, ice_rect: QRectF, settings: EffectOverlaySettings, alpha: int):
+        key = self._ice_static_cache_key(ice_rect, settings, alpha)
+        cached = getattr(self, "_ice_surface_cache_image", None)
+        if bool(getattr(settings, "ice_static_cache_enabled", True)) and getattr(self, "_ice_surface_cache_signature", None) == key and cached is not None and not cached.isNull():
+            p.drawImage(ice_rect, cached)
+            return
+        image = self._render_ice_static_surface_image(ice_rect, settings, alpha)
+        if bool(getattr(settings, "ice_static_cache_enabled", True)):
+            self._ice_surface_cache_signature = key
+            self._ice_surface_cache_image = image
+        p.drawImage(ice_rect, image)
+
+    def _draw_ice_fog_fast(self, p: QPainter, ice_rect: QRectF, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "ice_fog_enabled", True)):
+            return
+        fog_alpha = max(0, min(255, int(getattr(settings, "ice_fog_alpha", 72) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if fog_alpha <= 0:
+            return
+        fog_h = ice_rect.height() * max(0.02, min(0.80, float(getattr(settings, "ice_fog_height", 0.24))))
+        drift = max(0.0, float(getattr(settings, "ice_fog_drift", 0.30)))
+        fog_color = QColor(getattr(settings, "ice_fog_color", "#EEF9FF"))
+        fog_rect = QRectF(ice_rect.left(), ice_rect.top(), ice_rect.width(), fog_h)
+        fg = QLinearGradient(fog_rect.left(), fog_rect.top(), fog_rect.left(), fog_rect.bottom())
+        f0 = QColor(fog_color); f0.setAlpha(max(0, min(255, int(fog_alpha * 0.18))))
+        f1 = QColor(fog_color); f1.setAlpha(fog_alpha)
+        f2 = QColor(fog_color); f2.setAlpha(0)
+        fg.setColorAt(0.0, f0)
+        fg.setColorAt(0.42, f1)
+        fg.setColorAt(1.0, f2)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(fg))
+        p.drawRect(fog_rect)
+        if not bool(getattr(settings, "ice_lightweight_enabled", True)):
+            fog_pen = QPen(QColor(fog_color.red(), fog_color.green(), fog_color.blue(), max(0, min(255, int(fog_alpha * 0.30)))), max(1.0, fog_h * 0.035))
+            fog_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(fog_pen)
+            for i in range(6):
+                t = i / 5.0
+                xoff = math.sin(now * (0.35 + drift) + i * 0.9) * ice_rect.width() * 0.028 * drift
+                y = fog_rect.top() + fog_h * (0.18 + 0.58 * t)
+                p.drawLine(QPointF(fog_rect.left() + xoff, y), QPointF(fog_rect.right() + xoff, y + math.sin(i * 1.3) * fog_h * 0.08))
+
+    def _draw_ice_surface(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        """軽量化したリアル寄りの氷/氷河表現。
+        静的な氷板・亀裂・気泡はキャッシュし、毎フレームは反射/霧だけを更新する。
+        """
+        alpha = max(0, min(255, int(getattr(settings, "ice_alpha", 178) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0 or r.width() <= 0 or r.height() <= 0:
+            return
+        ice_rect = self._ice_surface_rect(r, settings)
+        if ice_rect.isNull() or not ice_rect.isValid():
+            return
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, not bool(getattr(settings, "ice_lightweight_enabled", True)))
+        p.setClipRect(ice_rect)
+        self._draw_ice_mirror_reflection(p, r, ice_rect, settings, now)
+        self._draw_reflected_effects_on_ice(p, r, ice_rect, settings, now, alpha)
+        self._draw_ice_static_surface_cached(p, ice_rect, settings, alpha)
+        self._draw_ice_fog_fast(p, ice_rect, settings, now)
+        p.restore()
+
     def _draw_water_surface(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         alpha = max(0, min(255, int(getattr(settings, "water_surface_alpha", 92) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
         if alpha <= 0 or r.width() <= 0 or r.height() <= 0:
             return
-        surface_ratio = max(0.0, min(1.0, float(getattr(settings, "water_surface_y", 0.58))))
-        depth_ratio = max(0.05, min(1.0, float(getattr(settings, "water_surface_depth", 0.42))))
-        y0 = r.top() + r.height() * surface_ratio
-        y1 = min(r.bottom(), y0 + r.height() * depth_ratio)
-        if y1 <= y0:
-            return
-        water_rect = QRectF(r.left(), y0, r.width(), y1 - y0)
+        puddle_active = bool(getattr(settings, "puddle_enabled", False))
+        if puddle_active:
+            water_rect = self._puddle_rect(r, settings)
+            if water_rect.isNull() or not water_rect.isValid() or water_rect.width() <= 1 or water_rect.height() <= 1:
+                return
+            y0 = water_rect.top()
+            y1 = water_rect.bottom()
+        else:
+            surface_ratio = max(0.0, min(1.0, float(getattr(settings, "water_surface_y", 0.58))))
+            depth_ratio = max(0.05, min(1.0, float(getattr(settings, "water_surface_depth", 0.42))))
+            y0 = r.top() + r.height() * surface_ratio
+            y1 = min(r.bottom(), y0 + r.height() * depth_ratio)
+            if y1 <= y0:
+                return
+            water_rect = QRectF(r.left(), y0, r.width(), y1 - y0)
         base = QColor(getattr(settings, "water_surface_color", "#4FC3FF"))
         hi = QColor(getattr(settings, "water_surface_highlight_color", "#D8FAFF"))
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.setClipRect(water_rect)
+        if puddle_active:
+            puddle_path = self._puddle_path(r, settings)
+            p.setClipPath(puddle_path)
+        else:
+            p.setClipRect(water_rect)
         self._draw_water_mirror_reflection(p, r, water_rect, settings, now)
         grad = QLinearGradient(water_rect.left(), water_rect.top(), water_rect.left(), water_rect.bottom())
         c0 = QColor(base); c0.setAlpha(max(0, min(255, int(alpha * 0.28))))
@@ -5483,6 +6813,8 @@ class EffectsOverlayWidget(BaseWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(grad))
         p.drawRect(water_rect)
+        self._draw_water_depth(p, water_rect, settings, alpha)
+        self._draw_water_morning_fog(p, water_rect, settings, now, alpha)
         self._draw_water_fish(p, water_rect, settings, now)
         wave_count = max(0, min(120, int(getattr(settings, "water_surface_wave_count", 14))))
         if wave_count <= 0:
@@ -5526,7 +6858,13 @@ class EffectsOverlayWidget(BaseWidget):
         edge = QColor(hi)
         edge.setAlpha(max(0, min(255, int(alpha * 0.78))))
         p.setPen(QPen(edge, max(1.0, 1.3 + wave_height * 0.025)))
-        p.drawLine(QPointF(r.left() - span * 0.15, y0), QPointF(r.right() + span * 0.15, y0 + math.sin(phase) * max(1.0, wave_height * 0.08)))
+        if puddle_active:
+            edge_softness = max(0.0, min(1.0, float(getattr(settings, "puddle_edge_softness", 0.18))))
+            p.setPen(QPen(edge, max(1.0, 1.0 + wave_height * 0.02 + edge_softness * 2.0)))
+            for _, puddle_rect in self._puddle_rects(r, settings):
+                p.drawEllipse(puddle_rect.adjusted(1.5, 1.5, -1.5, -1.5))
+        else:
+            p.drawLine(QPointF(r.left() - span * 0.15, y0), QPointF(r.right() + span * 0.15, y0 + math.sin(phase) * max(1.0, wave_height * 0.08)))
         p.restore()
 
     def _bamboo_curve_point(self, base: QPointF, top: QPointF, bend: float, side: float, t: float):
@@ -6981,6 +8319,8 @@ class EffectsOverlayWidget(BaseWidget):
             0.0,
             min(1.0, getattr(settings, "rain_ripple_surface_y", 0.82))
         )
+        puddle_rect = self._puddle_rect(r, settings) if bool(getattr(settings, "puddle_enabled", False)) else QRectF()
+        puddle_active = puddle_rect.isValid() and not puddle_rect.isNull()
 
         for drop in self._rain:
             prev_y = drop.y
@@ -6988,7 +8328,8 @@ class EffectsOverlayWidget(BaseWidget):
             drop.x += drop.vx * dt
             drop.y += drop.vy * dt
 
-            hit_surface = prev_y < surface_y <= drop.y
+            impact_y = self._puddle_impact_y_for_x(r, settings, drop.x) if puddle_active else surface_y
+            hit_surface = impact_y is not None and prev_y < impact_y <= drop.y
             out_of_bounds = (
                     drop.y > r.bottom() + 60 or
                     drop.x < r.left() - 80 or
@@ -6996,7 +8337,7 @@ class EffectsOverlayWidget(BaseWidget):
             )
 
             if hit_surface:
-                self._maybe_spawn_rain_ripple(drop, surface_y, settings, now)
+                self._maybe_spawn_rain_ripple(drop, float(impact_y), settings, now)
                 self._reset_raindrop(drop, r, settings)
                 continue
 
@@ -7018,6 +8359,10 @@ class EffectsOverlayWidget(BaseWidget):
 
         if not getattr(settings, "ripple_enabled", True):
             return
+
+        if bool(getattr(settings, "puddle_enabled", False)):
+            if not self._point_in_any_puddle(float(drop.x), float(surface_y), self.rect, settings):
+                return
 
         cooldown = max(0.0, float(getattr(settings, "rain_ripple_cooldown", 0.025)))
         if now - getattr(self, "_last_rain_ripple_time", 0.0) < cooldown:
@@ -7156,6 +8501,9 @@ class EffectsOverlayWidget(BaseWidget):
         p.drawEllipse(QRectF(x - radius, y - radius, radius * 2, radius * 2))
 
     def _draw_ripples(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        puddle_rect = self._puddle_rect(r, settings) if bool(getattr(settings, "puddle_enabled", False)) else QRectF()
+        puddle_active = puddle_rect.isValid() and not puddle_rect.isNull()
+        puddle_path = self._puddle_path(r, settings) if puddle_active else QPainterPath()
         for ripple in self._ripples:
             age = now - ripple.created_at
             duration = max(0.2, 1.1 / max(0.05, ripple.speed))
@@ -7166,9 +8514,15 @@ class EffectsOverlayWidget(BaseWidget):
             c.setAlpha(max(0, min(255, alpha)))
             pen = QPen(c, max(1, int(3 * (1.0 - t) + 1)))
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            should_clip_to_puddle = puddle_active and self._point_in_any_puddle(float(ripple.x), float(ripple.y), r, settings)
+            if should_clip_to_puddle:
+                p.save()
+                p.setClipPath(puddle_path)
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPointF(ripple.x, ripple.y), radius, radius)
+            if should_clip_to_puddle:
+                p.restore()
 
     def _draw_noise(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         color = QColor(settings.noise_color)
@@ -7195,7 +8549,7 @@ class EffectsOverlayWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         settings = get_effect_overlay_settings(self.cfg)
-        selection_rect = self.interaction_rect() if (self._has_visible_sun_effect(settings) or self._has_visible_moon_effect(settings)) else self.rect
+        selection_rect = self.interaction_rect() if (self._has_visible_sun_effect(settings) or self._has_visible_moon_effect(settings) or self._has_visible_ice_effect(settings) or self._has_visible_puddle_effect(settings)) else self.rect
         pen = QPen(QColor("#FFFFFF"))
         pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
@@ -7212,6 +8566,17 @@ class EffectsOverlayWidget(BaseWidget):
             center = self._moon_center(self.rect, settings)
             p.drawLine(QPointF(center.x() - 6.0, center.y()), QPointF(center.x() + 6.0, center.y()))
             p.drawLine(QPointF(center.x(), center.y() - 6.0), QPointF(center.x(), center.y() + 6.0))
+        if self._has_visible_puddle_effect(settings):
+            p.setPen(QPen(QColor(180, 235, 255, 190), 1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for _, puddle_rect in self._puddle_rects(self.rect, settings):
+                p.drawEllipse(puddle_rect)
+                center = puddle_rect.center()
+                p.drawLine(QPointF(center.x() - 5.0, center.y()), QPointF(center.x() + 5.0, center.y()))
+                p.drawLine(QPointF(center.x(), center.y() - 5.0), QPointF(center.x(), center.y() + 5.0))
+                for handle_rect in self._puddle_resize_handles(puddle_rect).values():
+                    p.fillRect(handle_rect, QColor(180, 235, 255, 160))
+                    p.drawRect(handle_rect)
 
 class VisualizerWidget(BaseWidget):
     def __init__(self, cfg):
@@ -9163,7 +10528,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle("Lite Desktop Studio v1.5.5 - ウィジェット編集")
+        self.setWindowTitle("Lite Desktop Studio v1.5.6 - ウィジェット編集")
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -9174,6 +10539,8 @@ class WidgetEditor(QDialog):
         self.font_size = QSpinBox()
         self.font_size.setRange(8, 72)
         self.font_size.setValue(widget.cfg.font_size)
+        self.mirror_reflect_enabled = QCheckBox("鏡面反射に含める")
+        self.mirror_reflect_enabled.setChecked(bool(getattr(widget.cfg, "mirror_reflect_enabled", True)))
 
         self.text = QTextEdit()
         self.text.setPlainText(widget.cfg.text)
@@ -9198,6 +10565,7 @@ class WidgetEditor(QDialog):
         layout.addRow("背景色", self.bg)
         layout.addRow("", bg_btn)
         layout.addRow("フォントサイズ", self.font_size)
+        layout.addRow("鏡面反射", self.mirror_reflect_enabled)
         layout.addRow("HTML / Text", self.text)
         layout.addRow(btns)
 
@@ -9216,6 +10584,7 @@ class WidgetEditor(QDialog):
         self.widget.cfg.color = self.color.text()
         self.widget.cfg.bg = self.bg.text()
         self.widget.cfg.font_size = self.font_size.value()
+        self.widget.cfg.mirror_reflect_enabled = self.mirror_reflect_enabled.isChecked()
         self.widget.cfg.text = self.text.toPlainText()
 
 class LiteDeskStudio(QMainWindow):
@@ -9328,7 +10697,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.5")
+        self.setWindowTitle("Lite Desktop Studio v1.5.6")
         self.resize(960, 640)
 
         self.build_ui()
@@ -9621,6 +10990,8 @@ class LiteDeskStudio(QMainWindow):
         self.prop_bg_alpha.setRange(0, 255)
         self.prop_bg_alpha.setValue(155)
         self.prop_bg_alpha.valueChanged.connect(self.apply_properties_live)
+        self.prop_mirror_reflect_enabled = QCheckBox("🪞 このウィジェットを水面/氷面の鏡面反射に含める")
+        self.prop_mirror_reflect_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_cpu_color = QLineEdit()
         self.prop_memory_color = QLineEdit()
         self.prop_disk_color = QLineEdit()
@@ -9690,6 +11061,7 @@ class LiteDeskStudio(QMainWindow):
         form.addRow("🖼️ Background", self.prop_bg)
         form.addRow("", self.btn_pick_bg)
         form.addRow("透明度", self.prop_bg_alpha)
+        form.addRow("鏡面反射対象", self.prop_mirror_reflect_enabled)
         form.addRow("🧠 CPU Color", self.prop_cpu_color)
         form.addRow("", self.btn_pick_cpu_color)
 
@@ -9918,7 +11290,8 @@ class LiteDeskStudio(QMainWindow):
 
             for i, widget in enumerate(self.canvas.widgets):
                 cfg = widget.cfg
-                name = f"{i + 1}. {cfg.title} [{cfg.type}]"
+                reflect_mark = "" if bool(getattr(cfg, "mirror_reflect_enabled", True)) else " 🪞OFF"
+                name = f"{i + 1}. {cfg.title} [{cfg.type}]{reflect_mark}"
                 self.layer_list.addItem(name)
 
             index = self.canvas.get_selected_index()
@@ -9953,6 +11326,7 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_memory_color", None),
             getattr(self, "prop_disk_color", None),
             getattr(self, "prop_bg_alpha", None),
+            getattr(self, "prop_mirror_reflect_enabled", None),
             getattr(self, "prop_clock_show_digital", None),
             getattr(self, "prop_visualizer_flip_vertical", None),
             getattr(self, "prop_visualizer_peak_bar_enabled", None),
@@ -9992,6 +11366,7 @@ class LiteDeskStudio(QMainWindow):
                 self.set_property_enabled(False)
                 self.set_system_color_controls_visible(False)
                 self.prop_bg_alpha.setValue(155)
+                self.prop_mirror_reflect_enabled.setChecked(True)
                 self.prop_clock_show_digital.setChecked(True)
                 self.set_clock_controls_visible(False)
                 self.prop_visualizer_flip_vertical.setChecked(False)
@@ -10025,6 +11400,7 @@ class LiteDeskStudio(QMainWindow):
             self.prop_color.setText(cfg.color or "#5BE7FF")
             self.prop_bg.setText(cfg.bg or "#10141C")
             self.prop_bg_alpha.setValue(max(0, min(255, int(getattr(cfg, "bg_alpha", 155)))))
+            self.prop_mirror_reflect_enabled.setChecked(bool(getattr(cfg, "mirror_reflect_enabled", True)))
             self.prop_font_size.setValue(cfg.font_size)
             self.prop_text.setPlainText(cfg.text or "")
             is_clock_widget = cfg.type == "clock"
@@ -10104,6 +11480,7 @@ class LiteDeskStudio(QMainWindow):
             self.prop_color,
             self.prop_bg,
             self.prop_bg_alpha,
+            self.prop_mirror_reflect_enabled,
             self.prop_font_size,
             self.prop_text,
             self.btn_pick_color,
@@ -10166,6 +11543,7 @@ class LiteDeskStudio(QMainWindow):
             "prop_color",
             "prop_bg",
             "prop_bg_alpha",
+            "prop_mirror_reflect_enabled",
             "prop_font_size",
             "prop_text",
             "prop_cpu_color",
@@ -10219,6 +11597,7 @@ class LiteDeskStudio(QMainWindow):
             cfg.color = color_text
             cfg.bg = bg_text
             cfg.bg_alpha = self.prop_bg_alpha.value()
+            cfg.mirror_reflect_enabled = self.prop_mirror_reflect_enabled.isChecked()
             cfg.font_size = font_size
             cfg.text = self.prop_text.toPlainText()
 
@@ -10466,7 +11845,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v1.5.5 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v1.5.6 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -10601,6 +11980,7 @@ class DesktopCanvas(QWidget):
         self.dragging_effect_moon = False
         self.effect_moon_drag_offset = QPointF(0.0, 0.0)
         self.dragging_effect_sun = False
+        self.dragging_effect_ice = False
         self.effect_sun_drag_offset = QPointF(0.0, 0.0)
         self.effect_sun_drag_kind = "sun"
         self.edit_mode = False
@@ -10661,6 +12041,21 @@ class DesktopCanvas(QWidget):
         for widget in self.widgets:
             if isinstance(widget, EffectsOverlayWidget):
                 widget.on_mouse_release(pos)
+
+    def should_widget_reflect_in_mirrors(self, widget) -> bool:
+        """Return True when an individual widget is allowed to appear in water/ice mirror reflections."""
+        try:
+            if widget is None or not hasattr(widget, "cfg"):
+                return False
+            # EffectsOverlayWidget has dedicated per-effect reflection paths. Including it in the
+            # source image would recursively mirror entire overlay layers, so keep it out here.
+            if isinstance(widget, EffectsOverlayWidget):
+                return False
+            if hasattr(widget, "reflects_in_mirrors"):
+                return bool(widget.reflects_in_mirrors())
+            return bool(getattr(widget.cfg, "mirror_reflect_enabled", True))
+        except Exception:
+            return False
 
     def update_platform_hit_mask(self):
         if is_windows():
@@ -10938,12 +12333,21 @@ class DesktopCanvas(QWidget):
 
         reflection_source_image = None
         try:
-            needs_reflection_source = any(
-                isinstance(w, EffectsOverlayWidget)
-                and bool(getattr(get_effect_overlay_settings(w.cfg), "water_mirror_enabled", False))
-                and bool(getattr(get_effect_overlay_settings(w.cfg), "water_surface_enabled", False))
-                for w in self.widgets
-            )
+            needs_reflection_source = False
+            for w in self.widgets:
+                if isinstance(w, EffectsOverlayWidget):
+                    s = get_effect_overlay_settings(w.cfg)
+                    if (
+                        bool(getattr(s, "water_surface_enabled", False))
+                        and bool(getattr(s, "water_mirror_enabled", False))
+                        and bool(getattr(s, "water_mirror_reflect_widgets_enabled", True))
+                    ) or (
+                        bool(getattr(s, "ice_enabled", False))
+                        and bool(getattr(s, "ice_mirror_enabled", True))
+                        and bool(getattr(s, "ice_reflect_widgets_enabled", True))
+                    ):
+                        needs_reflection_source = True
+                        break
             if needs_reflection_source:
                 reflection_source_image = QImage(self.size(), QImage.Format.Format_ARGB32_Premultiplied)
                 reflection_source_image.fill(Qt.GlobalColor.transparent)
@@ -10952,7 +12356,7 @@ class DesktopCanvas(QWidget):
                 source_ctx = dict(ctx)
                 source_ctx["reflection_source_image"] = None
                 for src_w in self.widgets:
-                    if not isinstance(src_w, EffectsOverlayWidget):
+                    if self.should_widget_reflect_in_mirrors(src_w):
                         src_w.paint(rp, source_ctx)
                 rp.end()
         except Exception:
@@ -10998,6 +12402,11 @@ class DesktopCanvas(QWidget):
             self.dragging = False
             self.dragging_effect_moon = False
             self.dragging_effect_sun = False
+            self.dragging_effect_ice = False
+            self.dragging_effect_puddle = False
+            self.dragging_effect_puddle_resize = False
+            self.effect_puddle_drag_index = None
+            self.effect_puddle_resize_kind = "corner"
             self.effect_sun_drag_kind = "sun"
             self.volume_sliding = False
 
@@ -11034,18 +12443,50 @@ class DesktopCanvas(QWidget):
                         self.dragging = True
                         if isinstance(clicked_widget, EffectsOverlayWidget):
                             sun_kind = clicked_widget.sun_effect_hit_kind(pos)
+                            resize_index, resize_kind = clicked_widget.puddle_resize_hit_kind(pos)
                             if sun_kind is not None:
                                 self.dragging_effect_sun = True
                                 self.effect_sun_drag_kind = sun_kind
                                 self.effect_sun_drag_offset = clicked_widget.sun_drag_offset_from_pos(pos)
                                 self.dragging_effect_moon = False
+                                self.dragging_effect_ice = False
+                                self.dragging_effect_puddle = False
+                                self.dragging_effect_puddle_resize = False
                             elif clicked_widget.is_moon_hit(pos):
                                 self.dragging_effect_moon = True
                                 self.effect_moon_drag_offset = clicked_widget.moon_drag_offset_from_pos(pos)
                                 self.dragging_effect_sun = False
+                                self.dragging_effect_ice = False
+                                self.dragging_effect_puddle = False
+                                self.dragging_effect_puddle_resize = False
+                            elif clicked_widget.is_ice_hit(pos):
+                                self.dragging_effect_ice = True
+                                self.effect_ice_drag_offset = clicked_widget.ice_drag_offset_from_pos(pos)
+                                self.dragging_effect_sun = False
+                                self.dragging_effect_moon = False
+                                self.dragging_effect_puddle = False
+                                self.dragging_effect_puddle_resize = False
+                            elif resize_index is not None:
+                                self.dragging_effect_puddle_resize = True
+                                self.effect_puddle_drag_index = resize_index
+                                self.effect_puddle_resize_kind = resize_kind or "corner"
+                                self.dragging_effect_sun = False
+                                self.dragging_effect_moon = False
+                                self.dragging_effect_ice = False
+                                self.dragging_effect_puddle = False
+                            elif clicked_widget.is_puddle_hit(pos):
+                                self.dragging_effect_puddle = True
+                                self.effect_puddle_drag_index, self.effect_puddle_drag_offset = clicked_widget.puddle_drag_offset_from_pos(pos)
+                                self.dragging_effect_sun = False
+                                self.dragging_effect_moon = False
+                                self.dragging_effect_ice = False
+                                self.dragging_effect_puddle_resize = False
                             else:
                                 self.dragging_effect_moon = False
                                 self.dragging_effect_sun = False
+                                self.dragging_effect_ice = False
+                                self.dragging_effect_puddle = False
+                                self.dragging_effect_puddle_resize = False
                                 self.drag_offset = pos - QPoint(
                                     clicked_widget.cfg.x,
                                     clicked_widget.cfg.y
@@ -11053,6 +12494,9 @@ class DesktopCanvas(QWidget):
                         else:
                             self.dragging_effect_moon = False
                             self.dragging_effect_sun = False
+                            self.dragging_effect_ice = False
+                            self.dragging_effect_puddle = False
+                            self.dragging_effect_puddle_resize = False
                             self.drag_offset = pos - QPoint(
                                 clicked_widget.cfg.x,
                                 clicked_widget.cfg.y
@@ -11070,15 +12514,21 @@ class DesktopCanvas(QWidget):
         self.notify_effect_widgets_mouse_move(pos)
         new_pos = pos - self.drag_offset
 
-        if self.dragging and self.selected and self.edit_mode and isinstance(self.selected, EffectsOverlayWidget) and (getattr(self, "dragging_effect_sun", False) or getattr(self, "dragging_effect_moon", False)):
+        if self.dragging and self.selected and self.edit_mode and isinstance(self.selected, EffectsOverlayWidget) and (getattr(self, "dragging_effect_sun", False) or getattr(self, "dragging_effect_moon", False) or getattr(self, "dragging_effect_ice", False) or getattr(self, "dragging_effect_puddle", False) or getattr(self, "dragging_effect_puddle_resize", False)):
             if getattr(self, "dragging_effect_sun", False):
                 self.selected.move_sun_center_to(
                     pos,
                     getattr(self, "effect_sun_drag_offset", QPointF(0.0, 0.0)),
                     getattr(self, "effect_sun_drag_kind", "sun")
                 )
-            else:
+            elif getattr(self, "dragging_effect_moon", False):
                 self.selected.move_moon_center_to(pos, getattr(self, "effect_moon_drag_offset", QPointF(0.0, 0.0)))
+            elif getattr(self, "dragging_effect_ice", False):
+                self.selected.move_ice_center_to(pos, getattr(self, "effect_ice_drag_offset", QPointF(0.0, 0.0)))
+            elif getattr(self, "dragging_effect_puddle_resize", False):
+                self.selected.resize_puddle_to(pos, getattr(self, "effect_puddle_drag_index", None), getattr(self, "effect_puddle_resize_kind", "corner"))
+            else:
+                self.selected.move_puddle_center_to(pos, getattr(self, "effect_puddle_drag_offset", QPointF(0.0, 0.0)), getattr(self, "effect_puddle_drag_index", None))
             self.update_platform_hit_mask()
             self.update()
             return
@@ -11086,6 +12536,12 @@ class DesktopCanvas(QWidget):
         if self.dragging and self.selected and self.edit_mode:
             if getattr(self, "dragging_effect_moon", False) and isinstance(self.selected, EffectsOverlayWidget):
                 self.selected.move_moon_center_to(pos, getattr(self, "effect_moon_drag_offset", QPointF(0.0, 0.0)))
+            elif getattr(self, "dragging_effect_ice", False) and isinstance(self.selected, EffectsOverlayWidget):
+                self.selected.move_ice_center_to(pos, getattr(self, "effect_ice_drag_offset", QPointF(0.0, 0.0)))
+            elif getattr(self, "dragging_effect_puddle_resize", False) and isinstance(self.selected, EffectsOverlayWidget):
+                self.selected.resize_puddle_to(pos, getattr(self, "effect_puddle_drag_index", None), getattr(self, "effect_puddle_resize_kind", "corner"))
+            elif getattr(self, "dragging_effect_puddle", False) and isinstance(self.selected, EffectsOverlayWidget):
+                self.selected.move_puddle_center_to(pos, getattr(self, "effect_puddle_drag_offset", QPointF(0.0, 0.0)), getattr(self, "effect_puddle_drag_index", None))
             else:
                 self.selected.cfg.x = new_pos.x()
                 self.selected.cfg.y = new_pos.y()
@@ -11104,6 +12560,11 @@ class DesktopCanvas(QWidget):
             self.dragging = False
             self.dragging_effect_moon = False
             self.dragging_effect_sun = False
+            self.dragging_effect_ice = False
+            self.dragging_effect_puddle = False
+            self.dragging_effect_puddle_resize = False
+            self.effect_puddle_drag_index = None
+            self.effect_puddle_resize_kind = "corner"
             self.volume_sliding = False
             self.update_platform_hit_mask()
             self.save_config()
