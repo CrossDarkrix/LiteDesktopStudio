@@ -3,7 +3,7 @@
 	<img width="150px" height="150px" alt="LiteDesktopStudio" src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/icon.png"></a>
 </div>
 <h2 align="center">Lite Desktop Studio</h2>
-<p align="center">A Simple Desktop Gadet.</p>
+<p align="center">This tool let you customize your desktop to your liking.</p>
 
 I develop Artifacter and LiteDesktopStudio, but I do not have much spare time for development.
 I am accepting donations. Your support encourages continued development.
