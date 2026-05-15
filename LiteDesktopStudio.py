@@ -312,8 +312,8 @@ EFFECT_GPU_STATUS = {
     "requested": False,
     "configured": False,
     "available": False,
-    "backend": "未確認",
-    "message": "GPU支援描画は未確認です",
+    "backend": lds_tr("未確認"),
+    "message": lds_tr("GPU支援描画は未確認です"),
 }
 
 
@@ -332,7 +332,7 @@ def configure_effect_gpu_backend_before_app(force: bool = True) -> bool:
     supported systems can use GPU-backed composition and pixmap/image paths.
     """
     if str(os.environ.get(EFFECT_GPU_ENV_FLAG, "1")).lower() in ("0", "false", "off", "no"):
-        EFFECT_GPU_STATUS.update({"requested": False, "configured": False, "message": "環境変数でGPU支援描画が無効です"})
+        EFFECT_GPU_STATUS.update({"requested": False, "configured": False, "message": lds_tr("環境変数でGPU支援描画が無効です")})
         return False
     EFFECT_GPU_STATUS["requested"] = bool(force)
     try:
@@ -353,10 +353,10 @@ def configure_effect_gpu_backend_before_app(force: bool = True) -> bool:
             QSurfaceFormat.setDefaultFormat(fmt)
         except Exception:
             pass
-        EFFECT_GPU_STATUS.update({"configured": True, "message": "Qt GPU支援設定を適用しました"})
+        EFFECT_GPU_STATUS.update({"configured": True, "message": lds_tr("Qt GPU支援設定を適用しました")})
         return True
     except Exception as exc:
-        EFFECT_GPU_STATUS.update({"configured": False, "message": f"Qt GPU支援設定に失敗: {exc}"})
+        EFFECT_GPU_STATUS.update({"configured": False, "message": "{} {exc}".format(lds_tr("Qt GPU支援設定に失敗:"), exc=exc)})
         return False
 
 
@@ -376,15 +376,15 @@ def detect_effect_gpu_backend() -> Dict[str, object]:
                 backend = f"OpenGL {fmt.majorVersion()}.{fmt.minorVersion()}"
             except Exception:
                 pass
-            status.update({"available": True, "backend": backend, "message": "GPU支援描画が利用可能です"})
+            status.update({"available": True, "backend": backend, "message": lds_tr("GPU支援描画が利用可能です")})
             try:
                 ctx.doneCurrent()
             except Exception:
                 pass
         else:
-            status.update({"available": False, "backend": "Raster/Fallback", "message": "OpenGLコンテキストを作成できないためCPU描画にフォールバックします"})
+            status.update({"available": False, "backend": "Raster/Fallback", "message": lds_tr("OpenGLコンテキストを作成できないためCPU描画にフォールバックします")})
     except Exception as exc:
-        status.update({"available": False, "backend": "Raster/Fallback", "message": f"GPU確認に失敗したためCPU描画にフォールバックします: {exc}"})
+        status.update({"available": False, "backend": "Raster/Fallback", "message": "{} {exc}".format(lds_tr("GPU確認に失敗したためCPU描画にフォールバックします:"), exc=exc)})
     EFFECT_GPU_STATUS.update(status)
     return status
 
@@ -863,92 +863,92 @@ class EffectsOverlayEditorDialog(QDialog):
             return s
         mapping = {
             
-            "基本": "⚙️",
-            "バラ花びら": "🌹",
-            "バラ花・開花": "🌺",
-            "雨・粒子": "🌧️",
-            "桜花びら": "🌸",
-            "波紋・全体": "💧",
-            "色": "🎨",
-            "雪・水・火": "❄️",
-            "空・その他": "🌌",
-            "月": "🌙",
-            "朝焼け・太陽": "🌅",
-            "朝焼け": "🌅",
-            "太陽": "☀️",
-            "太陽光": "🌞",
-            "レンズフレア": "✨",
-            "月光": "🌕",
-            "月影": "🌘",
-            "月本体": "🌝",
+            lds_tr("基本"): "⚙️",
+            lds_tr("バラ花びら"): "🌹",
+            lds_tr("バラ花・開花"): "🌺",
+            lds_tr("雨・粒子"): "🌧️",
+            lds_tr("桜花びら"): "🌸",
+            lds_tr("波紋・全体"): "💧",
+            lds_tr("色"): "🎨",
+            lds_tr("雪・水・火"): "❄️",
+            lds_tr("空・その他"): "🌌",
+            lds_tr("月"): "🌙",
+            lds_tr("朝焼け・太陽"): "🌅",
+            lds_tr("朝焼け"): "🌅",
+            lds_tr("太陽"): "☀️",
+            lds_tr("太陽光"): "🌞",
+            lds_tr("レンズフレア"): "✨",
+            lds_tr("月光"): "🌕",
+            lds_tr("月影"): "🌘",
+            lds_tr("月本体"): "🌝",
 
             
-            "雨粒": "🌧️",
-            "パーティクル": "✨",
-            "ノイズ": "🌫️",
-            "グロー": "💡",
-            "自動/通常 波紋": "〰️",
-            "バラの花びら": "🌹",
-            "中くらいのバラの花": "🌺",
-            "大きな咲いた花が散る": "🌺",
-            "桜の花びら": "🌸",
-            "雪": "🌨️",
-            "中くらいの雪の結晶": "❄️",
-            "水玉": "💧",
-            "泡": "🫧",
-            "炎": "🔥",
-            "水が吹き出る": "🚿",
-            "火の玉": "🔥",
-            "満天の星空": "🌌",
-            "星空": "🌌",
-            "天の川": "🌌",
-            "竹林": "🎋",
-            "竹": "🎋",
-            "竹色": "🎨",
-            "竹の影色": "🎨",
-            "竹の節色": "🎨",
-            "竹の葉色": "🎨",
-            "星空色": "🎨",
-            "星空サブ色": "🎨",
-            "天の川色": "🎨",
-            "流れ星": "☄️",
-            "流星群": "🌠",
-            "バルーン": "🎈",
+            lds_tr("雨粒"): "🌧️",
+            lds_tr("パーティクル"): "✨",
+            lds_tr("ノイズ"): "🌫️",
+            lds_tr("グロー"): "💡",
+            lds_tr("自動/通常 波紋"): "〰️",
+            lds_tr("バラの花びら"): "🌹",
+            lds_tr("中くらいのバラの花"): "🌺",
+            lds_tr("大きな咲いた花が散る"): "🌺",
+            lds_tr("桜の花びら"): "🌸",
+            lds_tr("雪"): "🌨️",
+            lds_tr("中くらいの雪の結晶"): "❄️",
+            lds_tr("水玉"): "💧",
+            lds_tr("泡"): "🫧",
+            lds_tr("炎"): "🔥",
+            lds_tr("水が吹き出る"): "🚿",
+            lds_tr("火の玉"): "🔥",
+            lds_tr("満天の星空"): "🌌",
+            lds_tr("星空"): "🌌",
+            lds_tr("天の川"): "🌌",
+            lds_tr("竹林"): "🎋",
+            lds_tr("竹"): "🎋",
+            lds_tr("竹色"): "🎨",
+            lds_tr("竹の影色"): "🎨",
+            lds_tr("竹の節色"): "🎨",
+            lds_tr("竹の葉色"): "🎨",
+            lds_tr("星空色"): "🎨",
+            lds_tr("星空サブ色"): "🎨",
+            lds_tr("天の川色"): "🎨",
+            lds_tr("流れ星"): "☄️",
+            lds_tr("流星群"): "🌠",
+            lds_tr("バルーン"): "🎈",
 
             
-            "雨粒が水面に当たったら波紋": "🌧️",
-            "マウスクリック波紋": "🖱️",
-            "マウス周辺から微粒子が逃げる": "🧲",
-            "マウス周辺だけ光る": "💡",
-            "花びらが水面に落ちたら波紋": "🌹",
-            "水面に少し浮かべる": "🌊",
-            "水面で花びらをフェードアウト": "🌊",
-            "バラ花が水面に落ちたら波紋": "🌺",
-            "咲いた花を再生成": "🔄",
-            "桜花びらが水面で波紋": "🌸",
-            "下に落ちた時に波紋": "〰️",
+            lds_tr("雨粒が水面に当たったら波紋"): "🌧️",
+            lds_tr("マウスクリック波紋"): "🖱️",
+            lds_tr("マウス周辺から微粒子が逃げる"): "🧲",
+            lds_tr("マウス周辺だけ光る"): "💡",
+            lds_tr("花びらが水面に落ちたら波紋"): "🌹",
+            lds_tr("水面に少し浮かべる"): "🌊",
+            lds_tr("水面で花びらをフェードアウト"): "🌊",
+            lds_tr("バラ花が水面に落ちたら波紋"): "🌺",
+            lds_tr("咲いた花を再生成"): "🔄",
+            lds_tr("桜花びらが水面で波紋"): "🌸",
+            lds_tr("下に落ちた時に波紋"): "〰️",
 
             
-            "ON/OFF": "🔘",
-            "数": "🔢",
-            "速度": "⚡",
-            "サイズ": "📏",
-            "透明度": "🪟",
-            "波紋": "〰️",
-            "波紋発生率": "💧",
-            "水面Y": "🌊",
-            "水面": "🌊",
-            "水面色": "🎨",
-            "水面ハイライト色": "🎨",
-            "流れ角度": "🧭",
-            "流れ速度": "⚡",
-            "波の本数": "🔢",
-            "波の高さ": "📏",
-            "水面の深さ": "🌊",
-            "色": "🎨",
-            "波紋色": "💧",
-            "ノイズ色": "🌫️",
-            "マウスグロー色": "💡",
+            lds_tr("ON/OFF"): "🔘",
+            lds_tr("数"): "🔢",
+            lds_tr("速度"): "⚡",
+            lds_tr("サイズ"): "📏",
+            lds_tr("透明度"): "🪟",
+            lds_tr("波紋"): "〰️",
+            lds_tr("波紋発生率"): "💧",
+            lds_tr("水面Y"): "🌊",
+            lds_tr("水面"): "🌊",
+            lds_tr("水面色"): "🎨",
+            lds_tr("水面ハイライト色"): "🎨",
+            lds_tr("流れ角度"): "🧭",
+            lds_tr("流れ速度"): "⚡",
+            lds_tr("波の本数"): "🔢",
+            lds_tr("波の高さ"): "📏",
+            lds_tr("水面の深さ"): "🌊",
+            lds_tr("色"): "🎨",
+            lds_tr("波紋色"): "💧",
+            lds_tr("ノイズ色"): "🌫️",
+            lds_tr("マウスグロー色"): "💡",
         }
         icon = mapping.get(s)
         return f"{icon} {s}" if icon else s
@@ -956,17 +956,17 @@ class EffectsOverlayEditorDialog(QDialog):
     def _add_beginner_tab_guides(self):
         """Add short, theme-aware beginner explanations to every settings tab."""
         guides = [
-            (self.basic_form, "基本", "効果を表示するかどうかを切り替える入口です。迷った時はプリセットボタンを使うと安全です。"),
-            (self.rose_form, "バラ花びら", "花びらの数・速さ・大きさを調整します。数を増やすほど華やかですが、パソコン負荷も上がります。"),
-            (self.rose_flower_form, "バラ花・開花", "大きめの花や開花演出を調整します。まずは数を少なめにすると見やすくなります。"),
-            (self.rain_form, "雨・粒子", "雨や小さな光の粒を調整します。重く感じたら数を減らしてください。"),
-            (self.sakura_form, "桜花びら", "桜の花びらの量や揺れ方を調整します。春らしい雰囲気を作る画面です。"),
-            (self.ripple_form, "波紋・全体", "波紋、マウス光、描画のなめらかさを調整します。GPUやFPSは分からなければ初期値がおすすめです。"),
-            (self.color_form, "色", "各効果の色を選べます。Photoshopの色指定のように、カラーコードを直接入力することもできます。"),
-            (self.extra_weather_form, "雪・水・火", "雪・泡・炎などの追加演出です。ONにする効果を少なめにすると安定しやすくなります。"),
-            (self.extra_sky_form, "空・その他", "星空・天の川・水面・竹林・氷など、背景の雰囲気を作る画面です。"),
-            (self.sunrise_form, "朝焼け・太陽", "朝焼け、太陽、光、レンズフレアを調整します。位置と透明度から触ると分かりやすいです。"),
-            (self.moon_form, "月", "月本体・月光・月影を調整します。X/Y位置で場所、半径で大きさを変えられます。"),
+            (self.basic_form, lds_tr("基本"), lds_tr("効果を表示するかどうかを切り替える入口です。迷った時はプリセットボタンを使うと安全です。")),
+            (self.rose_form, lds_tr("バラ花びら"), lds_tr("花びらの数・速さ・大きさを調整します。数を増やすほど華やかですが、パソコン負荷も上がります。")),
+            (self.rose_flower_form, lds_tr("バラ花・開花"), lds_tr("大きめの花や開花演出を調整します。まずは数を少なめにすると見やすくなります。")),
+            (self.rain_form, lds_tr("雨・粒子"), lds_tr("雨や小さな光の粒を調整します。重く感じたら数を減らしてください。")),
+            (self.sakura_form, lds_tr("桜花びら"), lds_tr("桜の花びらの量や揺れ方を調整します。春らしい雰囲気を作る画面です。")),
+            (self.ripple_form, lds_tr("波紋・全体"), lds_tr("波紋、マウス光、描画のなめらかさを調整します。GPUやFPSは分からなければ初期値がおすすめです。")),
+            (self.color_form, lds_tr("色"), lds_tr("各効果の色を選べます。Photoshopの色指定のように、カラーコードを直接入力することもできます。")),
+            (self.extra_weather_form, lds_tr("雪・水・火"), lds_tr("雪・泡・炎などの追加演出です。ONにする効果を少なめにすると安定しやすくなります。")),
+            (self.extra_sky_form, lds_tr("空・その他"), lds_tr("星空・天の川・水面・竹林・氷など、背景の雰囲気を作る画面です。")),
+            (self.sunrise_form, lds_tr("朝焼け・太陽"), lds_tr("朝焼け、太陽、光、レンズフレアを調整します。位置と透明度から触ると分かりやすいです。")),
+            (self.moon_form, lds_tr("月"), lds_tr("月本体・月光・月影を調整します。X/Y位置で場所、半径で大きさを変えられます。")),
         ]
         for form, title, body in guides:
             try:
@@ -4305,10 +4305,6 @@ class WindowsTheme:
 
     @staticmethod
     def apply_immersive_dark_titlebar(hwnd: int, enable: bool):
-        """
-        Windows 10/11 の DWM ダークタイトルバー属性。
-        フレームレスなので実質補助的。
-        """
         try:
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20
             value = ctypes.c_int(1 if enable else 0)
@@ -4770,28 +4766,28 @@ class WeatherEngine:
         text = text or "--"
 
         table = {
-            "Sunny": "晴れ",
-            "Clear": "快晴",
-            "Partly cloudy": "一部曇り",
-            "Cloudy": "曇り",
-            "Overcast": "厚い曇り",
-            "Mist": "霧",
-            "Fog": "霧",
-            "Patchy rain nearby": "所により雨",
-            "Light rain": "小雨",
-            "Moderate rain": "雨",
-            "Heavy rain": "強い雨",
-            "Light drizzle": "霧雨",
-            "Patchy light drizzle": "所により霧雨",
-            "Patchy light rain": "所により小雨",
-            "Light rain shower": "弱いにわか雨",
-            "Moderate or heavy rain shower": "強いにわか雨",
-            "Thunderstorm": "雷雨",
-            "Patchy snow nearby": "所により雪",
-            "Light snow": "小雪",
-            "Moderate snow": "雪",
-            "Heavy snow": "大雪",
-            "Blizzard": "吹雪",
+            "Sunny": lds_tr("晴れ"),
+            "Clear": lds_tr("快晴"),
+            "Partly cloudy": lds_tr("一部曇り"),
+            "Cloudy": lds_tr("曇り"),
+            "Overcast": lds_tr("厚い曇り"),
+            "Mist": lds_tr("霧"),
+            "Fog": lds_tr("霧"),
+            "Patchy rain nearby": lds_tr("所により雨"),
+            "Light rain": lds_tr("小雨"),
+            "Moderate rain": lds_tr("雨"),
+            "Heavy rain": lds_tr("強い雨"),
+            "Light drizzle": lds_tr("霧雨"),
+            "Patchy light drizzle": lds_tr("所により霧雨"),
+            "Patchy light rain": lds_tr("所により小雨"),
+            "Light rain shower": lds_tr("弱いにわか雨"),
+            "Moderate or heavy rain shower": lds_tr("強いにわか雨"),
+            "Thunderstorm": lds_tr("雷雨"),
+            "Patchy snow nearby": lds_tr("所により雪"),
+            "Light snow": lds_tr("小雪"),
+            "Moderate snow": lds_tr("雪"),
+            "Heavy snow": lds_tr("大雪"),
+            "Blizzard": lds_tr("吹雪"),
         }
 
         return table.get(text, text)
@@ -9367,7 +9363,7 @@ class VisualizerWidget(BaseWidget):
 
     def _visualizer_orientation(self):
         value = str(getattr(self.cfg, "visualizer_orientation", "horizontal") or "horizontal").strip().lower()
-        return "vertical" if value in ("vertical", "縦", "vertical_stack", "side") else "horizontal"
+        return "vertical" if value in ("vertical", lds_tr("縦"), "vertical_stack", "side") else "horizontal"
 
     def _visualizer_bar_width_scale(self):
         try:
@@ -10131,8 +10127,8 @@ class NetworkWidget(BaseWidget):
     def _network_direction_label(self, direction):
         direction = str(direction or "").lower()
         if direction in ("up", "upload", "sent"):
-            return "上り"
-        return "下り"
+            return lds_tr("上り")
+        return lds_tr("下り")
 
     def _draw_net_row(self, p: QPainter, x, y, w, direction, value, color):
         icon_rect = QRectF(x, y, 28, 20)
@@ -10578,7 +10574,7 @@ class CalendarWidget(BaseWidget):
         cell_w = grid_w / 7.0
         cell_h = max(18.0, (grid_h - header_h) / 6.0)
 
-        weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+        weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
         p.setFont(QFont("Segoe UI", 8, QFont.Bold))
 
@@ -10668,7 +10664,20 @@ class CalendarWidget(BaseWidget):
         p.drawRoundedRect(self.rect, 16, 16)
 
 
-
+__htmls = """
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="title">JavaScript Widget</div>
+  <p id="text">{lds}</p>
+  <button onclick="document.getElementById('text').textContent = 'Clicked: ' + new Date().toLocaleTimeString();">
+    Click me
+  </button>
+</div>
+</body>
+</html>
+""".format(lds=lds_tr("この内容は WidgetConfig.text として config.json に保存されます。"))
 DEFAULT_JS_HTML = """
 <!doctype html>
 <html>
@@ -10706,20 +10715,7 @@ button {
     border: 1px solid rgba(128, 255, 159, 0.55);
     background: rgba(128, 255, 159, 0.12);
     color: white;
-}
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="title">JavaScript Widget</div>
-  <p id="text">この内容は WidgetConfig.text として config.json に保存されます。</p>
-  <button onclick="document.getElementById('text').textContent = 'Clicked: ' + new Date().toLocaleTimeString();">
-    Click me
-  </button>
-</div>
-</body>
-</html>
-"""
+}""" + __htmls
 
 
 def build_js_html_document(html: str) -> str:
@@ -10919,8 +10915,8 @@ class HtmlWidget(BaseWidget):
 
         html = self.cfg.text or """
         <h2 style="color:#5BE7FF;">HTML Widget</h2>
-        <p style="color:white;">ここに HTML/CSS 風の内容を書けます。</p>
-        """
+        <p style="color:white;">{}</p>
+        """.format(lds_tr("ここに HTML/CSS 風の内容を書けます。"))
 
         if html != self.last_text:
             self.doc.setDefaultFont(QFont("Segoe UI", self.cfg.font_size))
@@ -11058,7 +11054,7 @@ class WeatherWidget(BaseWidget):
             self.cfg.title or ""
         )
 
-        area_label = data.get("area") or location or "現在地"
+        area_label = data.get("area") or location or lds_tr("現在地")
         country = data.get("country") or ""
 
         if country:
@@ -11082,7 +11078,7 @@ class WeatherWidget(BaseWidget):
             p.drawText(
                 QRectF(r.left() + 14, r.top() + 62, r.width() - 28, 40),
                 Qt.AlignLeft | Qt.AlignVCenter,
-                "天気の取得に失敗しました"
+                lds_tr("天気の取得に失敗しました")
             )
 
             p.setFont(QFont("Segoe UI", 8))
@@ -11140,7 +11136,7 @@ class WeatherWidget(BaseWidget):
         p.drawText(
             feels_rect,
             Qt.AlignLeft | Qt.AlignVCenter,
-            f"体感 {feels}°C"
+            lds_tr("体感 ") + f"{feels}°C"
         )
 
         info_top = r.top() + 122
@@ -11151,7 +11147,7 @@ class WeatherWidget(BaseWidget):
             r.left() + 14,
             info_top,
             r.width() - 28,
-            "湿度",
+            lds_tr("湿度"),
             f"{humidity}%",
             sub_color,
             text_color
@@ -11162,7 +11158,7 @@ class WeatherWidget(BaseWidget):
             r.left() + 14,
             info_top + info_h,
             r.width() - 28,
-            "風速",
+            lds_tr("風速"),
             f"{wind} km/h",
             sub_color,
             text_color
@@ -11177,7 +11173,7 @@ class WeatherWidget(BaseWidget):
             p.drawText(
                 QRectF(r.left() + 14, forecast_top, r.width() - 28, 18),
                 Qt.AlignLeft | Qt.AlignVCenter,
-                "3日予報"
+                lds_tr("3日予報")
             )
 
             card_top = forecast_top + 22
@@ -11228,7 +11224,7 @@ class WeatherWidget(BaseWidget):
             p.drawText(
                 QRectF(r.left() + 12, r.bottom() - 20, r.width() - 24, 14),
                 Qt.AlignRight | Qt.AlignVCenter,
-                f"更新 {updated}"
+                lds_tr("更新 ") + f"{updated}"
             )
 
         if self.selected and ctx.get("edit_mode", True):
@@ -11568,41 +11564,41 @@ class LiteDeskStudio(QMainWindow):
     def apply_beginner_main_tooltips(self):
         """Beginner explanations for the main widget editor controls."""
         tips = {
-            "btn_add_visualizer": "音楽に合わせて動くバー表示を追加します。まずはこのボタンで追加し、右側でサイズや色を調整します。",
-            "btn_add_effects_overlay": "花びら・雨・月・水面などの背景演出を追加します。細かい設定は中央の『エフェクト設定』から開けます。",
-            "btn_add_system": "CPU、メモリ、ディスク使用率を表示するウィジェットを追加します。",
-            "btn_add_volume": "音量を表示・操作するウィジェットを追加します。",
-            "btn_add_clock": "アナログ時計を追加します。デジタル時刻の表示は右側で切り替えできます。",
-            "btn_add_network": "通信速度を表示するウィジェットを追加します。DOWN/UP色は右側で変更できます。",
-            "btn_add_calendar": "カレンダーを表示するウィジェットを追加します。",
-            "btn_add_media": "再生/一時停止など、音楽プレイヤー操作用のウィジェットを追加します。",
-            "btn_add_html_js": "JavaScriptを含むHTMLウィジェットを追加します。初心者は通常のHTML/CSS風から始めるのがおすすめです。",
-            "btn_add_html": "文字や簡単なHTML/CSS風デザインを表示するウィジェットを追加します。",
-            "btn_add_weather": "天気ウィジェットを追加します。地域名は右側のプロパティで変更します。",
-            "layer_list": "追加したウィジェットの一覧です。ここで選ぶと、右側に編集項目が表示されます。",
-            "btn_layer_down": "選択中のウィジェットを背面に移動します。重なり順を直したい時に使います。",
-            "btn_layer_up": "選択中のウィジェットを前面に移動します。",
-            "edit_mode_check": "ONにすると、ウィジェットをドラッグ移動・編集できます。普段使う時はOFFにすると誤操作を防げます。",
-            "theme_combo": "メイン設定画面の見た目テーマを切り替えます。右側の説明や色もテーマに合わせて見やすくなります。",
-            "btn_effects_editor": "エフェクトオーバーレイの詳細設定を開きます。",
-            "btn_save": "現在の配置と設定を保存します。",
-            "btn_reload": "画面を再読み込みします。表示が乱れた時に使います。",
-            "btn_duplicate": "選択中のウィジェットをコピーします。",
-            "btn_delete": "選択中のウィジェットを削除します。削除前に選択対象を確認してください。",
-            "btn_export": "現在の設定をファイルとして保存します。別PCへの移動やバックアップに使えます。",
-            "btn_import": "保存済みの設定ファイルを読み込みます。",
-            "btn_close_canvas": "アプリを終了します。終了前に保存しておくと安心です。",
-            "prop_type": "選択中ウィジェットの種類です。ここは確認用なので編集できません。",
-            "prop_title": "ウィジェット名です。レイヤー一覧で見分けやすい名前にできます。",
-            "prop_x": "画面左からの位置です。ドラッグ移動でも変更できます。",
-            "prop_y": "画面上からの位置です。ドラッグ移動でも変更できます。",
-            "prop_w": "ウィジェットの横幅です。大きくすると表示領域が広がります。",
-            "prop_h": "ウィジェットの高さです。",
-            "prop_color": "文字やグラフなどのアクセント色です。ボタンから色を選ぶのがおすすめです。",
-            "prop_bg": "背景色です。透明度と組み合わせて見た目を調整します。",
-            "prop_bg_alpha": "背景の濃さです。0は透明、255は不透明です。",
-            "prop_font_size": "文字の大きさです。見づらい時は少し大きくしてください。",
-            "prop_mirror_reflect_enabled": "水面や氷面の反射に、このウィジェットを含めるかを選びます。",
+            "btn_add_visualizer": lds_tr("音楽に合わせて動くバー表示を追加します。まずはこのボタンで追加し、右側でサイズや色を調整します。"),
+            "btn_add_effects_overlay": lds_tr("花びら・雨・月・水面などの背景演出を追加します。細かい設定は中央の『エフェクト設定』から開けます。"),
+            "btn_add_system": lds_tr("CPU、メモリ、ディスク使用率を表示するウィジェットを追加します。"),
+            "btn_add_volume": lds_tr("音量を表示・操作するウィジェットを追加します。"),
+            "btn_add_clock": lds_tr("アナログ時計を追加します。デジタル時刻の表示は右側で切り替えできます。"),
+            "btn_add_network": lds_tr("通信速度を表示するウィジェットを追加します。DOWN/UP色は右側で変更できます。"),
+            "btn_add_calendar": lds_tr("カレンダーを表示するウィジェットを追加します。"),
+            "btn_add_media": lds_tr("再生/一時停止など、音楽プレイヤー操作用のウィジェットを追加します。"),
+            "btn_add_html_js": lds_tr("JavaScriptを含むHTMLウィジェットを追加します。初心者は通常のHTML/CSS風から始めるのがおすすめです。"),
+            "btn_add_html": lds_tr("文字や簡単なHTML/CSS風デザインを表示するウィジェットを追加します。"),
+            "btn_add_weather": lds_tr("天気ウィジェットを追加します。地域名は右側のプロパティで変更します。"),
+            "layer_list": lds_tr("追加したウィジェットの一覧です。ここで選ぶと、右側に編集項目が表示されます。"),
+            "btn_layer_down": lds_tr("選択中のウィジェットを背面に移動します。重なり順を直したい時に使います。"),
+            "btn_layer_up": lds_tr("選択中のウィジェットを前面に移動します。"),
+            "edit_mode_check": lds_tr("ONにすると、ウィジェットをドラッグ移動・編集できます。普段使う時はOFFにすると誤操作を防げます。"),
+            "theme_combo": lds_tr("メイン設定画面の見た目テーマを切り替えます。右側の説明や色もテーマに合わせて見やすくなります。"),
+            "btn_effects_editor": lds_tr("エフェクトオーバーレイの詳細設定を開きます。"),
+            "btn_save": lds_tr("現在の配置と設定を保存します。"),
+            "btn_reload": lds_tr("画面を再読み込みします。表示が乱れた時に使います。"),
+            "btn_duplicate": lds_tr("選択中のウィジェットをコピーします。"),
+            "btn_delete": lds_tr("選択中のウィジェットを削除します。削除前に選択対象を確認してください。"),
+            "btn_export": lds_tr("現在の設定をファイルとして保存します。別PCへの移動やバックアップに使えます。"),
+            "btn_import": lds_tr("保存済みの設定ファイルを読み込みます。"),
+            "btn_close_canvas": lds_tr("アプリを終了します。終了前に保存しておくと安心です。"),
+            "prop_type": lds_tr("選択中ウィジェットの種類です。ここは確認用なので編集できません。"),
+            "prop_title": lds_tr("ウィジェット名です。レイヤー一覧で見分けやすい名前にできます。"),
+            "prop_x": lds_tr("画面左からの位置です。ドラッグ移動でも変更できます。"),
+            "prop_y": lds_tr("画面上からの位置です。ドラッグ移動でも変更できます。"),
+            "prop_w": lds_tr("ウィジェットの横幅です。大きくすると表示領域が広がります。"),
+            "prop_h": lds_tr("ウィジェットの高さです。"),
+            "prop_color": lds_tr("文字やグラフなどのアクセント色です。ボタンから色を選ぶのがおすすめです。"),
+            "prop_bg": lds_tr("背景色です。透明度と組み合わせて見た目を調整します。"),
+            "prop_bg_alpha": lds_tr("背景の濃さです。0は透明、255は不透明です。"),
+            "prop_font_size": lds_tr("文字の大きさです。見づらい時は少し大きくしてください。"),
+            "prop_mirror_reflect_enabled": lds_tr("水面や氷面の反射に、このウィジェットを含めるかを選びます。"),
         }
         for name, tip in tips.items():
             set_beginner_tooltip(getattr(self, name, None), tip)
@@ -11874,42 +11870,42 @@ class LiteDeskStudio(QMainWindow):
 
             
             widget_texts = {
-                "btn_add_visualizer": "🎵 音楽ビジュアライザー",
-                "btn_add_effects_overlay": "✨ エフェクトオーバーレイ",
-                "btn_add_system": "📊 CPU / Memory / Disk",
-                "btn_add_volume": "🔊 音量操作",
-                "btn_add_clock": "🕒 アナログ時計",
-                "btn_add_network": "📡 通信状況",
-                "btn_add_calendar": "📅 カレンダー",
-                "btn_add_media": "🎧 音楽プレイヤー操作",
-                "btn_add_html_js": "🧪 JavaScript HTML",
-                "btn_add_html": "🌐 HTML / CSS 風",
-                "btn_add_weather": "🌤️ 天気",
-                "btn_layer_down": "⬇ 背面",
-                "btn_layer_up": "⬆ 前面",
-                "status_label": "📌 Status",
-                "edit_mode_check": "✏️ 編集モード",
-                "btn_effects_editor": "✨ エフェクト設定",
-                "btn_save": "💾 設定を保存",
-                "btn_reload": "🔄 UIを再読み込み",
-                "btn_duplicate": "📄 複製",
-                "btn_delete": "🗑️ 削除",
-                "btn_export": "📤 エクスポート",
-                "btn_import": "📥 インポート",
-                "btn_close_canvas": "🚪 アプリ終了",
-                "prop_mirror_reflect_enabled": "🪞 このウィジェットを水面/氷面の鏡面反射に含める",
-                "btn_pick_color": "🎯 アクセント色を選択",
-                "btn_pick_bg": "🖼️ 背景色を選択",
-                "btn_pick_cpu_color": "🧠 CPU色を選択",
-                "btn_pick_memory_color": "💽 Memory色を選択",
-                "btn_pick_disk_color": "💾 Disk色を選択",
-                "btn_pick_network_down_color": "⬇️ DOWN色を選択",
-                "btn_pick_network_up_color": "⬆️ UP色を選択",
-                "prop_clock_show_digital": "🕒 デジタル時刻を表示",
-                "prop_visualizer_flip_vertical": "↕️ ビジュアライザーを上下反転",
-                "prop_visualizer_peak_bar_enabled": "━ スペクトルピークバーを表示",
-                "prop_visualizer_glow_enabled": "💡 スペクトル発光を有効化",
-                "prop_visualizer_frame_rate_enabled": "🎞️ FPS制限を使う",
+                "btn_add_visualizer": lds_tr("🎵 音楽ビジュアライザー"),
+                "btn_add_effects_overlay": lds_tr("✨ エフェクトオーバーレイ"),
+                "btn_add_system": lds_tr("📊 CPU / Memory / Disk"),
+                "btn_add_volume": lds_tr("🔊 音量操作"),
+                "btn_add_clock": lds_tr("🕒 アナログ時計"),
+                "btn_add_network": lds_tr("📡 通信状況"),
+                "btn_add_calendar": lds_tr("📅 カレンダー"),
+                "btn_add_media": lds_tr("🎧 音楽プレイヤー操作"),
+                "btn_add_html_js": lds_tr("🧪 JavaScript HTML"),
+                "btn_add_html": lds_tr("🌐 HTML / CSS 風"),
+                "btn_add_weather": lds_tr("🌤️ 天気"),
+                "btn_layer_down": lds_tr("⬇ 背面"),
+                "btn_layer_up": lds_tr("⬆ 前面"),
+                "status_label": lds_tr("📌 Status"),
+                "edit_mode_check": lds_tr("✏️ 編集モード"),
+                "btn_effects_editor": lds_tr("✨ エフェクト設定"),
+                "btn_save": lds_tr("💾 設定を保存"),
+                "btn_reload": lds_tr("🔄 UIを再読み込み"),
+                "btn_duplicate": lds_tr("📄 複製"),
+                "btn_delete": lds_tr("🗑️ 削除"),
+                "btn_export": lds_tr("📤 エクスポート"),
+                "btn_import": lds_tr("📥 インポート"),
+                "btn_close_canvas": lds_tr("🚪 アプリ終了"),
+                "prop_mirror_reflect_enabled": lds_tr("🪞 このウィジェットを水面/氷面の鏡面反射に含める"),
+                "btn_pick_color": lds_tr("🎯 アクセント色を選択"),
+                "btn_pick_bg": lds_tr("🖼️ 背景色を選択"),
+                "btn_pick_cpu_color": lds_tr("🧠 CPU色を選択"),
+                "btn_pick_memory_color": lds_tr("💽 Memory色を選択"),
+                "btn_pick_disk_color": lds_tr("💾 Disk色を選択"),
+                "btn_pick_network_down_color": lds_tr("⬇️ DOWN色を選択"),
+                "btn_pick_network_up_color": lds_tr("⬆️ UP色を選択"),
+                "prop_clock_show_digital": lds_tr("🕒 デジタル時刻を表示"),
+                "prop_visualizer_flip_vertical": lds_tr("↕️ ビジュアライザーを上下反転"),
+                "prop_visualizer_peak_bar_enabled": lds_tr("━ スペクトルピークバーを表示"),
+                "prop_visualizer_glow_enabled": lds_tr("💡 スペクトル発光を有効化"),
+                "prop_visualizer_frame_rate_enabled": lds_tr("🎞️ FPS制限を使う"),
             }
             for attr_name, source_text in widget_texts.items():
                 self._set_widget_text(attr_name, source_text)
@@ -11925,26 +11921,26 @@ class LiteDeskStudio(QMainWindow):
             
             
             form_labels = {
-                "prop_type": "🧩 Type",
-                "prop_title": "🔖 Title",
-                "prop_x": "↔️ X",
-                "prop_y": "↕️ Y",
-                "prop_w": "📐 Width",
-                "prop_h": "📏 Height",
-                "prop_color": "🎨 Color",
-                "prop_bg": "🖼️ Background",
-                "prop_bg_alpha": "透明度",
-                "prop_mirror_reflect_enabled": "鏡面反射対象",
-                "prop_cpu_color": "🧠 CPU Color",
-                "prop_memory_color": "💽 Memory Color",
-                "prop_disk_color": "💾 Disk Color",
-                "prop_weather_location": "🌍 Weather Location",
-                "prop_network_down_color": "⬇️ Network DOWN Color",
-                "prop_network_up_color": "⬆️ Network UP Color",
-                "prop_font_size": "🔤 Font Size",
-                "prop_visualizer_bar_width_scale": "📏 スペクトルバー幅",
-                "prop_visualizer_orientation": "🧭 スペクトル展開方向",
-                "prop_visualizer_frame_rate": "🎞️ FPS",
+                "prop_type": lds_tr("🧩 Type"),
+                "prop_title": lds_tr("🔖 Title"),
+                "prop_x": lds_tr("↔️ X"),
+                "prop_y": lds_tr("↕️ Y"),
+                "prop_w": lds_tr("📐 Width"),
+                "prop_h": lds_tr("📏 Height"),
+                "prop_color": lds_tr("🎨 Color"),
+                "prop_bg": lds_tr("🖼️ Background"),
+                "prop_bg_alpha": lds_tr("透明度"),
+                "prop_mirror_reflect_enabled": lds_tr("鏡面反射対象"),
+                "prop_cpu_color": lds_tr("🧠 CPU Color"),
+                "prop_memory_color": lds_tr("💽 Memory Color"),
+                "prop_disk_color": lds_tr("💾 Disk Color"),
+                "prop_weather_location": lds_tr("🌍 Weather Location"),
+                "prop_network_down_color": lds_tr("⬇️ Network DOWN Color"),
+                "prop_network_up_color": lds_tr("⬆️ Network UP Color"),
+                "prop_font_size": lds_tr("🔤 Font Size"),
+                "prop_visualizer_bar_width_scale": lds_tr("📏 スペクトルバー幅"),
+                "prop_visualizer_orientation": lds_tr("🧭 スペクトル展開方向"),
+                "prop_visualizer_frame_rate": lds_tr("🎞️ FPS"),
             }
             for field_attr_name, source_text in form_labels.items():
                 self._set_form_label_text(field_attr_name, source_text)
@@ -12295,7 +12291,7 @@ class LiteDeskStudio(QMainWindow):
         self.prop_text = QTextEdit()
         self.prop_text.setPlaceholderText(
             "<h2 style='color:#5BE7FF;'>Custom Widget</h2>\n"
-            "<p style='color:white;'>ここにHTML風テキストを書けます。</p>"
+            "<p style='color:white;'>{}</p>".format(lds_tr("ここにHTML風テキストを書けます。"))
         )
         self.prop_text.textChanged.connect(self.apply_properties_live)
         layout.addWidget(self.prop_text, 1)
@@ -12819,7 +12815,7 @@ class LiteDeskStudio(QMainWindow):
 
     def pick_cpu_color(self):
         current = QColor(self.prop_cpu_color.text() or "#5BE7FF")
-        color = QColorDialog.getColor(current, self, "CPU色を選択")
+        color = QColorDialog.getColor(current, self, lds_tr("CPU色を選択"))
 
         if color.isValid():
             self.prop_cpu_color.blockSignals(True)
@@ -12829,7 +12825,7 @@ class LiteDeskStudio(QMainWindow):
 
     def pick_memory_color(self):
         current = QColor(self.prop_memory_color.text() or "#B388FF")
-        color = QColorDialog.getColor(current, self, "Memory色を選択")
+        color = QColorDialog.getColor(current, self, lds_tr("Memory色を選択"))
 
         if color.isValid():
             self.prop_memory_color.blockSignals(True)
@@ -12839,7 +12835,7 @@ class LiteDeskStudio(QMainWindow):
 
     def pick_disk_color(self):
         current = QColor(self.prop_disk_color.text() or "#80FF9F")
-        color = QColorDialog.getColor(current, self, "Disk色を選択")
+        color = QColorDialog.getColor(current, self, lds_tr("Disk色を選択"))
 
         if color.isValid():
             self.prop_disk_color.blockSignals(True)
@@ -12849,7 +12845,7 @@ class LiteDeskStudio(QMainWindow):
 
     def pick_color(self):
         current = QColor(self.prop_color.text() or "#5BE7FF")
-        color = QColorDialog.getColor(current, self, "アクセント色を選択")
+        color = QColorDialog.getColor(current, self, lds_tr("アクセント色を選択"))
 
         if color.isValid():
             self.prop_color.blockSignals(True)
@@ -12859,7 +12855,7 @@ class LiteDeskStudio(QMainWindow):
 
     def pick_bg(self):
         current = QColor(self.prop_bg.text() or "#10141C")
-        color = QColorDialog.getColor(current, self, "背景色を選択")
+        color = QColorDialog.getColor(current, self, lds_tr("背景色を選択"))
 
         if color.isValid():
             self.prop_bg.blockSignals(True)
@@ -13936,9 +13932,9 @@ class DesktopCanvas(QWidget):
                 bg="#10141C",
                 text="""
                 <h2 style="color:#5BE7FF;">Custom HTML</h2>
-                <p style="color:white;">軽量な HTML/CSS 風ウィジェットです。</p>
-                <p style="color:#B388FF;">QTextDocument ベースなので WebView より軽量です。</p>
-                """,
+                <p style="color:white;">{}</p>
+                <p style="color:#B388FF;">{}</p>
+                """.format(lds_tr("軽量な HTML/CSS 風ウィジェットです。"), lds_tr("QTextDocument ベースなので WebView より軽量です。")),
             )
 
         self.widgets.append(create_widget(cfg))
@@ -13967,7 +13963,7 @@ class DesktopCanvas(QWidget):
                     y=120,
                     w=560,
                     h=190,
-                    title="音楽Spectrum",
+                    title=lds_tr("音楽Spectrum"),
                     color="#5BE7FF",
                     bg="#10141C",
                 )),
@@ -13977,7 +13973,7 @@ class DesktopCanvas(QWidget):
                     y=120,
                     w=240,
                     h=240,
-                    title="時計",
+                    title=lds_tr("時計"),
                     color="#FFCC66",
                     bg="#10141C",
                 )),
@@ -13987,7 +13983,7 @@ class DesktopCanvas(QWidget):
                     y=390,
                     w=320,
                     h=150,
-                    title="通信",
+                    title=lds_tr("通信"),
                     color="#5BE7FF",
                     bg="#10141C",
                 )),
@@ -13997,7 +13993,7 @@ class DesktopCanvas(QWidget):
                     y=340,
                     w=340,
                     h=150,
-                    title="システム",
+                    title=lds_tr("システム"),
                     color="#80FF9F",
                     bg="#10141C",
                 )),
@@ -14007,7 +14003,7 @@ class DesktopCanvas(QWidget):
                     y=340,
                     w=250,
                     h=150,
-                    title="音量",
+                    title=lds_tr("音量"),
                     color="#B388FF",
                     bg="#10141C",
                 )),
@@ -14017,7 +14013,7 @@ class DesktopCanvas(QWidget):
                     y=450,
                     w=320,
                     h=160,
-                    title="メディアコントローラー",
+                    title=lds_tr("メディアコントローラー"),
                     color="#5BE7FF",
                     bg="#10141C",
                 )),
@@ -14032,9 +14028,9 @@ class DesktopCanvas(QWidget):
                     bg="#10141C",
                     text="""
                     <h2 style="color:#5BE7FF;">LiteDeskEngine</h2>
-                    <p style="color:white;">右クリックでパネルを開けます。</p>
-                    <p style="color:#80FF9F;">E キーで編集モード切替 / Delete で削除。</p>
-                    """,
+                    <p style="color:white;">{}</p>
+                    <p style="color:#80FF9F;">{}</p>
+                    """.format(lds_tr("右クリックでパネルを開けます。"), lds_tr("E キーで編集モード切替 / Delete で削除。")),
                 )),
             ]
             self.studio_theme = DEFAULT_STUDIO_THEME
