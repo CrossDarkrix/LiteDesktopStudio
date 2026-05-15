@@ -26,7 +26,10 @@ from PySide6.QtCore import (
     QEvent,
     QUrl,
     QPointF,
-    QRect,
+    QRect, QCoreApplication,
+ QTranslator,
+ QLocale,
+
 )
 from PySide6.QtGui import (
     QColor,
@@ -80,8 +83,197 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "LiteDesktopStudio v1.5.6"
+APP_NAME = "Lite Desktop Studio v1.5.6"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
+
+
+
+
+LDS_DEFAULT_LANGUAGE = "en_US"
+LDS_SOURCE_LANGUAGE = "ja_JP"
+LDS_LANGUAGE_CONFIG_KEY = "language"
+_LDS_TRANSLATOR = None
+_LDS_TRANSLATOR_LANG = ""
+_LDS_TRANSLATOR_PATH = ""
+
+
+def _lds_app_base_dir() -> str:
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        return os.getcwd()
+
+
+def _lds_normalize_lang(lang=None) -> str:
+    """Normalize language names used by QTranslator.
+
+    Priority when *lang* is not specified:
+    1. LITEDESKTOPSTUDIO_LANG environment variable
+    2. --lang / --language / --locale command-line option
+    3. LDS_DEFAULT_LANGUAGE (English)
+    """
+    try:
+        value = (lang or "").strip()
+    except Exception:
+        value = ""
+    if not value:
+        try:
+            value = os.environ.get("LITEDESKTOPSTUDIO_LANG", "").strip()
+        except Exception:
+            value = ""
+    if not value:
+        try:
+            args = list(sys.argv or [])
+            for i, arg in enumerate(args):
+                if arg in ("--lang", "--language", "--locale") and i + 1 < len(args):
+                    value = str(args[i + 1]).strip()
+                    break
+                if arg.startswith("--lang="):
+                    value = arg.split("=", 1)[1].strip()
+                    break
+                if arg.startswith("--language="):
+                    value = arg.split("=", 1)[1].strip()
+                    break
+                if arg.startswith("--locale="):
+                    value = arg.split("=", 1)[1].strip()
+                    break
+        except Exception:
+            value = ""
+    if not value:
+        value = LDS_DEFAULT_LANGUAGE
+    low = value.lower().replace("-", "_")
+    aliases = {
+        "ja": "ja_JP", "jp": "ja_JP", "japanese": "ja_JP", "日本語": "ja_JP",
+        "en": "en_US", "english": "en_US", "us": "en_US", "english_us": "en_US",
+    }
+    return aliases.get(low, value.replace("-", "_"))
+
+
+def _lds_is_source_language(lang=None) -> bool:
+    return _lds_normalize_lang(lang).split("_", 1)[0].lower() == LDS_SOURCE_LANGUAGE.split("_", 1)[0].lower()
+
+
+def lds_tr(text: str) -> str:
+    try:
+        return QCoreApplication.translate("LiteDesktopStudio", str(text))
+    except Exception:
+        return str(text)
+
+
+def _lds_translation_candidates(locale_name: str, translations_dir=None) -> List[str]:
+    language_name = locale_name.split("_", 1)[0]
+    app_dir = _lds_app_base_dir()
+    base_dirs = []
+    if translations_dir:
+        base_dirs.append(translations_dir)
+    base_dirs.extend([
+        os.path.join(app_dir, "translations"),
+        app_dir,
+        os.getcwd(),
+    ])
+    names = [
+        f"{locale_name}.qm",                         
+        f"{language_name}.qm",                       
+        f"LiteDesktopStudio_{locale_name}.qm",
+        f"LiteDesktopStudio_{language_name}.qm",
+        f"litedesktopstudio_{locale_name}.qm",
+        f"litedesktopstudio_{language_name}.qm",
+    ]
+    candidates = []
+    seen = set()
+    for base_dir in base_dirs:
+        for name in names:
+            qm_path = os.path.abspath(os.path.join(base_dir, name))
+            if qm_path not in seen:
+                seen.add(qm_path)
+                candidates.append(qm_path)
+    return candidates
+
+
+def install_litedesktopstudio_translator(app, lang=None, translations_dir=None) -> bool:
+    global _LDS_TRANSLATOR, _LDS_TRANSLATOR_LANG, _LDS_TRANSLATOR_PATH
+    try:
+        if app is None:
+            return False
+        locale_name = _lds_normalize_lang(lang)
+        try:
+            if _LDS_TRANSLATOR is not None:
+                app.removeTranslator(_LDS_TRANSLATOR)
+        except Exception:
+            pass
+        _LDS_TRANSLATOR = None
+        _LDS_TRANSLATOR_LANG = locale_name
+        _LDS_TRANSLATOR_PATH = ""
+
+        
+        if _lds_is_source_language(locale_name):
+            return True
+
+        translator = QTranslator(app)
+        for qm_path in _lds_translation_candidates(locale_name, translations_dir):
+            try:
+                if os.path.exists(qm_path) and translator.load(qm_path):
+                    app.installTranslator(translator)
+                    _LDS_TRANSLATOR = translator
+                    _LDS_TRANSLATOR_PATH = qm_path
+                    try:
+                        app._litedesktopstudio_translator = translator
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
+def set_litedesktopstudio_language(app, lang: str, translations_dir=None) -> bool:
+    return install_litedesktopstudio_translator(app, lang=lang, translations_dir=translations_dir)
+
+
+def get_litedesktopstudio_language() -> str:
+    return _LDS_TRANSLATOR_LANG or _lds_normalize_lang(None)
+
+
+def get_litedesktopstudio_translator_path() -> str:
+    return _LDS_TRANSLATOR_PATH
+
+
+def load_litedesktopstudio_language_preference(default=None) -> str:
+    """Read saved language from LiteDesktopStudio_config.json; fallback is English."""
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            lang = data.get(LDS_LANGUAGE_CONFIG_KEY) or data.get("locale") or data.get("lang")
+            if lang:
+                return _lds_normalize_lang(lang)
+    except Exception:
+        pass
+    return _lds_normalize_lang(default or LDS_DEFAULT_LANGUAGE)
+
+
+def save_litedesktopstudio_language_preference(lang: str) -> bool:
+    """Persist language without touching widget settings when possible."""
+    try:
+        data = {}
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    data = loaded
+            except Exception:
+                data = {}
+        data[LDS_LANGUAGE_CONFIG_KEY] = _lds_normalize_lang(lang)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 
 DEFAULT_NETWORK_DOWN_COLOR = "#5BE7FF"
 DEFAULT_NETWORK_UP_COLOR = "#80FF9F"
@@ -281,6 +473,15 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_ripple_enabled": True,
     "snow_ripple_chance": 0.38,
     "snow_surface_y": 0.86,
+    "snow_accumulation_enabled": False,
+    "snow_accumulation_start_y": 1.0,
+    "snow_accumulation_max_depth": 1.0,
+    "snow_accumulation_build_rate": 7.0,
+    "snow_accumulation_column_width": 7.0,
+    "snow_accumulation_alpha": 230,
+    "snow_accumulation_mouse_remove_enabled": True,
+    "snow_accumulation_remove_radius": 58.0,
+    "snow_accumulation_remove_strength": 72.0,
     "snow_crystal_enabled": False,
     "snow_crystal_count": 22,
     "snow_crystal_speed": 0.12,
@@ -547,22 +748,31 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.6 - エフェクト設定")
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(8)
 
-        title = QLabel("✨ Effects Overlay")
-        title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        title = QLabel(lds_tr("✨ Effects Overlay - 初心者にも分かる設定"))
+        title.setObjectName("BeginnerTitle")
+        title.setStyleSheet("font-size: 20px; font-weight: 850;")
         outer.addWidget(title)
+        try:
+            apply_beginner_photoshop_settings_style(self, theme)
+        except Exception:
+            pass
+        outer.addWidget(make_beginner_guide_label(
+            lds_tr("まずはここだけ見ればOK"),
+            lds_tr("上のプリセットを押すだけで雰囲気を一括変更できます。細かい数値は、見た目を少し変えたい時だけ調整してください。分からない項目は初期値のままで大丈夫です。")
+        ))
         quick = QHBoxLayout()
-        self.btn_all_on = QPushButton("✅ 全部ON")
-        self.btn_all_off = QPushButton("⛔ 全部OFF")
-        self.btn_rose_only = QPushButton("🌹 軽量: バラ花びらだけ")
-        self.btn_mouse_only = QPushButton("🖱️ マウス系だけON")
-        self.btn_ambient_only = QPushButton("🌿 環境系だけON")
+        self.btn_all_on = QPushButton(lds_tr("✅ 全部ON"))
+        self.btn_all_off = QPushButton(lds_tr("⛔ 全部OFF"))
+        self.btn_rose_only = QPushButton(lds_tr("🌹 軽量: バラ花びらだけ"))
+        self.btn_mouse_only = QPushButton(lds_tr("🖱️ マウス系だけON"))
+        self.btn_ambient_only = QPushButton(lds_tr("🌿 環境系だけON"))
         self.btn_all_on.clicked.connect(self.set_all_on)
         self.btn_all_off.clicked.connect(self.set_all_off)
         self.btn_rose_only.clicked.connect(self.set_rose_petals_only)
@@ -570,9 +780,14 @@ class EffectsOverlayEditorDialog(QDialog):
         self.btn_ambient_only.clicked.connect(self.set_ambient_only)
         for b in [self.btn_all_on, self.btn_all_off, self.btn_rose_only, self.btn_mouse_only, self.btn_ambient_only]:
             quick.addWidget(b)
+        set_beginner_tooltip(self.btn_all_on, lds_tr("すべての演出を一度にONにします。重くなる場合があります。"))
+        set_beginner_tooltip(self.btn_all_off, lds_tr("すべての演出をOFFにします。画面を軽くしたい時に使います。"))
+        set_beginner_tooltip(self.btn_rose_only, lds_tr("初心者におすすめ。軽めのバラ花びらだけを表示します。"))
+        set_beginner_tooltip(self.btn_mouse_only, lds_tr("マウス操作に反応する効果だけをONにします。"))
+        set_beginner_tooltip(self.btn_ambient_only, lds_tr("雨・粒子など背景演出を中心にONにします。"))
         outer.addLayout(quick)
 
-        theme_title = QLabel("🎨 テーマプリセット")
+        theme_title = QLabel(lds_tr("🎨 テーマプリセット"))
         theme_title.setStyleSheet("font-weight: 700; margin-top: 4px;")
         outer.addWidget(theme_title)
         theme_grid = QGridLayout()
@@ -592,6 +807,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ]
         for i, (label, theme_id) in enumerate(theme_presets):
             btn = QPushButton(label)
+            set_beginner_tooltip(btn, lds_tr("このテーマに合う複数の効果をまとめて設定します。初心者はまずここから選ぶのがおすすめです。"))
             btn.clicked.connect(lambda checked=False, t=theme_id: self.apply_effect_theme(t))
             self.theme_preset_buttons.append(btn)
             theme_grid.addWidget(btn, i // 4, i % 4)
@@ -600,17 +816,17 @@ class EffectsOverlayEditorDialog(QDialog):
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
 
-        self.basic_form = self._create_tab("基本")
-        self.rose_form = self._create_tab("バラ花びら")
-        self.rose_flower_form = self._create_tab("バラ花・開花")
-        self.rain_form = self._create_tab("雨・粒子")
-        self.sakura_form = self._create_tab("桜花びら")
-        self.ripple_form = self._create_tab("波紋・全体")
-        self.color_form = self._create_tab("色")
-        self.extra_weather_form = self._create_tab("雪・水・火")
-        self.extra_sky_form = self._create_tab("空・その他")
-        self.sunrise_form = self._create_tab("朝焼け・太陽")
-        self.moon_form = self._create_tab("月")
+        self.basic_form = self._create_tab(lds_tr("基本"))
+        self.rose_form = self._create_tab(lds_tr("バラ花びら"))
+        self.rose_flower_form = self._create_tab(lds_tr("バラ花・開花"))
+        self.rain_form = self._create_tab(lds_tr("雨・粒子"))
+        self.sakura_form = self._create_tab(lds_tr("桜花びら"))
+        self.ripple_form = self._create_tab(lds_tr("波紋・全体"))
+        self.color_form = self._create_tab(lds_tr("色"))
+        self.extra_weather_form = self._create_tab(lds_tr("雪・水・火"))
+        self.extra_sky_form = self._create_tab(lds_tr("空・その他"))
+        self.sunrise_form = self._create_tab(lds_tr("朝焼け・太陽"))
+        self.moon_form = self._create_tab(lds_tr("月"))
 
         
         self.form = self.basic_form
@@ -629,9 +845,9 @@ class EffectsOverlayEditorDialog(QDialog):
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)
-        self.btn_apply = QPushButton("💾 適用")
-        self.btn_ok = QPushButton("✅ OK")
-        self.btn_cancel = QPushButton("✖ キャンセル")
+        self.btn_apply = QPushButton(lds_tr("💾 適用"))
+        self.btn_ok = QPushButton(lds_tr("✅ OK"))
+        self.btn_cancel = QPushButton(lds_tr("✖ キャンセル"))
         self.btn_apply.clicked.connect(self.apply_to_config)
         self.btn_ok.clicked.connect(self.accept_with_apply)
         self.btn_cancel.clicked.connect(self.reject)
@@ -737,6 +953,27 @@ class EffectsOverlayEditorDialog(QDialog):
         icon = mapping.get(s)
         return f"{icon} {s}" if icon else s
 
+    def _add_beginner_tab_guides(self):
+        """Add short, theme-aware beginner explanations to every settings tab."""
+        guides = [
+            (self.basic_form, "基本", "効果を表示するかどうかを切り替える入口です。迷った時はプリセットボタンを使うと安全です。"),
+            (self.rose_form, "バラ花びら", "花びらの数・速さ・大きさを調整します。数を増やすほど華やかですが、パソコン負荷も上がります。"),
+            (self.rose_flower_form, "バラ花・開花", "大きめの花や開花演出を調整します。まずは数を少なめにすると見やすくなります。"),
+            (self.rain_form, "雨・粒子", "雨や小さな光の粒を調整します。重く感じたら数を減らしてください。"),
+            (self.sakura_form, "桜花びら", "桜の花びらの量や揺れ方を調整します。春らしい雰囲気を作る画面です。"),
+            (self.ripple_form, "波紋・全体", "波紋、マウス光、描画のなめらかさを調整します。GPUやFPSは分からなければ初期値がおすすめです。"),
+            (self.color_form, "色", "各効果の色を選べます。Photoshopの色指定のように、カラーコードを直接入力することもできます。"),
+            (self.extra_weather_form, "雪・水・火", "雪・泡・炎などの追加演出です。ONにする効果を少なめにすると安定しやすくなります。"),
+            (self.extra_sky_form, "空・その他", "星空・天の川・水面・竹林・氷など、背景の雰囲気を作る画面です。"),
+            (self.sunrise_form, "朝焼け・太陽", "朝焼け、太陽、光、レンズフレアを調整します。位置と透明度から触ると分かりやすいです。"),
+            (self.moon_form, "月", "月本体・月光・月影を調整します。X/Y位置で場所、半径で大きさを変えられます。"),
+        ]
+        for form, title, body in guides:
+            try:
+                form.addRow(make_beginner_guide_label(title, body))
+            except Exception:
+                pass
+
     def _create_tab(self, title):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -760,7 +997,8 @@ class EffectsOverlayEditorDialog(QDialog):
 
     def _section(self, form, text):
         label = QLabel(self._pictogram_text(text))
-        label.setStyleSheet("font-weight: 700; color: #80FFCC; margin-top: 10px;")
+        label.setObjectName("BeginnerSection")
+        label.setStyleSheet("font-weight: 850; color: #80FFCC; margin-top: 10px;")
         form.addRow(label)
         return label
 
@@ -780,7 +1018,7 @@ class EffectsOverlayEditorDialog(QDialog):
 
     def _color_row_on(self, form, label, value):
         edit = QLineEdit(str(value or ""))
-        button = QPushButton("🎨 選択")
+        button = QPushButton(lds_tr("🎨 選択"))
         row_widget = QWidget()
         row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
@@ -801,27 +1039,27 @@ class EffectsOverlayEditorDialog(QDialog):
 
     def _build_basic_tab(self):
         f = self.basic_form
-        self._section(f, "表示するエフェクト")
-        self.rain_enabled = QCheckBox("雨粒")
-        self.particles_enabled = QCheckBox("パーティクル")
-        self.noise_enabled = QCheckBox("ノイズ")
-        self.glow_enabled = QCheckBox("グロー")
-        self.ripple_enabled = QCheckBox("自動/通常 波紋")
-        self.rose_petals_enabled = QCheckBox("バラの花びら")
-        self.rose_flowers_enabled = QCheckBox("中くらいのバラの花")
-        self.blooming_roses_enabled = QCheckBox("大きな咲いた花が散る")
-        self.sakura_petals_enabled = QCheckBox("桜の花びら")
-        self.sunrise_enabled = QCheckBox("朝焼け")
-        self.sun_enabled = QCheckBox("太陽")
-        self.sunlight_enabled = QCheckBox("太陽光")
-        self.lens_flare_enabled = QCheckBox("レンズフレア")
-        self.moon_body_enabled = QCheckBox("月本体")
-        self.moonlight_enabled = QCheckBox("月光")
-        self.moon_shadow_enabled = QCheckBox("月影")
-        self.rain_ripple_enabled = QCheckBox("雨粒が水面に当たったら波紋")
-        self.mouse_ripple_enabled = QCheckBox("マウスクリック波紋")
-        self.mouse_flee_enabled = QCheckBox("マウス周辺から微粒子が逃げる")
-        self.mouse_glow_enabled = QCheckBox("マウス周辺だけ光る")
+        self._section(f, lds_tr("表示するエフェクト"))
+        self.rain_enabled = QCheckBox(lds_tr("雨粒"))
+        self.particles_enabled = QCheckBox(lds_tr("パーティクル"))
+        self.noise_enabled = QCheckBox(lds_tr("ノイズ"))
+        self.glow_enabled = QCheckBox(lds_tr("グロー"))
+        self.ripple_enabled = QCheckBox(lds_tr("自動/通常 波紋"))
+        self.rose_petals_enabled = QCheckBox(lds_tr("バラの花びら"))
+        self.rose_flowers_enabled = QCheckBox(lds_tr("中くらいのバラの花"))
+        self.blooming_roses_enabled = QCheckBox(lds_tr("大きな咲いた花が散る"))
+        self.sakura_petals_enabled = QCheckBox(lds_tr("桜の花びら"))
+        self.sunrise_enabled = QCheckBox(lds_tr("朝焼け"))
+        self.sun_enabled = QCheckBox(lds_tr("太陽"))
+        self.sunlight_enabled = QCheckBox(lds_tr("太陽光"))
+        self.lens_flare_enabled = QCheckBox(lds_tr("レンズフレア"))
+        self.moon_body_enabled = QCheckBox(lds_tr("月本体"))
+        self.moonlight_enabled = QCheckBox(lds_tr("月光"))
+        self.moon_shadow_enabled = QCheckBox(lds_tr("月影"))
+        self.rain_ripple_enabled = QCheckBox(lds_tr("雨粒が水面に当たったら波紋"))
+        self.mouse_ripple_enabled = QCheckBox(lds_tr("マウスクリック波紋"))
+        self.mouse_flee_enabled = QCheckBox(lds_tr("マウス周辺から微粒子が逃げる"))
+        self.mouse_glow_enabled = QCheckBox(lds_tr("マウス周辺だけ光る"))
 
         self.rain_enabled.setChecked(self.settings.rain_enabled)
         self.particles_enabled.setChecked(self.settings.particles_enabled)
@@ -844,168 +1082,168 @@ class EffectsOverlayEditorDialog(QDialog):
         self.mouse_flee_enabled.setChecked(self.settings.mouse_flee_enabled)
         self.mouse_glow_enabled.setChecked(self.settings.mouse_glow_enabled)
 
-        f.addRow("バラ", self.rose_petals_enabled)
-        f.addRow("バラ花", self.rose_flowers_enabled)
-        f.addRow("開花バラ", self.blooming_roses_enabled)
-        f.addRow("桜", self.sakura_petals_enabled)
-        f.addRow("朝焼け", self.sunrise_enabled)
-        f.addRow("太陽", self.sun_enabled)
-        f.addRow("太陽光", self.sunlight_enabled)
-        f.addRow("レンズフレア", self.lens_flare_enabled)
-        f.addRow("月本体", self.moon_body_enabled)
-        f.addRow("月光", self.moonlight_enabled)
-        f.addRow("月影", self.moon_shadow_enabled)
-        f.addRow("雨", self.rain_enabled)
-        f.addRow("粒子", self.particles_enabled)
-        f.addRow("ノイズ", self.noise_enabled)
-        f.addRow("グロー", self.glow_enabled)
-        f.addRow("波紋", self.ripple_enabled)
-        f.addRow("雨×波紋", self.rain_ripple_enabled)
+        f.addRow(lds_tr("バラ"), self.rose_petals_enabled)
+        f.addRow(lds_tr("バラ花"), self.rose_flowers_enabled)
+        f.addRow(lds_tr("開花バラ"), self.blooming_roses_enabled)
+        f.addRow(lds_tr("桜"), self.sakura_petals_enabled)
+        f.addRow(lds_tr("朝焼け"), self.sunrise_enabled)
+        f.addRow(lds_tr("太陽"), self.sun_enabled)
+        f.addRow(lds_tr("太陽光"), self.sunlight_enabled)
+        f.addRow(lds_tr("レンズフレア"), self.lens_flare_enabled)
+        f.addRow(lds_tr("月本体"), self.moon_body_enabled)
+        f.addRow(lds_tr("月光"), self.moonlight_enabled)
+        f.addRow(lds_tr("月影"), self.moon_shadow_enabled)
+        f.addRow(lds_tr("雨"), self.rain_enabled)
+        f.addRow(lds_tr("粒子"), self.particles_enabled)
+        f.addRow(lds_tr("ノイズ"), self.noise_enabled)
+        f.addRow(lds_tr("グロー"), self.glow_enabled)
+        f.addRow(lds_tr("波紋"), self.ripple_enabled)
+        f.addRow(lds_tr("雨×波紋"), self.rain_ripple_enabled)
 
-        self._section(f, "マウス連動")
-        f.addRow("クリック", self.mouse_ripple_enabled)
-        f.addRow("粒子逃避", self.mouse_flee_enabled)
-        f.addRow("マウス光", self.mouse_glow_enabled)
+        self._section(f, lds_tr("マウス連動"))
+        f.addRow(lds_tr("クリック"), self.mouse_ripple_enabled)
+        f.addRow(lds_tr("粒子逃避"), self.mouse_flee_enabled)
+        f.addRow(lds_tr("マウス光"), self.mouse_glow_enabled)
 
-        self._section(f, "軽量プリセット")
-        note = QLabel("💡 重い場合は『🌹 軽量: バラ花びらだけ』を押すと、バラ花びら以外をOFFにします。")
+        self._section(f, lds_tr("軽量プリセット"))
+        note = QLabel(lds_tr("💡 重い場合は『🌹 軽量: バラ花びらだけ』を押すと、バラ花びら以外をOFFにします。"))
         note.setWordWrap(True)
         f.addRow(note)
 
     def _build_rose_tab(self):
         f = self.rose_form
-        self._section(f, "バラ花びら: 数量・動き")
+        self._section(f, lds_tr("バラ花びら: 数量・動き"))
         self.rose_petal_count = self._int_spin(0, 500, getattr(self.settings, "rose_petal_count", 24))
         self.rose_petal_speed = self._double_spin(0.01, 300.0, getattr(self.settings, "rose_petal_speed", 0.35), 0.01)
         self.rose_petal_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_petal_sway", 1.0), 0.05)
         self.rose_petal_size = self._double_spin(2.0, 80.0, getattr(self.settings, "rose_petal_size", 16.0), 0.5)
         self.rose_petal_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_alpha", 210))
-        f.addRow("花びら数", self.rose_petal_count)
-        f.addRow("落下速度", self.rose_petal_speed)
-        f.addRow("揺れ", self.rose_petal_sway)
-        f.addRow("サイズ", self.rose_petal_size)
-        f.addRow("透明度", self.rose_petal_alpha)
+        f.addRow(lds_tr("花びら数"), self.rose_petal_count)
+        f.addRow(lds_tr("落下速度"), self.rose_petal_speed)
+        f.addRow(lds_tr("揺れ"), self.rose_petal_sway)
+        f.addRow(lds_tr("サイズ"), self.rose_petal_size)
+        f.addRow(lds_tr("透明度"), self.rose_petal_alpha)
 
-        self._section(f, "立体感")
+        self._section(f, lds_tr("立体感"))
         self.rose_petal_roundness = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_roundness", 0.72), 0.01)
         self.rose_petal_curl = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_curl", 0.42), 0.01)
         self.rose_petal_shadow_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_shadow_alpha", 0))
         self.rose_petal_highlight_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_highlight_alpha", 115))
         self.rose_petal_vein_alpha = self._int_spin(0, 255, getattr(self.settings, "rose_petal_vein_alpha", 95))
-        f.addRow("丸み", self.rose_petal_roundness)
-        f.addRow("カール", self.rose_petal_curl)
-        f.addRow("影", self.rose_petal_shadow_alpha)
-        f.addRow("ハイライト", self.rose_petal_highlight_alpha)
-        f.addRow("葉脈", self.rose_petal_vein_alpha)
+        f.addRow(lds_tr("丸み"), self.rose_petal_roundness)
+        f.addRow(lds_tr("カール"), self.rose_petal_curl)
+        f.addRow(lds_tr("影"), self.rose_petal_shadow_alpha)
+        f.addRow(lds_tr("ハイライト"), self.rose_petal_highlight_alpha)
+        f.addRow(lds_tr("葉脈"), self.rose_petal_vein_alpha)
 
-        self._section(f, "花びら共通: 夜景・花吹雪")
-        self.petal_night_enabled = QCheckBox("夜景化する")
+        self._section(f, lds_tr("花びら共通: 夜景・花吹雪"))
+        self.petal_night_enabled = QCheckBox(lds_tr("夜景化する"))
         self.petal_night_enabled.setChecked(bool(getattr(self.settings, "petal_night_enabled", False)))
-        self.petal_night_tint_color = self._color_row_on(f, "夜景の影色", getattr(self.settings, "petal_night_tint_color", "#101A3A"))
+        self.petal_night_tint_color = self._color_row_on(f, lds_tr("夜景の影色"), getattr(self.settings, "petal_night_tint_color", "#101A3A"))
         self.petal_night_tint_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "petal_night_tint_strength", 0.35), 0.01)
-        self.petal_shadow_enabled = QCheckBox("旧: 花びら影を使う")
+        self.petal_shadow_enabled = QCheckBox(lds_tr("旧: 花びら影を使う"))
         self.petal_shadow_enabled.setChecked(bool(getattr(self.settings, "petal_shadow_enabled", False)))
-        self.petal_outline_enabled = QCheckBox("花びらの輪郭を強調")
+        self.petal_outline_enabled = QCheckBox(lds_tr("花びらの輪郭を強調"))
         self.petal_outline_enabled.setChecked(bool(getattr(self.settings, "petal_outline_enabled", True)))
         self.petal_outline_strength = self._double_spin(0.5, 4.0, getattr(self.settings, "petal_outline_strength", 1.35), 0.05)
-        self.petal_blizzard_enabled = QCheckBox("一定時間ごとの突風花吹雪")
+        self.petal_blizzard_enabled = QCheckBox(lds_tr("一定時間ごとの突風花吹雪"))
         self.petal_blizzard_enabled.setChecked(bool(getattr(self.settings, "petal_blizzard_enabled", False)))
         self.petal_wind_strength = self._double_spin(0.0, 3.0, getattr(self.settings, "petal_wind_strength", 1.0), 0.05)
         self.petal_wind_randomness = self._double_spin(0.0, 1.0, getattr(self.settings, "petal_wind_randomness", 0.55), 0.01)
         self.petal_gust_interval = self._double_spin(0.8, 300.0, getattr(self.settings, "petal_gust_interval", 4.0), 0.1)
         self.petal_gust_duration = self._double_spin(0.2, 300.0, getattr(self.settings, "petal_gust_duration", 1.15), 0.05)
         self.petal_gust_strength = self._double_spin(0.2, 200.0, getattr(self.settings, "petal_gust_strength", 1.45), 0.05)
-        self.petal_mouse_flutter_enabled = QCheckBox("マウスで花びらを舞わせる")
+        self.petal_mouse_flutter_enabled = QCheckBox(lds_tr("マウスで花びらを舞わせる"))
         self.petal_mouse_flutter_enabled.setChecked(bool(getattr(self.settings, "petal_mouse_flutter_enabled", True)))
         self.petal_mouse_flutter_strength = self._double_spin(0.0, 3.0, getattr(self.settings, "petal_mouse_flutter_strength", 1.0), 0.05)
-        f.addRow("夜景", self.petal_night_enabled)
-        f.addRow("夜景の強さ", self.petal_night_tint_strength)
-        f.addRow("旧影", self.petal_shadow_enabled)
-        f.addRow("輪郭強調", self.petal_outline_enabled)
-        f.addRow("輪郭の強さ", self.petal_outline_strength)
-        f.addRow("突風花吹雪", self.petal_blizzard_enabled)
-        f.addRow("通常風の強さ", self.petal_wind_strength)
-        f.addRow("突風のランダム感", self.petal_wind_randomness)
-        f.addRow("突風間隔", self.petal_gust_interval)
-        f.addRow("突風時間", self.petal_gust_duration)
-        f.addRow("突風の強さ", self.petal_gust_strength)
-        f.addRow("マウス舞い", self.petal_mouse_flutter_enabled)
-        f.addRow("マウス舞い強さ", self.petal_mouse_flutter_strength)
+        f.addRow(lds_tr("夜景"), self.petal_night_enabled)
+        f.addRow(lds_tr("夜景の強さ"), self.petal_night_tint_strength)
+        f.addRow(lds_tr("旧影"), self.petal_shadow_enabled)
+        f.addRow(lds_tr("輪郭強調"), self.petal_outline_enabled)
+        f.addRow(lds_tr("輪郭の強さ"), self.petal_outline_strength)
+        f.addRow(lds_tr("突風花吹雪"), self.petal_blizzard_enabled)
+        f.addRow(lds_tr("通常風の強さ"), self.petal_wind_strength)
+        f.addRow(lds_tr("突風のランダム感"), self.petal_wind_randomness)
+        f.addRow(lds_tr("突風間隔"), self.petal_gust_interval)
+        f.addRow(lds_tr("突風時間"), self.petal_gust_duration)
+        f.addRow(lds_tr("突風の強さ"), self.petal_gust_strength)
+        f.addRow(lds_tr("マウス舞い"), self.petal_mouse_flutter_enabled)
+        f.addRow(lds_tr("マウス舞い強さ"), self.petal_mouse_flutter_strength)
 
-        self._section(f, "水面・消え方")
+        self._section(f, lds_tr("水面・消え方"))
         self.rose_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_surface_y", 0.84), 0.01)
-        self.rose_petal_ripple_enabled = QCheckBox("花びらが水面に落ちたら波紋")
+        self.rose_petal_ripple_enabled = QCheckBox(lds_tr("花びらが水面に落ちたら波紋"))
         self.rose_petal_ripple_enabled.setChecked(getattr(self.settings, "rose_petal_ripple_enabled", True))
         self.rose_petal_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_chance", 0.9), 0.05)
         self.rose_petal_ripple_min_radius = self._double_spin(1.0, 400.0, getattr(self.settings, "rose_petal_ripple_min_radius", 36.0), 1.0)
         self.rose_petal_ripple_max_radius = self._double_spin(1.0, 700.0, getattr(self.settings, "rose_petal_ripple_max_radius", 130.0), 1.0)
         self.rose_petal_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_petal_ripple_cooldown", 0.04), 0.005)
-        self.rose_petal_rest_on_surface = QCheckBox("水面に少し浮かべる")
+        self.rose_petal_rest_on_surface = QCheckBox(lds_tr("水面に少し浮かべる"))
         self.rose_petal_rest_on_surface.setChecked(getattr(self.settings, "rose_petal_rest_on_surface", False))
-        self.rose_petal_fade_on_surface = QCheckBox("水面で花びらをフェードアウト")
+        self.rose_petal_fade_on_surface = QCheckBox(lds_tr("水面で花びらをフェードアウト"))
         self.rose_petal_fade_on_surface.setChecked(getattr(self.settings, "rose_petal_fade_on_surface", True))
         self.rose_petal_fade_duration = self._double_spin(0.05, 5.0, getattr(self.settings, "rose_petal_fade_duration", 0.85), 0.05)
         self.rose_petal_fade_sink_distance = self._double_spin(0.0, 80.0, getattr(self.settings, "rose_petal_fade_sink_distance", 10.0), 1.0)
         self.rose_petal_fade_spin = self._double_spin(0.0, 2.0, getattr(self.settings, "rose_petal_fade_spin", 0.35), 0.05)
-        f.addRow("水面Y", self.rose_petal_surface_y)
-        f.addRow("花びら×波紋", self.rose_petal_ripple_enabled)
-        f.addRow("波紋発生率", self.rose_petal_ripple_chance)
-        f.addRow("波紋最小半径", self.rose_petal_ripple_min_radius)
-        f.addRow("波紋最大半径", self.rose_petal_ripple_max_radius)
-        f.addRow("波紋間隔", self.rose_petal_ripple_cooldown)
-        f.addRow("浮かべる", self.rose_petal_rest_on_surface)
-        f.addRow("フェード", self.rose_petal_fade_on_surface)
-        f.addRow("フェード時間", self.rose_petal_fade_duration)
-        f.addRow("沈む距離", self.rose_petal_fade_sink_distance)
-        f.addRow("フェード中の回転", self.rose_petal_fade_spin)
+        f.addRow(lds_tr("水面Y"), self.rose_petal_surface_y)
+        f.addRow(lds_tr("花びら×波紋"), self.rose_petal_ripple_enabled)
+        f.addRow(lds_tr("波紋発生率"), self.rose_petal_ripple_chance)
+        f.addRow(lds_tr("波紋最小半径"), self.rose_petal_ripple_min_radius)
+        f.addRow(lds_tr("波紋最大半径"), self.rose_petal_ripple_max_radius)
+        f.addRow(lds_tr("波紋間隔"), self.rose_petal_ripple_cooldown)
+        f.addRow(lds_tr("浮かべる"), self.rose_petal_rest_on_surface)
+        f.addRow(lds_tr("フェード"), self.rose_petal_fade_on_surface)
+        f.addRow(lds_tr("フェード時間"), self.rose_petal_fade_duration)
+        f.addRow(lds_tr("沈む距離"), self.rose_petal_fade_sink_distance)
+        f.addRow(lds_tr("フェード中の回転"), self.rose_petal_fade_spin)
 
     def _build_rose_flower_tab(self):
         f = self.rose_flower_form
-        self._section(f, "中くらいのバラ花")
+        self._section(f, lds_tr("中くらいのバラ花"))
         self.rose_flower_count = self._int_spin(0, 100, getattr(self.settings, "rose_flower_count", 5))
         self.rose_flower_size = self._double_spin(8.0, 160.0, getattr(self.settings, "rose_flower_size", 42.0), 1.0)
         self.rose_flower_speed = self._double_spin(0.01, 300.0, getattr(self.settings, "rose_flower_speed", 0.22), 0.01)
         self.rose_flower_sway = self._double_spin(0.0, 5.0, getattr(self.settings, "rose_flower_sway", 0.85), 0.05)
         self.rose_flower_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rose_flower_surface_y", 0.84), 0.01)
-        self.rose_flower_ripple_enabled = QCheckBox("バラ花が水面に落ちたら波紋")
+        self.rose_flower_ripple_enabled = QCheckBox(lds_tr("バラ花が水面に落ちたら波紋"))
         self.rose_flower_ripple_enabled.setChecked(getattr(self.settings, "rose_flower_ripple_enabled", True))
         self.rose_flower_ripple_min_radius = self._double_spin(1.0, 600.0, getattr(self.settings, "rose_flower_ripple_min_radius", 80.0), 1.0)
         self.rose_flower_ripple_max_radius = self._double_spin(1.0, 900.0, getattr(self.settings, "rose_flower_ripple_max_radius", 220.0), 1.0)
-        f.addRow("バラ花数", self.rose_flower_count)
-        f.addRow("サイズ", self.rose_flower_size)
-        f.addRow("落下速度", self.rose_flower_speed)
-        f.addRow("揺れ", self.rose_flower_sway)
-        f.addRow("水面Y", self.rose_flower_surface_y)
-        f.addRow("波紋", self.rose_flower_ripple_enabled)
-        f.addRow("波紋最小半径", self.rose_flower_ripple_min_radius)
-        f.addRow("波紋最大半径", self.rose_flower_ripple_max_radius)
+        f.addRow(lds_tr("バラ花数"), self.rose_flower_count)
+        f.addRow(lds_tr("サイズ"), self.rose_flower_size)
+        f.addRow(lds_tr("落下速度"), self.rose_flower_speed)
+        f.addRow(lds_tr("揺れ"), self.rose_flower_sway)
+        f.addRow(lds_tr("水面Y"), self.rose_flower_surface_y)
+        f.addRow(lds_tr("波紋"), self.rose_flower_ripple_enabled)
+        f.addRow(lds_tr("波紋最小半径"), self.rose_flower_ripple_min_radius)
+        f.addRow(lds_tr("波紋最大半径"), self.rose_flower_ripple_max_radius)
 
-        self._section(f, "咲いたバラ")
+        self._section(f, lds_tr("咲いたバラ"))
         self.blooming_rose_count = self._int_spin(0, 20, getattr(self.settings, "blooming_rose_count", 2))
         self.blooming_rose_size = self._double_spin(20.0, 260.0, getattr(self.settings, "blooming_rose_size", 86.0), 1.0)
         self.blooming_rose_scatter_after = self._double_spin(0.1, 30.0, getattr(self.settings, "blooming_rose_scatter_after", 3.0), 0.1)
         self.blooming_rose_life = self._double_spin(0.2, 60.0, getattr(self.settings, "blooming_rose_life", 7.5), 0.1)
         self.blooming_rose_petal_count = self._int_spin(0, 300, getattr(self.settings, "blooming_rose_petal_count", 34))
-        self.blooming_rose_respawn = QCheckBox("咲いた花を再生成")
+        self.blooming_rose_respawn = QCheckBox(lds_tr("咲いた花を再生成"))
         self.blooming_rose_respawn.setChecked(getattr(self.settings, "blooming_rose_respawn", True))
-        f.addRow("咲いた花数", self.blooming_rose_count)
-        f.addRow("咲いた花サイズ", self.blooming_rose_size)
-        f.addRow("散り始め", self.blooming_rose_scatter_after)
-        f.addRow("寿命", self.blooming_rose_life)
-        f.addRow("散る花びら数", self.blooming_rose_petal_count)
-        f.addRow("再生成", self.blooming_rose_respawn)
+        f.addRow(lds_tr("咲いた花数"), self.blooming_rose_count)
+        f.addRow(lds_tr("咲いた花サイズ"), self.blooming_rose_size)
+        f.addRow(lds_tr("散り始め"), self.blooming_rose_scatter_after)
+        f.addRow(lds_tr("寿命"), self.blooming_rose_life)
+        f.addRow(lds_tr("散る花びら数"), self.blooming_rose_petal_count)
+        f.addRow(lds_tr("再生成"), self.blooming_rose_respawn)
 
     def _build_rain_particle_tab(self):
         f = self.rain_form
-        self._section(f, "数量")
+        self._section(f, lds_tr("数量"))
         self.particle_count = self._int_spin(0, 2000, self.settings.particle_count)
         self.rain_count = self._int_spin(0, 2000, self.settings.rain_count)
         self.glow_count = self._int_spin(0, 32, self.settings.glow_count)
-        f.addRow("パーティクル数", self.particle_count)
-        f.addRow("雨粒数", self.rain_count)
-        f.addRow("グロー数", self.glow_count)
+        f.addRow(lds_tr("パーティクル数"), self.particle_count)
+        f.addRow(lds_tr("雨粒数"), self.rain_count)
+        f.addRow(lds_tr("グロー数"), self.glow_count)
 
-        self._section(f, "速度・サイズ")
+        self._section(f, lds_tr("速度・サイズ"))
         self.particle_speed = self._double_spin(0.0, 300.0, self.settings.particle_speed, 0.05)
         self.rain_speed = self._double_spin(0.0, 10.0, self.settings.rain_speed, 0.05)
         self.rain_drop_min_size = self._double_spin(0.2, 20.0, getattr(self.settings, "rain_drop_min_size", 1.0), 0.1)
@@ -1015,141 +1253,145 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rain_length = self._double_spin(1.0, 120.0, self.settings.rain_length, 1.0)
         self.glow_speed = self._double_spin(0.0, 10.0, self.settings.glow_speed, 0.05)
         self.glow_radius = self._double_spin(10.0, 600.0, self.settings.glow_radius, 5.0)
-        f.addRow("粒子速度", self.particle_speed)
-        f.addRow("粒子サイズ", self.particle_size)
-        f.addRow("雨速度", self.rain_speed)
-        f.addRow("雨粒の最小太さ", self.rain_drop_min_size)
-        f.addRow("雨粒の最大太さ", self.rain_drop_max_size)
-        f.addRow("雨粒の長さランダム", self.rain_drop_length_randomness)
-        f.addRow("雨の長さ", self.rain_length)
-        f.addRow("グロー速度", self.glow_speed)
-        f.addRow("グロー半径", self.glow_radius)
+        f.addRow(lds_tr("粒子速度"), self.particle_speed)
+        f.addRow(lds_tr("粒子サイズ"), self.particle_size)
+        f.addRow(lds_tr("雨速度"), self.rain_speed)
+        f.addRow(lds_tr("雨粒の最小太さ"), self.rain_drop_min_size)
+        f.addRow(lds_tr("雨粒の最大太さ"), self.rain_drop_max_size)
+        f.addRow(lds_tr("雨粒の長さランダム"), self.rain_drop_length_randomness)
+        f.addRow(lds_tr("雨の長さ"), self.rain_length)
+        f.addRow(lds_tr("グロー速度"), self.glow_speed)
+        f.addRow(lds_tr("グロー半径"), self.glow_radius)
 
     def _build_sakura_tab(self):
         f = self.sakura_form
-        self._section(f, "桜花びら")
+        self._section(f, lds_tr("桜花びら"))
         self.sakura_petal_count = self._int_spin(0, 2000, getattr(self.settings, "sakura_petal_count", 80))
         self.sakura_petal_speed = self._double_spin(0.01, 300.0, getattr(self.settings, "sakura_petal_speed", 0.32), 0.01)
         self.sakura_petal_sway = self._double_spin(0.0, 300.0, getattr(self.settings, "sakura_petal_sway", 1.15), 0.05)
         self.sakura_petal_size = self._double_spin(1.0, 300.0, getattr(self.settings, "sakura_petal_size", 9.0), 0.5)
         self.sakura_petal_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "sakura_petal_surface_y", 0.84), 0.01)
-        self.sakura_petal_ripple_enabled = QCheckBox("桜花びらが水面で波紋")
+        self.sakura_petal_ripple_enabled = QCheckBox(lds_tr("桜花びらが水面で波紋"))
         self.sakura_petal_ripple_enabled.setChecked(getattr(self.settings, "sakura_petal_ripple_enabled", True))
         self.sakura_petal_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "sakura_petal_ripple_chance", 0.65), 0.05)
         self.sakura_petal_ripple_min_radius = self._double_spin(1.0, 300.0, getattr(self.settings, "sakura_petal_ripple_min_radius", 22.0), 1.0)
         self.sakura_petal_ripple_max_radius = self._double_spin(1.0, 500.0, getattr(self.settings, "sakura_petal_ripple_max_radius", 88.0), 1.0)
-        f.addRow("桜花びら数", self.sakura_petal_count)
-        f.addRow("速度", self.sakura_petal_speed)
-        f.addRow("揺れ", self.sakura_petal_sway)
-        f.addRow("サイズ", self.sakura_petal_size)
-        f.addRow("水面Y", self.sakura_petal_surface_y)
-        f.addRow("波紋", self.sakura_petal_ripple_enabled)
-        f.addRow("波紋発生率", self.sakura_petal_ripple_chance)
-        f.addRow("波紋最小半径", self.sakura_petal_ripple_min_radius)
-        f.addRow("波紋最大半径", self.sakura_petal_ripple_max_radius)
+        f.addRow(lds_tr("桜花びら数"), self.sakura_petal_count)
+        f.addRow(lds_tr("速度"), self.sakura_petal_speed)
+        f.addRow(lds_tr("揺れ"), self.sakura_petal_sway)
+        f.addRow(lds_tr("サイズ"), self.sakura_petal_size)
+        f.addRow(lds_tr("水面Y"), self.sakura_petal_surface_y)
+        f.addRow(lds_tr("波紋"), self.sakura_petal_ripple_enabled)
+        f.addRow(lds_tr("波紋発生率"), self.sakura_petal_ripple_chance)
+        f.addRow(lds_tr("波紋最小半径"), self.sakura_petal_ripple_min_radius)
+        f.addRow(lds_tr("波紋最大半径"), self.sakura_petal_ripple_max_radius)
 
     def _build_ripple_global_tab(self):
         f = self.ripple_form
-        self._section(f, "雨波紋")
+        self._section(f, lds_tr("雨波紋"))
         self.rain_ripple_chance = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_chance", 0.55), 0.05)
         self.rain_ripple_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_surface_y", 0.82), 0.01)
         self.rain_ripple_min_radius = self._double_spin(1.0, 300.0, getattr(self.settings, "rain_ripple_min_radius", 24.0), 1.0)
         self.rain_ripple_max_radius_linked = self._double_spin(1.0, 500.0, getattr(self.settings, "rain_ripple_max_radius_linked", 92.0), 1.0)
         self.rain_ripple_cooldown = self._double_spin(0.0, 1.0, getattr(self.settings, "rain_ripple_cooldown", 0.025), 0.005)
-        f.addRow("雨波紋の発生率", self.rain_ripple_chance)
-        f.addRow("水面Y位置", self.rain_ripple_surface_y)
-        f.addRow("雨波紋の最小半径", self.rain_ripple_min_radius)
-        f.addRow("雨波紋の最大半径", self.rain_ripple_max_radius_linked)
-        f.addRow("雨波紋の間隔", self.rain_ripple_cooldown)
+        f.addRow(lds_tr("雨波紋の発生率"), self.rain_ripple_chance)
+        f.addRow(lds_tr("水面Y位置"), self.rain_ripple_surface_y)
+        f.addRow(lds_tr("雨波紋の最小半径"), self.rain_ripple_min_radius)
+        f.addRow(lds_tr("雨波紋の最大半径"), self.rain_ripple_max_radius_linked)
+        f.addRow(lds_tr("雨波紋の間隔"), self.rain_ripple_cooldown)
 
-        self._section(f, "全体")
+        self._section(f, lds_tr("全体"))
         self.ripple_speed = self._double_spin(0.05, 300.0, self.settings.ripple_speed, 0.05)
         self.ripple_max_radius = self._double_spin(10.0, 800.0, self.settings.ripple_max_radius, 5.0)
         self.mouse_glow_radius = self._double_spin(10.0, 600.0, self.settings.mouse_glow_radius, 5.0)
         self.intensity = self._double_spin(0.0, 5.0, self.settings.intensity, 0.05)
         self.noise_alpha = self._int_spin(0, 255, self.settings.noise_alpha)
         self.background_alpha = self._int_spin(0, 255, self.settings.background_alpha)
-        self.gpu_acceleration_enabled = QCheckBox("GPU支援描画を使う（利用可能な場合）")
+        self.gpu_acceleration_enabled = QCheckBox(lds_tr("GPU支援描画を使う（利用可能な場合）"))
         self.gpu_acceleration_enabled.setChecked(bool(getattr(self.settings, "gpu_acceleration_enabled", True)))
-        self.gpu_acceleration_prefer_opengl = QCheckBox("OpenGL/RHIを優先")
+        set_beginner_tooltip(self.gpu_acceleration_enabled, lds_tr("パソコンが対応していれば描画をなめらかにします。分からない場合はONのままで大丈夫です。"))
+        self.gpu_acceleration_prefer_opengl = QCheckBox(lds_tr("OpenGL/RHIを優先"))
         self.gpu_acceleration_prefer_opengl.setChecked(bool(getattr(self.settings, "gpu_acceleration_prefer_opengl", True)))
-        self.gpu_acceleration_smooth_pixmaps = QCheckBox("GPU向け画像補間を有効化")
+        set_beginner_tooltip(self.gpu_acceleration_prefer_opengl, lds_tr("描画方式の優先設定です。画面が乱れる時以外は変更しなくて大丈夫です。"))
+        self.gpu_acceleration_smooth_pixmaps = QCheckBox(lds_tr("GPU向け画像補間を有効化"))
         self.gpu_acceleration_smooth_pixmaps.setChecked(bool(getattr(self.settings, "gpu_acceleration_smooth_pixmaps", True)))
-        self.effect_frame_rate_enabled = QCheckBox("エフェクトFPS制限を使う")
+        set_beginner_tooltip(self.gpu_acceleration_smooth_pixmaps, lds_tr("画像や反射をなめらかに見せる設定です。重い時はOFFを試してください。"))
+        self.effect_frame_rate_enabled = QCheckBox(lds_tr("エフェクトFPS制限を使う"))
         self.effect_frame_rate_enabled.setChecked(bool(getattr(self.settings, "effect_frame_rate_enabled", True)))
+        set_beginner_tooltip(self.effect_frame_rate_enabled, lds_tr("動きの上限を決めて、パソコンへの負荷を抑えます。"))
         self.effect_frame_rate = self._int_spin(1, 240, getattr(self.settings, "effect_frame_rate", 60))
         self.gpu_status_label = QLabel(effect_gpu_status_text())
         self.gpu_status_label.setWordWrap(True)
-        f.addRow("波紋速度", self.ripple_speed)
-        f.addRow("波紋最大半径", self.ripple_max_radius)
-        f.addRow("マウスグロー半径", self.mouse_glow_radius)
-        f.addRow("全体強度", self.intensity)
-        f.addRow("ノイズ濃度", self.noise_alpha)
-        f.addRow("背景不透明度", self.background_alpha)
-        f.addRow("GPU支援描画", self.gpu_acceleration_enabled)
-        f.addRow("GPUバックエンド優先", self.gpu_acceleration_prefer_opengl)
-        f.addRow("画像補間", self.gpu_acceleration_smooth_pixmaps)
-        f.addRow("エフェクトFPS制限", self.effect_frame_rate_enabled)
-        f.addRow("エフェクトFPS", self.effect_frame_rate)
-        f.addRow("GPU状態", self.gpu_status_label)
+        f.addRow(lds_tr("波紋速度"), self.ripple_speed)
+        f.addRow(lds_tr("波紋最大半径"), self.ripple_max_radius)
+        f.addRow(lds_tr("マウスグロー半径"), self.mouse_glow_radius)
+        f.addRow(lds_tr("全体強度"), self.intensity)
+        f.addRow(lds_tr("ノイズ濃度"), self.noise_alpha)
+        f.addRow(lds_tr("背景不透明度"), self.background_alpha)
+        f.addRow(lds_tr("GPU支援描画"), self.gpu_acceleration_enabled)
+        f.addRow(lds_tr("GPUバックエンド優先"), self.gpu_acceleration_prefer_opengl)
+        f.addRow(lds_tr("画像補間"), self.gpu_acceleration_smooth_pixmaps)
+        f.addRow(lds_tr("エフェクトFPS制限"), self.effect_frame_rate_enabled)
+        f.addRow(lds_tr("エフェクトFPS"), self.effect_frame_rate)
+        f.addRow(lds_tr("GPU状態"), self.gpu_status_label)
 
     def _build_color_tab(self):
         f = self.color_form
-        self._section(f, "バラ")
-        self.rose_petal_color = self._color_row_on(f, "花びら色", getattr(self.settings, "rose_petal_color", "#FF7AAE"))
-        self.rose_petal_edge_color = self._color_row_on(f, "花びら縁色", getattr(self.settings, "rose_petal_edge_color", "#FFD1E3"))
-        self.blooming_rose_color = self._color_row_on(f, "咲いた花色", getattr(self.settings, "blooming_rose_color", "#FF6FAE"))
-        self.blooming_rose_edge_color = self._color_row_on(f, "咲いた花縁色", getattr(self.settings, "blooming_rose_edge_color", "#FFD5E8"))
+        self._section(f, lds_tr("バラ"))
+        self.rose_petal_color = self._color_row_on(f, lds_tr("花びら色"), getattr(self.settings, "rose_petal_color", "#FF7AAE"))
+        self.rose_petal_edge_color = self._color_row_on(f, lds_tr("花びら縁色"), getattr(self.settings, "rose_petal_edge_color", "#FFD1E3"))
+        self.blooming_rose_color = self._color_row_on(f, lds_tr("咲いた花色"), getattr(self.settings, "blooming_rose_color", "#FF6FAE"))
+        self.blooming_rose_edge_color = self._color_row_on(f, lds_tr("咲いた花縁色"), getattr(self.settings, "blooming_rose_edge_color", "#FFD5E8"))
 
-        self._section(f, "桜")
-        self.sakura_petal_color = self._color_row_on(f, "桜花びら色", getattr(self.settings, "sakura_petal_color", "#FFD1E8"))
-        self.sakura_petal_edge_color = self._color_row_on(f, "桜花びら縁色", getattr(self.settings, "sakura_petal_edge_color", "#FF8FC7"))
+        self._section(f, lds_tr("桜"))
+        self.sakura_petal_color = self._color_row_on(f, lds_tr("桜花びら色"), getattr(self.settings, "sakura_petal_color", "#FFD1E8"))
+        self.sakura_petal_edge_color = self._color_row_on(f, lds_tr("桜花びら縁色"), getattr(self.settings, "sakura_petal_edge_color", "#FF8FC7"))
 
-        self._section(f, "雪")
-        self.snow_color = self._color_row_on(f, "雪の色", getattr(self.settings, "snow_color", "#F5FCFF"))
-        self.snow_edge_color = self._color_row_on(f, "雪の縁色", getattr(self.settings, "snow_edge_color", "#CFEFFF"))
-        self.snow_ripple_color = self._color_row_on(f, "雪の波紋色", getattr(self.settings, "snow_ripple_color", "#DFFBFF"))
-        self.snow_crystal_color = self._color_row_on(f, "雪の結晶色", getattr(self.settings, "snow_crystal_color", "#EBFAFF"))
-        self.snow_crystal_edge_color = self._color_row_on(f, "雪の結晶縁色", getattr(self.settings, "snow_crystal_edge_color", "#D8F4FF"))
-        self.snow_crystal_ripple_color = self._color_row_on(f, "雪の結晶波紋色", getattr(self.settings, "snow_crystal_ripple_color", "#E8FBFF"))
+        self._section(f, lds_tr("雪"))
+        self.snow_color = self._color_row_on(f, lds_tr("雪の色"), getattr(self.settings, "snow_color", "#F5FCFF"))
+        self.snow_edge_color = self._color_row_on(f, lds_tr("雪の縁色"), getattr(self.settings, "snow_edge_color", "#CFEFFF"))
+        self.snow_ripple_color = self._color_row_on(f, lds_tr("雪の波紋色"), getattr(self.settings, "snow_ripple_color", "#DFFBFF"))
+        self.snow_crystal_color = self._color_row_on(f, lds_tr("雪の結晶色"), getattr(self.settings, "snow_crystal_color", "#EBFAFF"))
+        self.snow_crystal_edge_color = self._color_row_on(f, lds_tr("雪の結晶縁色"), getattr(self.settings, "snow_crystal_edge_color", "#D8F4FF"))
+        self.snow_crystal_ripple_color = self._color_row_on(f, lds_tr("雪の結晶波紋色"), getattr(self.settings, "snow_crystal_ripple_color", "#E8FBFF"))
 
-        self._section(f, "水・火")
-        self.water_drop_color = self._color_row_on(f, "水玉色", getattr(self.settings, "water_drop_color", "#7DDCFF"))
-        self.water_drop_edge_color = self._color_row_on(f, "水玉縁色", getattr(self.settings, "water_drop_edge_color", "#D2F8FF"))
-        self.flame_core_color = self._color_row_on(f, "炎の中心色", getattr(self.settings, "flame_core_color", "#FFF58C"))
-        self.flame_mid_color = self._color_row_on(f, "炎の中間色", getattr(self.settings, "flame_mid_color", "#FF7823"))
-        self.flame_edge_color = self._color_row_on(f, "炎の外側色", getattr(self.settings, "flame_edge_color", "#FF1E00"))
-        self.water_spray_color = self._color_row_on(f, "水の吹き出し色", getattr(self.settings, "water_spray_color", "#82E1FF"))
-        self.water_spray_edge_color = self._color_row_on(f, "水の吹き出し縁色", getattr(self.settings, "water_spray_edge_color", "#D7FAFF"))
-        self.water_surface_color = self._color_row_on(f, "水面色", getattr(self.settings, "water_surface_color", "#4FC3FF"))
-        self.water_surface_highlight_color = self._color_row_on(f, "水面ハイライト色", getattr(self.settings, "water_surface_highlight_color", "#D8FAFF"))
-        self.water_depth_color = self._color_row_on(f, "水面奥行き色", getattr(self.settings, "water_depth_color", "#1A5B70"))
-        self.water_morning_fog_color = self._color_row_on(f, "朝もや色", getattr(self.settings, "water_morning_fog_color", "#E9F6FF"))
-        self.water_fish_color = self._color_row_on(f, "魚の色", getattr(self.settings, "water_fish_color", "#7FE7D1"))
-        self.water_fish_secondary_color = self._color_row_on(f, "魚のハイライト色", getattr(self.settings, "water_fish_secondary_color", "#D8FFF3"))
-        self.fireball_core_color = self._color_row_on(f, "火の玉中心色", getattr(self.settings, "fireball_core_color", "#FFFFBE"))
-        self.fireball_mid_color = self._color_row_on(f, "火の玉中間色", getattr(self.settings, "fireball_mid_color", "#FF7828"))
-        self.fireball_edge_color = self._color_row_on(f, "火の玉外側色", getattr(self.settings, "fireball_edge_color", "#AA1400"))
-        self.fireball_trail_color = self._color_row_on(f, "火の玉の尾色", getattr(self.settings, "fireball_trail_color", "#FF5A14"))
+        self._section(f, lds_tr("水・火"))
+        self.water_drop_color = self._color_row_on(f, lds_tr("水玉色"), getattr(self.settings, "water_drop_color", "#7DDCFF"))
+        self.water_drop_edge_color = self._color_row_on(f, lds_tr("水玉縁色"), getattr(self.settings, "water_drop_edge_color", "#D2F8FF"))
+        self.flame_core_color = self._color_row_on(f, lds_tr("炎の中心色"), getattr(self.settings, "flame_core_color", "#FFF58C"))
+        self.flame_mid_color = self._color_row_on(f, lds_tr("炎の中間色"), getattr(self.settings, "flame_mid_color", "#FF7823"))
+        self.flame_edge_color = self._color_row_on(f, lds_tr("炎の外側色"), getattr(self.settings, "flame_edge_color", "#FF1E00"))
+        self.water_spray_color = self._color_row_on(f, lds_tr("水の吹き出し色"), getattr(self.settings, "water_spray_color", "#82E1FF"))
+        self.water_spray_edge_color = self._color_row_on(f, lds_tr("水の吹き出し縁色"), getattr(self.settings, "water_spray_edge_color", "#D7FAFF"))
+        self.water_surface_color = self._color_row_on(f, lds_tr("水面色"), getattr(self.settings, "water_surface_color", "#4FC3FF"))
+        self.water_surface_highlight_color = self._color_row_on(f, lds_tr("水面ハイライト色"), getattr(self.settings, "water_surface_highlight_color", "#D8FAFF"))
+        self.water_depth_color = self._color_row_on(f, lds_tr("水面奥行き色"), getattr(self.settings, "water_depth_color", "#1A5B70"))
+        self.water_morning_fog_color = self._color_row_on(f, lds_tr("朝もや色"), getattr(self.settings, "water_morning_fog_color", "#E9F6FF"))
+        self.water_fish_color = self._color_row_on(f, lds_tr("魚の色"), getattr(self.settings, "water_fish_color", "#7FE7D1"))
+        self.water_fish_secondary_color = self._color_row_on(f, lds_tr("魚のハイライト色"), getattr(self.settings, "water_fish_secondary_color", "#D8FFF3"))
+        self.fireball_core_color = self._color_row_on(f, lds_tr("火の玉中心色"), getattr(self.settings, "fireball_core_color", "#FFFFBE"))
+        self.fireball_mid_color = self._color_row_on(f, lds_tr("火の玉中間色"), getattr(self.settings, "fireball_mid_color", "#FF7828"))
+        self.fireball_edge_color = self._color_row_on(f, lds_tr("火の玉外側色"), getattr(self.settings, "fireball_edge_color", "#AA1400"))
+        self.fireball_trail_color = self._color_row_on(f, lds_tr("火の玉の尾色"), getattr(self.settings, "fireball_trail_color", "#FF5A14"))
 
-        self._section(f, "星空・天の川")
-        self.star_sky_color = self._color_row_on(f, "星空色", getattr(self.settings, "star_sky_color", "#F8FBFF"))
-        self.star_sky_secondary_color = self._color_row_on(f, "星空サブ色", getattr(self.settings, "star_sky_secondary_color", "#BFD8FF"))
-        self.milky_way_color = self._color_row_on(f, "天の川色", getattr(self.settings, "milky_way_color", "#BFD7FF"))
+        self._section(f, lds_tr("星空・天の川"))
+        self.star_sky_color = self._color_row_on(f, lds_tr("星空色"), getattr(self.settings, "star_sky_color", "#F8FBFF"))
+        self.star_sky_secondary_color = self._color_row_on(f, lds_tr("星空サブ色"), getattr(self.settings, "star_sky_secondary_color", "#BFD8FF"))
+        self.milky_way_color = self._color_row_on(f, lds_tr("天の川色"), getattr(self.settings, "milky_way_color", "#BFD7FF"))
 
-        self._section(f, "竹林")
-        self.bamboo_stalk_color = self._color_row_on(f, "竹色", getattr(self.settings, "bamboo_stalk_color", "#3EA65A"))
-        self.bamboo_shadow_color = self._color_row_on(f, "竹の影色", getattr(self.settings, "bamboo_shadow_color", "#1F6F3B"))
-        self.bamboo_node_color = self._color_row_on(f, "竹の節色", getattr(self.settings, "bamboo_node_color", "#B7E37A"))
-        self.bamboo_leaf_color = self._color_row_on(f, "竹の葉色", getattr(self.settings, "bamboo_leaf_color", "#5ED06C"))
+        self._section(f, lds_tr("竹林"))
+        self.bamboo_stalk_color = self._color_row_on(f, lds_tr("竹色"), getattr(self.settings, "bamboo_stalk_color", "#3EA65A"))
+        self.bamboo_shadow_color = self._color_row_on(f, lds_tr("竹の影色"), getattr(self.settings, "bamboo_shadow_color", "#1F6F3B"))
+        self.bamboo_node_color = self._color_row_on(f, lds_tr("竹の節色"), getattr(self.settings, "bamboo_node_color", "#B7E37A"))
+        self.bamboo_leaf_color = self._color_row_on(f, lds_tr("竹の葉色"), getattr(self.settings, "bamboo_leaf_color", "#5ED06C"))
 
-        self._section(f, "環境")
-        self.particle_color = self._color_row_on(f, "粒子色", self.settings.particle_color)
-        self.rain_color = self._color_row_on(f, "雨色", self.settings.rain_color)
-        self.glow_color = self._color_row_on(f, "グロー色", self.settings.glow_color)
-        self.ripple_color = self._color_row_on(f, self._pictogram_text("波紋色"), self.settings.ripple_color)
-        self.noise_color = self._color_row_on(f, self._pictogram_text("ノイズ色"), self.settings.noise_color)
-        self.mouse_glow_color = self._color_row_on(f, self._pictogram_text("マウスグロー色"), self.settings.mouse_glow_color)
+        self._section(f, lds_tr("環境"))
+        self.particle_color = self._color_row_on(f, lds_tr("粒子色"), self.settings.particle_color)
+        self.rain_color = self._color_row_on(f, lds_tr("雨色"), self.settings.rain_color)
+        self.glow_color = self._color_row_on(f, lds_tr("グロー色"), self.settings.glow_color)
+        self.ripple_color = self._color_row_on(f, self._pictogram_text(lds_tr("波紋色")), self.settings.ripple_color)
+        self.noise_color = self._color_row_on(f, self._pictogram_text(lds_tr("ノイズ色")), self.settings.noise_color)
+        self.mouse_glow_color = self._color_row_on(f, self._pictogram_text(lds_tr("マウスグロー色")), self.settings.mouse_glow_color)
 
 
     def _add_effect_block(self, form, title, prefix, label, count_default, speed_default, size_default, alpha_default, ripple=False, surface_default=0.86, chance_default=0.5):
@@ -1166,52 +1408,73 @@ class EffectsOverlayEditorDialog(QDialog):
         setattr(self, f"{prefix}_size", size)
         setattr(self, f"{prefix}_alpha", alpha)
         form.addRow(self._pictogram_text("ON/OFF"), enabled)
-        form.addRow(self._pictogram_text("数"), count)
-        form.addRow(self._pictogram_text("速度"), speed)
-        form.addRow(self._pictogram_text("サイズ"), size)
-        form.addRow(self._pictogram_text("透明度"), alpha)
+        form.addRow(self._pictogram_text(lds_tr("数")), count)
+        form.addRow(self._pictogram_text(lds_tr("速度")), speed)
+        form.addRow(self._pictogram_text(lds_tr("サイズ")), size)
+        form.addRow(self._pictogram_text(lds_tr("透明度")), alpha)
         if ripple:
-            ripple_enabled = QCheckBox("下に落ちた時に波紋")
+            ripple_enabled = QCheckBox(lds_tr("下に落ちた時に波紋"))
             ripple_enabled.setChecked(bool(getattr(self.settings, f"{prefix}_ripple_enabled", True)))
             chance = self._double_spin(0.0, 1.0, getattr(self.settings, f"{prefix}_ripple_chance", chance_default), 0.05)
             surface = self._double_spin(0.0, 1.0, getattr(self.settings, f"{prefix}_surface_y", surface_default), 0.01)
             setattr(self, f"{prefix}_ripple_enabled", ripple_enabled)
             setattr(self, f"{prefix}_ripple_chance", chance)
             setattr(self, f"{prefix}_surface_y", surface)
-            form.addRow(self._pictogram_text("波紋"), ripple_enabled)
-            form.addRow(self._pictogram_text("波紋発生率"), chance)
-            form.addRow(self._pictogram_text("水面Y"), surface)
+            form.addRow(self._pictogram_text(lds_tr("波紋")), ripple_enabled)
+            form.addRow(self._pictogram_text(lds_tr("波紋発生率")), chance)
+            form.addRow(self._pictogram_text(lds_tr("水面Y")), surface)
 
     def _build_extra_weather_tab(self):
         f = self.extra_weather_form
-        self._add_effect_block(f, "雪", "snow", "小さな雪がゆっくり落ちる", 90, 0.18, 4.5, 210, ripple=True, surface_default=0.86, chance_default=0.38)
-        self._add_effect_block(f, "中くらいの雪の結晶", "snow_crystal", "雪の結晶がゆっくり落ちる", 22, 0.12, 15.0, 220, ripple=True, surface_default=0.86, chance_default=0.55)
-        self._add_effect_block(f, "水玉", "water_drop", "水玉が上から落ちる", 55, 0.48, 8.0, 210, ripple=True, surface_default=0.86, chance_default=0.75)
-        self._add_effect_block(f, "泡", "bubble", "泡が下からポコポコ登る", 42, 0.26, 12.0, 150, ripple=False)
-        self._add_effect_block(f, "炎", "flame", "下から炎がゆらめく", 60, 0.55, 22.0, 210, ripple=False)
-        self._add_effect_block(f, "水が吹き出る", "water_spray", "下から水が噴き上がる", 64, 0.75, 6.0, 190, ripple=False)
+        self._add_effect_block(f, lds_tr("雪"), "snow", lds_tr("小さな雪がゆっくり落ちる"), 90, 0.18, 4.5, 210, ripple=True, surface_default=0.86, chance_default=0.38)
+        self._section(f, lds_tr("雪の積雪"))
+        self.snow_accumulation_enabled = QCheckBox(lds_tr("雪が徐々に積もる"))
+        self.snow_accumulation_enabled.setChecked(bool(getattr(self.settings, "snow_accumulation_enabled", False)))
+        self.snow_accumulation_start_y = self._double_spin(0.0, 1.0, getattr(self.settings, "snow_accumulation_start_y", 1.0), 0.01)
+        self.snow_accumulation_max_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "snow_accumulation_max_depth", 1.0), 0.01)
+        self.snow_accumulation_build_rate = self._double_spin(0.0, 120.0, getattr(self.settings, "snow_accumulation_build_rate", 7.0), 0.5)
+        self.snow_accumulation_column_width = self._double_spin(2.0, 30.0, getattr(self.settings, "snow_accumulation_column_width", 7.0), 0.5)
+        self.snow_accumulation_alpha = self._int_spin(0, 255, getattr(self.settings, "snow_accumulation_alpha", 230))
+        self.snow_accumulation_mouse_remove_enabled = QCheckBox(lds_tr("マウスで積雪を除去"))
+        self.snow_accumulation_mouse_remove_enabled.setChecked(bool(getattr(self.settings, "snow_accumulation_mouse_remove_enabled", True)))
+        self.snow_accumulation_remove_radius = self._double_spin(4.0, 300.0, getattr(self.settings, "snow_accumulation_remove_radius", 58.0), 2.0)
+        self.snow_accumulation_remove_strength = self._double_spin(1.0, 400.0, getattr(self.settings, "snow_accumulation_remove_strength", 72.0), 2.0)
+        f.addRow(lds_tr("積雪"), self.snow_accumulation_enabled)
+        f.addRow(lds_tr("積雪開始Y"), self.snow_accumulation_start_y)
+        f.addRow(lds_tr("最大積雪量"), self.snow_accumulation_max_depth)
+        f.addRow(lds_tr("積もる速度"), self.snow_accumulation_build_rate)
+        f.addRow(lds_tr("積雪解像度"), self.snow_accumulation_column_width)
+        f.addRow(lds_tr("積雪透明度"), self.snow_accumulation_alpha)
+        f.addRow(lds_tr("マウス除雪"), self.snow_accumulation_mouse_remove_enabled)
+        f.addRow(lds_tr("除雪半径"), self.snow_accumulation_remove_radius)
+        f.addRow(lds_tr("除雪強さ"), self.snow_accumulation_remove_strength)
+        self._add_effect_block(f, lds_tr("中くらいの雪の結晶"), "snow_crystal", lds_tr("雪の結晶がゆっくり落ちる"), 22, 0.12, 15.0, 220, ripple=True, surface_default=0.86, chance_default=0.55)
+        self._add_effect_block(f, lds_tr("水玉"), "water_drop", lds_tr("水玉が上から落ちる"), 55, 0.48, 8.0, 210, ripple=True, surface_default=0.86, chance_default=0.75)
+        self._add_effect_block(f, lds_tr("泡"), "bubble", lds_tr("泡が下からポコポコ登る"), 42, 0.26, 12.0, 150, ripple=False)
+        self._add_effect_block(f, lds_tr("炎"), "flame", lds_tr("下から炎がゆらめく"), 60, 0.55, 22.0, 210, ripple=False)
+        self._add_effect_block(f, lds_tr("水が吹き出る"), "water_spray", lds_tr("下から水が噴き上がる"), 64, 0.75, 6.0, 190, ripple=False)
 
     def _build_extra_sky_tab(self):
         f = self.extra_sky_form
-        self._add_effect_block(f, "火の玉", "fireball", "火の玉がゆらゆら上から降りる", 10, 0.34, 20.0, 225, ripple=False)
-        self._add_effect_block(f, "満天の星空", "star_sky", "遠くで小さくキラキラ光る星", 360, 0.35, 1.6, 220, ripple=False)
-        self._section(f, "天の川")
-        self.milky_way_enabled = QCheckBox("天の川を描画")
+        self._add_effect_block(f, lds_tr("火の玉"), "fireball", lds_tr("火の玉がゆらゆら上から降りる"), 10, 0.34, 20.0, 225, ripple=False)
+        self._add_effect_block(f, lds_tr("満天の星空"), "star_sky", lds_tr("遠くで小さくキラキラ光る星"), 360, 0.35, 1.6, 220, ripple=False)
+        self._section(f, lds_tr("天の川"))
+        self.milky_way_enabled = QCheckBox(lds_tr("天の川を描画"))
         self.milky_way_enabled.setChecked(bool(getattr(self.settings, "milky_way_enabled", False)))
         self.milky_way_star_count = self._int_spin(0, 2000, getattr(self.settings, "milky_way_star_count", 220))
         self.milky_way_alpha = self._int_spin(0, 255, getattr(self.settings, "milky_way_alpha", 120))
         self.milky_way_width = self._double_spin(0.02, 1.0, getattr(self.settings, "milky_way_width", 0.22), 0.01)
         self.milky_way_angle = self._double_spin(-180.0, 180.0, getattr(self.settings, "milky_way_angle", -18.0), 1.0)
-        f.addRow("天の川", self.milky_way_enabled)
-        f.addRow("天の川の星数", self.milky_way_star_count)
-        f.addRow("天の川透明度", self.milky_way_alpha)
-        f.addRow("天の川幅", self.milky_way_width)
-        f.addRow("天の川角度", self.milky_way_angle)
+        f.addRow(lds_tr("天の川"), self.milky_way_enabled)
+        f.addRow(lds_tr("天の川の星数"), self.milky_way_star_count)
+        f.addRow(lds_tr("天の川透明度"), self.milky_way_alpha)
+        f.addRow(lds_tr("天の川幅"), self.milky_way_width)
+        f.addRow(lds_tr("天の川角度"), self.milky_way_angle)
 
-        self._section(f, "水面")
-        self.water_surface_enabled = QCheckBox("水面を描画")
+        self._section(f, lds_tr("水面"))
+        self.water_surface_enabled = QCheckBox(lds_tr("水面を描画"))
         self.water_surface_enabled.setChecked(bool(getattr(self.settings, "water_surface_enabled", False)))
-        self.puddle_enabled = QCheckBox("水たまり（横長の楕円で水面を限定）")
+        self.puddle_enabled = QCheckBox(lds_tr("水たまり（横長の楕円で水面を限定）"))
         self.puddle_enabled.setChecked(bool(getattr(self.settings, "puddle_enabled", False)))
         self.puddle_x = self._double_spin(0.0, 1.0, getattr(self.settings, "puddle_x", 0.50), 0.01)
         self.puddle_y = self._double_spin(0.0, 1.0, getattr(self.settings, "puddle_y", 0.84), 0.01)
@@ -1227,100 +1490,100 @@ class EffectsOverlayEditorDialog(QDialog):
         self.water_surface_wave_height = self._double_spin(0.0, 80.0, getattr(self.settings, "water_surface_wave_height", 12.0), 0.5)
         self.water_surface_y = self._double_spin(0.0, 1.0, getattr(self.settings, "water_surface_y", 0.58), 0.01)
         self.water_surface_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "water_surface_depth", 0.42), 0.01)
-        self.water_depth_enabled = QCheckBox("水面に奥行きを追加")
+        self.water_depth_enabled = QCheckBox(lds_tr("水面に奥行きを追加"))
         self.water_depth_enabled.setChecked(bool(getattr(self.settings, "water_depth_enabled", True)))
         self.water_depth_strength = self._double_spin(0.0, 2.0, getattr(self.settings, "water_depth_strength", 0.75), 0.01)
         self.water_depth_haze_alpha = self._int_spin(0, 255, getattr(self.settings, "water_depth_haze_alpha", 48))
-        self.water_morning_fog_enabled = QCheckBox("朝もや/霧を水面に追加")
+        self.water_morning_fog_enabled = QCheckBox(lds_tr("朝もや/霧を水面に追加"))
         self.water_morning_fog_enabled.setChecked(bool(getattr(self.settings, "water_morning_fog_enabled", True)))
-        self.water_morning_fog_follow_sunrise = QCheckBox("朝焼けON時のみ")
+        self.water_morning_fog_follow_sunrise = QCheckBox(lds_tr("朝焼けON時のみ"))
         self.water_morning_fog_follow_sunrise.setChecked(bool(getattr(self.settings, "water_morning_fog_follow_sunrise", True)))
         self.water_morning_fog_strength = self._double_spin(0.0, 2.0, getattr(self.settings, "water_morning_fog_strength", 0.65), 0.01)
         self.water_morning_fog_alpha = self._int_spin(0, 255, getattr(self.settings, "water_morning_fog_alpha", 95))
         self.water_morning_fog_height = self._double_spin(0.05, 0.60, getattr(self.settings, "water_morning_fog_height", 0.22), 0.01)
         self.water_morning_fog_drift = self._double_spin(0.0, 3.0, getattr(self.settings, "water_morning_fog_drift", 0.35), 0.01)
-        self.water_fish_enabled = QCheckBox("水面ON時に曲線で描いた丸々とした魚を泳がせる")
+        self.water_fish_enabled = QCheckBox(lds_tr("水面ON時に曲線で描いた丸々とした魚を泳がせる"))
         self.water_fish_enabled.setChecked(bool(getattr(self.settings, "water_fish_enabled", True)))
         self.water_fish_count = self._int_spin(0, 60, getattr(self.settings, "water_fish_count", 4))
         self.water_fish_speed = self._double_spin(0.0, 3.0, getattr(self.settings, "water_fish_speed", 0.28), 0.01)
         self.water_fish_size = self._double_spin(4.0, 90.0, getattr(self.settings, "water_fish_size", 24.0), 0.5)
         self.water_fish_alpha = self._int_spin(0, 255, getattr(self.settings, "water_fish_alpha", 175))
-        self.water_mirror_enabled = QCheckBox("他ウィジェットを鏡面反射")
+        self.water_mirror_enabled = QCheckBox(lds_tr("他ウィジェットを鏡面反射"))
         self.water_mirror_enabled.setChecked(bool(getattr(self.settings, "water_mirror_enabled", False)))
         self.water_mirror_alpha = self._int_spin(0, 255, getattr(self.settings, "water_mirror_alpha", 110))
         self.water_mirror_blur = self._double_spin(0.0, 24.0, getattr(self.settings, "water_mirror_blur", 5.0), 0.5)
         self.water_mirror_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "water_mirror_depth", 0.65), 0.01)
         self.water_mirror_wave = self._double_spin(0.0, 40.0, getattr(self.settings, "water_mirror_wave", 7.0), 0.5)
         self.water_mirror_tint_alpha = self._int_spin(0, 255, getattr(self.settings, "water_mirror_tint_alpha", 58))
-        self.water_mirror_reflect_effects_enabled = QCheckBox("指定エフェクトも反射")
-        self.water_mirror_reflect_widgets_enabled = QCheckBox("通常ウィジェットを反射")
+        self.water_mirror_reflect_effects_enabled = QCheckBox(lds_tr("指定エフェクトも反射"))
+        self.water_mirror_reflect_widgets_enabled = QCheckBox(lds_tr("通常ウィジェットを反射"))
         self.water_mirror_reflect_widgets_enabled.setChecked(bool(getattr(self.settings, "water_mirror_reflect_widgets_enabled", True)))
         self.water_mirror_reflect_effects_enabled.setChecked(bool(getattr(self.settings, "water_mirror_reflect_effects_enabled", True)))
-        self.water_mirror_reflect_snow = QCheckBox("雪を反射")
+        self.water_mirror_reflect_snow = QCheckBox(lds_tr("雪を反射"))
         self.water_mirror_reflect_snow.setChecked(bool(getattr(self.settings, "water_mirror_reflect_snow", True)))
-        self.water_mirror_reflect_snow_crystal = QCheckBox("雪の結晶を反射")
+        self.water_mirror_reflect_snow_crystal = QCheckBox(lds_tr("雪の結晶を反射"))
         self.water_mirror_reflect_snow_crystal.setChecked(bool(getattr(self.settings, "water_mirror_reflect_snow_crystal", True)))
-        self.water_mirror_reflect_petals = QCheckBox("花びらを反射")
+        self.water_mirror_reflect_petals = QCheckBox(lds_tr("花びらを反射"))
         self.water_mirror_reflect_petals.setChecked(bool(getattr(self.settings, "water_mirror_reflect_petals", True)))
-        self.water_mirror_reflect_bamboo = QCheckBox("竹林を反射")
+        self.water_mirror_reflect_bamboo = QCheckBox(lds_tr("竹林を反射"))
         self.water_mirror_reflect_bamboo.setChecked(bool(getattr(self.settings, "water_mirror_reflect_bamboo", True)))
-        self.water_mirror_reflect_shooting_star = QCheckBox("流れ星を反射")
+        self.water_mirror_reflect_shooting_star = QCheckBox(lds_tr("流れ星を反射"))
         self.water_mirror_reflect_shooting_star.setChecked(bool(getattr(self.settings, "water_mirror_reflect_shooting_star", True)))
-        self.water_mirror_reflect_meteor_shower = QCheckBox("流星群を反射")
+        self.water_mirror_reflect_meteor_shower = QCheckBox(lds_tr("流星群を反射"))
         self.water_mirror_reflect_meteor_shower.setChecked(bool(getattr(self.settings, "water_mirror_reflect_meteor_shower", True)))
-        self.water_mirror_reflect_rain = QCheckBox("雨を反射")
+        self.water_mirror_reflect_rain = QCheckBox(lds_tr("雨を反射"))
         self.water_mirror_reflect_rain.setChecked(bool(getattr(self.settings, "water_mirror_reflect_rain", True)))
-        f.addRow("水面", self.water_surface_enabled)
-        f.addRow("水たまり", self.puddle_enabled)
-        f.addRow("水たまりX", self.puddle_x)
-        f.addRow("水たまりY", self.puddle_y)
-        f.addRow("水たまり幅", self.puddle_width)
-        f.addRow("水たまり高さ", self.puddle_height)
-        f.addRow("水たまり縁なじみ", self.puddle_edge_softness)
-        f.addRow("水たまり数", self.puddle_count)
-        f.addRow("水たまり点在幅", self.puddle_spread)
-        f.addRow("水面透明度", self.water_surface_alpha)
-        f.addRow("流れ角度", self.water_surface_flow_angle)
-        f.addRow("流れ速度", self.water_surface_flow_speed)
-        f.addRow("波の本数", self.water_surface_wave_count)
-        f.addRow("波の高さ", self.water_surface_wave_height)
-        f.addRow("水面Y", self.water_surface_y)
-        f.addRow("水面の深さ", self.water_surface_depth)
-        f.addRow("奥行き", self.water_depth_enabled)
-        f.addRow("奥行き強度", self.water_depth_strength)
-        f.addRow("奥の霞(α)", self.water_depth_haze_alpha)
-        f.addRow("朝もや/霧", self.water_morning_fog_enabled)
-        f.addRow("朝焼け連動", self.water_morning_fog_follow_sunrise)
-        f.addRow("もや強度", self.water_morning_fog_strength)
-        f.addRow("もや透明度", self.water_morning_fog_alpha)
-        f.addRow("もや高さ", self.water_morning_fog_height)
-        f.addRow("もや流れ", self.water_morning_fog_drift)
-        f.addRow("丸々とした魚", self.water_fish_enabled)
-        f.addRow("魚の数", self.water_fish_count)
-        f.addRow("魚の速度", self.water_fish_speed)
-        f.addRow("魚の大きさ", self.water_fish_size)
-        f.addRow("魚の透明度", self.water_fish_alpha)
-        f.addRow("鏡面反射", self.water_mirror_enabled)
-        f.addRow("鏡面反射具合", self.water_mirror_alpha)
-        f.addRow("反射ぼかし", self.water_mirror_blur)
-        f.addRow("反射の深さ", self.water_mirror_depth)
-        f.addRow("反射の揺らぎ", self.water_mirror_wave)
-        f.addRow("水色なじませ", self.water_mirror_tint_alpha)
-        f.addRow("エフェクト反射", self.water_mirror_reflect_effects_enabled)
-        f.addRow("通常ウィジェット反射", self.water_mirror_reflect_widgets_enabled)
-        f.addRow("反射: 雪", self.water_mirror_reflect_snow)
-        f.addRow("反射: 雪の結晶", self.water_mirror_reflect_snow_crystal)
-        f.addRow("反射: 花びら", self.water_mirror_reflect_petals)
-        f.addRow("反射: 竹", self.water_mirror_reflect_bamboo)
-        f.addRow("反射: 流れ星", self.water_mirror_reflect_shooting_star)
-        f.addRow("反射: 流星群", self.water_mirror_reflect_meteor_shower)
-        f.addRow("反射: 雨", self.water_mirror_reflect_rain)
-        self._section(f, "氷・氷河")
-        self.ice_enabled = QCheckBox("リアル寄りの氷・氷河を描画")
+        f.addRow(lds_tr("水面"), self.water_surface_enabled)
+        f.addRow(lds_tr("水たまり"), self.puddle_enabled)
+        f.addRow(lds_tr("水たまりX"), self.puddle_x)
+        f.addRow(lds_tr("水たまりY"), self.puddle_y)
+        f.addRow(lds_tr("水たまり幅"), self.puddle_width)
+        f.addRow(lds_tr("水たまり高さ"), self.puddle_height)
+        f.addRow(lds_tr("水たまり縁なじみ"), self.puddle_edge_softness)
+        f.addRow(lds_tr("水たまり数"), self.puddle_count)
+        f.addRow(lds_tr("水たまり点在幅"), self.puddle_spread)
+        f.addRow(lds_tr("水面透明度"), self.water_surface_alpha)
+        f.addRow(lds_tr("流れ角度"), self.water_surface_flow_angle)
+        f.addRow(lds_tr("流れ速度"), self.water_surface_flow_speed)
+        f.addRow(lds_tr("波の本数"), self.water_surface_wave_count)
+        f.addRow(lds_tr("波の高さ"), self.water_surface_wave_height)
+        f.addRow(lds_tr("水面Y"), self.water_surface_y)
+        f.addRow(lds_tr("水面の深さ"), self.water_surface_depth)
+        f.addRow(lds_tr("奥行き"), self.water_depth_enabled)
+        f.addRow(lds_tr("奥行き強度"), self.water_depth_strength)
+        f.addRow(lds_tr("奥の霞(α)"), self.water_depth_haze_alpha)
+        f.addRow(lds_tr("朝もや/霧"), self.water_morning_fog_enabled)
+        f.addRow(lds_tr("朝焼け連動"), self.water_morning_fog_follow_sunrise)
+        f.addRow(lds_tr("もや強度"), self.water_morning_fog_strength)
+        f.addRow(lds_tr("もや透明度"), self.water_morning_fog_alpha)
+        f.addRow(lds_tr("もや高さ"), self.water_morning_fog_height)
+        f.addRow(lds_tr("もや流れ"), self.water_morning_fog_drift)
+        f.addRow(lds_tr("丸々とした魚"), self.water_fish_enabled)
+        f.addRow(lds_tr("魚の数"), self.water_fish_count)
+        f.addRow(lds_tr("魚の速度"), self.water_fish_speed)
+        f.addRow(lds_tr("魚の大きさ"), self.water_fish_size)
+        f.addRow(lds_tr("魚の透明度"), self.water_fish_alpha)
+        f.addRow(lds_tr("鏡面反射"), self.water_mirror_enabled)
+        f.addRow(lds_tr("鏡面反射具合"), self.water_mirror_alpha)
+        f.addRow(lds_tr("反射ぼかし"), self.water_mirror_blur)
+        f.addRow(lds_tr("反射の深さ"), self.water_mirror_depth)
+        f.addRow(lds_tr("反射の揺らぎ"), self.water_mirror_wave)
+        f.addRow(lds_tr("水色なじませ"), self.water_mirror_tint_alpha)
+        f.addRow(lds_tr("エフェクト反射"), self.water_mirror_reflect_effects_enabled)
+        f.addRow(lds_tr("通常ウィジェット反射"), self.water_mirror_reflect_widgets_enabled)
+        f.addRow(lds_tr("反射: 雪"), self.water_mirror_reflect_snow)
+        f.addRow(lds_tr("反射: 雪の結晶"), self.water_mirror_reflect_snow_crystal)
+        f.addRow(lds_tr("反射: 花びら"), self.water_mirror_reflect_petals)
+        f.addRow(lds_tr("反射: 竹"), self.water_mirror_reflect_bamboo)
+        f.addRow(lds_tr("反射: 流れ星"), self.water_mirror_reflect_shooting_star)
+        f.addRow(lds_tr("反射: 流星群"), self.water_mirror_reflect_meteor_shower)
+        f.addRow(lds_tr("反射: 雨"), self.water_mirror_reflect_rain)
+        self._section(f, lds_tr("氷・氷河"))
+        self.ice_enabled = QCheckBox(lds_tr("リアル寄りの氷・氷河を描画"))
         self.ice_enabled.setChecked(bool(getattr(self.settings, "ice_enabled", False)))
-        self.ice_lightweight_enabled = QCheckBox("軽量描画を使う")
+        self.ice_lightweight_enabled = QCheckBox(lds_tr("軽量描画を使う"))
         self.ice_lightweight_enabled.setChecked(bool(getattr(self.settings, "ice_lightweight_enabled", True)))
-        self.ice_static_cache_enabled = QCheckBox("静的な氷模様をキャッシュする")
+        self.ice_static_cache_enabled = QCheckBox(lds_tr("静的な氷模様をキャッシュする"))
         self.ice_static_cache_enabled.setChecked(bool(getattr(self.settings, "ice_static_cache_enabled", True)))
         self.ice_quality_scale = self._double_spin(0.25, 1.0, getattr(self.settings, "ice_quality_scale", 0.58), 0.01)
         self.ice_max_facets = self._int_spin(8, 600, getattr(self.settings, "ice_max_facets", 72))
@@ -1338,82 +1601,82 @@ class EffectsOverlayEditorDialog(QDialog):
         self.ice_crack_intensity = self._double_spin(0.0, 2.0, getattr(self.settings, "ice_crack_intensity", 0.46), 0.01)
         self.ice_internal_bubble_intensity = self._double_spin(0.0, 2.0, getattr(self.settings, "ice_internal_bubble_intensity", 0.36), 0.01)
         self.ice_glacier_roughness = self._double_spin(0.0, 1.5, getattr(self.settings, "ice_glacier_roughness", 0.55), 0.01)
-        self.ice_mirror_enabled = QCheckBox("氷面に他ウィジェット/エフェクトを鏡面反射")
+        self.ice_mirror_enabled = QCheckBox(lds_tr("氷面に他ウィジェット/エフェクトを鏡面反射"))
         self.ice_mirror_enabled.setChecked(bool(getattr(self.settings, "ice_mirror_enabled", True)))
         self.ice_mirror_alpha = self._int_spin(0, 255, getattr(self.settings, "ice_mirror_alpha", 118))
         self.ice_mirror_blur = self._double_spin(0.0, 24.0, getattr(self.settings, "ice_mirror_blur", 3.5), 0.5)
         self.ice_mirror_depth = self._double_spin(0.05, 1.0, getattr(self.settings, "ice_mirror_depth", 0.68), 0.01)
         self.ice_mirror_wave = self._double_spin(0.0, 30.0, getattr(self.settings, "ice_mirror_wave", 2.2), 0.25)
         self.ice_mirror_tint_alpha = self._int_spin(0, 255, getattr(self.settings, "ice_mirror_tint_alpha", 70))
-        self.ice_reflect_effects_enabled = QCheckBox("エフェクトも反射対象に含める")
-        self.ice_reflect_widgets_enabled = QCheckBox("通常ウィジェットを反射")
+        self.ice_reflect_effects_enabled = QCheckBox(lds_tr("エフェクトも反射対象に含める"))
+        self.ice_reflect_widgets_enabled = QCheckBox(lds_tr("通常ウィジェットを反射"))
         self.ice_reflect_widgets_enabled.setChecked(bool(getattr(self.settings, "ice_reflect_widgets_enabled", True)))
-        self.ice_reflect_snow = QCheckBox("雪を反射")
+        self.ice_reflect_snow = QCheckBox(lds_tr("雪を反射"))
         self.ice_reflect_snow.setChecked(bool(getattr(self.settings, "ice_reflect_snow", True)))
-        self.ice_reflect_snow_crystal = QCheckBox("雪の結晶を反射")
+        self.ice_reflect_snow_crystal = QCheckBox(lds_tr("雪の結晶を反射"))
         self.ice_reflect_snow_crystal.setChecked(bool(getattr(self.settings, "ice_reflect_snow_crystal", True)))
-        self.ice_reflect_petals = QCheckBox("花びらを反射")
+        self.ice_reflect_petals = QCheckBox(lds_tr("花びらを反射"))
         self.ice_reflect_petals.setChecked(bool(getattr(self.settings, "ice_reflect_petals", True)))
-        self.ice_reflect_bamboo = QCheckBox("竹林を反射")
+        self.ice_reflect_bamboo = QCheckBox(lds_tr("竹林を反射"))
         self.ice_reflect_bamboo.setChecked(bool(getattr(self.settings, "ice_reflect_bamboo", True)))
-        self.ice_reflect_shooting_star = QCheckBox("流れ星を反射")
+        self.ice_reflect_shooting_star = QCheckBox(lds_tr("流れ星を反射"))
         self.ice_reflect_shooting_star.setChecked(bool(getattr(self.settings, "ice_reflect_shooting_star", True)))
-        self.ice_reflect_meteor_shower = QCheckBox("流星群を反射")
+        self.ice_reflect_meteor_shower = QCheckBox(lds_tr("流星群を反射"))
         self.ice_reflect_meteor_shower.setChecked(bool(getattr(self.settings, "ice_reflect_meteor_shower", True)))
-        self.ice_reflect_rain = QCheckBox("雨を反射")
+        self.ice_reflect_rain = QCheckBox(lds_tr("雨を反射"))
         self.ice_reflect_rain.setChecked(bool(getattr(self.settings, "ice_reflect_rain", True)))
         self.ice_reflect_effects_enabled.setChecked(bool(getattr(self.settings, "ice_reflect_effects_enabled", True)))
-        self.ice_fog_enabled = QCheckBox("表面に薄い霧を掛ける")
+        self.ice_fog_enabled = QCheckBox(lds_tr("表面に薄い霧を掛ける"))
         self.ice_fog_enabled.setChecked(bool(getattr(self.settings, "ice_fog_enabled", True)))
         self.ice_fog_alpha = self._int_spin(0, 255, getattr(self.settings, "ice_fog_alpha", 72))
         self.ice_fog_height = self._double_spin(0.02, 0.80, getattr(self.settings, "ice_fog_height", 0.24), 0.01)
         self.ice_fog_drift = self._double_spin(0.0, 3.0, getattr(self.settings, "ice_fog_drift", 0.30), 0.01)
-        self.ice_color = self._color_row_on(f, "氷色", getattr(self.settings, "ice_color", "#9BDDF2"))
-        self.ice_edge_color = self._color_row_on(f, "氷の縁/亀裂色", getattr(self.settings, "ice_edge_color", "#E8FBFF"))
-        self.ice_highlight_color = self._color_row_on(f, "氷ハイライト色", getattr(self.settings, "ice_highlight_color", "#F7FFFF"))
-        self.ice_shadow_color = self._color_row_on(f, "氷の奥影色", getattr(self.settings, "ice_shadow_color", "#2C6F93"))
-        self.ice_fog_color = self._color_row_on(f, "霧色", getattr(self.settings, "ice_fog_color", "#EEF9FF"))
-        f.addRow("氷・氷河", self.ice_enabled)
-        f.addRow("軽量描画", self.ice_lightweight_enabled)
-        f.addRow("静的模様キャッシュ", self.ice_static_cache_enabled)
-        f.addRow("描画品質", self.ice_quality_scale)
-        f.addRow("最大氷面パーツ", self.ice_max_facets)
-        f.addRow("最大亀裂数", self.ice_max_cracks)
-        f.addRow("最大気泡数", self.ice_max_bubbles)
-        f.addRow("反射エフェクト間引き", self.ice_skip_reflected_effect_frames)
-        f.addRow("通常ウィジェット反射間引き", self.ice_mirror_skip_frames)
-        f.addRow("氷透明度", self.ice_alpha)
-        f.addRow("氷塊サイズ", self.ice_size)
-        f.addRow("氷角度", self.ice_angle)
-        f.addRow("氷面X", self.ice_x)
-        f.addRow("氷面幅", self.ice_width)
-        f.addRow("氷面Y", self.ice_y)
-        f.addRow("氷の深さ", self.ice_depth)
-        f.addRow("亀裂強度", self.ice_crack_intensity)
-        f.addRow("内部気泡/白濁", self.ice_internal_bubble_intensity)
-        f.addRow("氷河の凹凸", self.ice_glacier_roughness)
-        f.addRow("鏡面反射", self.ice_mirror_enabled)
-        f.addRow("反射透明度", self.ice_mirror_alpha)
-        f.addRow("反射ぼかし", self.ice_mirror_blur)
-        f.addRow("反射の深さ", self.ice_mirror_depth)
-        f.addRow("反射の揺らぎ", self.ice_mirror_wave)
-        f.addRow("氷色なじませ", self.ice_mirror_tint_alpha)
-        f.addRow("エフェクト反射", self.ice_reflect_effects_enabled)
-        f.addRow("通常ウィジェット反射", self.ice_reflect_widgets_enabled)
-        f.addRow("反射: 雪", self.ice_reflect_snow)
-        f.addRow("反射: 雪の結晶", self.ice_reflect_snow_crystal)
-        f.addRow("反射: 花びら", self.ice_reflect_petals)
-        f.addRow("反射: 竹", self.ice_reflect_bamboo)
-        f.addRow("反射: 流れ星", self.ice_reflect_shooting_star)
-        f.addRow("反射: 流星群", self.ice_reflect_meteor_shower)
-        f.addRow("反射: 雨", self.ice_reflect_rain)
-        f.addRow("薄霧", self.ice_fog_enabled)
-        f.addRow("霧透明度", self.ice_fog_alpha)
-        f.addRow("霧高さ", self.ice_fog_height)
-        f.addRow("霧流れ", self.ice_fog_drift)
+        self.ice_color = self._color_row_on(f, lds_tr("氷色"), getattr(self.settings, "ice_color", "#9BDDF2"))
+        self.ice_edge_color = self._color_row_on(f, lds_tr("氷の縁/亀裂色"), getattr(self.settings, "ice_edge_color", "#E8FBFF"))
+        self.ice_highlight_color = self._color_row_on(f, lds_tr("氷ハイライト色"), getattr(self.settings, "ice_highlight_color", "#F7FFFF"))
+        self.ice_shadow_color = self._color_row_on(f, lds_tr("氷の奥影色"), getattr(self.settings, "ice_shadow_color", "#2C6F93"))
+        self.ice_fog_color = self._color_row_on(f, lds_tr("霧色"), getattr(self.settings, "ice_fog_color", "#EEF9FF"))
+        f.addRow(lds_tr("氷・氷河"), self.ice_enabled)
+        f.addRow(lds_tr("軽量描画"), self.ice_lightweight_enabled)
+        f.addRow(lds_tr("静的模様キャッシュ"), self.ice_static_cache_enabled)
+        f.addRow(lds_tr("描画品質"), self.ice_quality_scale)
+        f.addRow(lds_tr("最大氷面パーツ"), self.ice_max_facets)
+        f.addRow(lds_tr("最大亀裂数"), self.ice_max_cracks)
+        f.addRow(lds_tr("最大気泡数"), self.ice_max_bubbles)
+        f.addRow(lds_tr("反射エフェクト間引き"), self.ice_skip_reflected_effect_frames)
+        f.addRow(lds_tr("通常ウィジェット反射間引き"), self.ice_mirror_skip_frames)
+        f.addRow(lds_tr("氷透明度"), self.ice_alpha)
+        f.addRow(lds_tr("氷塊サイズ"), self.ice_size)
+        f.addRow(lds_tr("氷角度"), self.ice_angle)
+        f.addRow(lds_tr("氷面X"), self.ice_x)
+        f.addRow(lds_tr("氷面幅"), self.ice_width)
+        f.addRow(lds_tr("氷面Y"), self.ice_y)
+        f.addRow(lds_tr("氷の深さ"), self.ice_depth)
+        f.addRow(lds_tr("亀裂強度"), self.ice_crack_intensity)
+        f.addRow(lds_tr("内部気泡/白濁"), self.ice_internal_bubble_intensity)
+        f.addRow(lds_tr("氷河の凹凸"), self.ice_glacier_roughness)
+        f.addRow(lds_tr("鏡面反射"), self.ice_mirror_enabled)
+        f.addRow(lds_tr("反射透明度"), self.ice_mirror_alpha)
+        f.addRow(lds_tr("反射ぼかし"), self.ice_mirror_blur)
+        f.addRow(lds_tr("反射の深さ"), self.ice_mirror_depth)
+        f.addRow(lds_tr("反射の揺らぎ"), self.ice_mirror_wave)
+        f.addRow(lds_tr("氷色なじませ"), self.ice_mirror_tint_alpha)
+        f.addRow(lds_tr("エフェクト反射"), self.ice_reflect_effects_enabled)
+        f.addRow(lds_tr("通常ウィジェット反射"), self.ice_reflect_widgets_enabled)
+        f.addRow(lds_tr("反射: 雪"), self.ice_reflect_snow)
+        f.addRow(lds_tr("反射: 雪の結晶"), self.ice_reflect_snow_crystal)
+        f.addRow(lds_tr("反射: 花びら"), self.ice_reflect_petals)
+        f.addRow(lds_tr("反射: 竹"), self.ice_reflect_bamboo)
+        f.addRow(lds_tr("反射: 流れ星"), self.ice_reflect_shooting_star)
+        f.addRow(lds_tr("反射: 流星群"), self.ice_reflect_meteor_shower)
+        f.addRow(lds_tr("反射: 雨"), self.ice_reflect_rain)
+        f.addRow(lds_tr("薄霧"), self.ice_fog_enabled)
+        f.addRow(lds_tr("霧透明度"), self.ice_fog_alpha)
+        f.addRow(lds_tr("霧高さ"), self.ice_fog_height)
+        f.addRow(lds_tr("霧流れ"), self.ice_fog_drift)
 
-        self._section(f, "竹林")
-        self.bamboo_grove_enabled = QCheckBox("竹林を描画")
+        self._section(f, lds_tr("竹林"))
+        self.bamboo_grove_enabled = QCheckBox(lds_tr("竹林を描画"))
         self.bamboo_grove_enabled.setChecked(bool(getattr(self.settings, "bamboo_grove_enabled", False)))
         self.bamboo_count = self._int_spin(0, 120, getattr(self.settings, "bamboo_count", 12))
         self.bamboo_thickness = self._double_spin(2.0, 80.0, getattr(self.settings, "bamboo_thickness", 16.0), 0.5)
@@ -1425,26 +1688,26 @@ class EffectsOverlayEditorDialog(QDialog):
         self.bamboo_depth_strength = self._double_spin(0.0, 2.0, getattr(self.settings, "bamboo_depth_strength", 0.85), 0.01)
         self.bamboo_layer_spread = self._double_spin(0.0, 1.0, getattr(self.settings, "bamboo_layer_spread", 0.42), 0.01)
         self.bamboo_highlight_alpha = self._int_spin(0, 255, getattr(self.settings, "bamboo_highlight_alpha", 96))
-        self.bamboo_ground_shadow_enabled = QCheckBox("足元の影で奥行きを出す")
+        self.bamboo_ground_shadow_enabled = QCheckBox(lds_tr("足元の影で奥行きを出す"))
         self.bamboo_ground_shadow_enabled.setChecked(bool(getattr(self.settings, "bamboo_ground_shadow_enabled", True)))
-        self.bamboo_atmosphere_enabled = QCheckBox("奥の竹を霞ませる")
+        self.bamboo_atmosphere_enabled = QCheckBox(lds_tr("奥の竹を霞ませる"))
         self.bamboo_atmosphere_enabled.setChecked(bool(getattr(self.settings, "bamboo_atmosphere_enabled", True)))
-        f.addRow("竹林", self.bamboo_grove_enabled)
-        f.addRow("竹の本数", self.bamboo_count)
-        f.addRow("竹の太さ", self.bamboo_thickness)
-        f.addRow("竹の角度", self.bamboo_angle)
-        f.addRow("竹のしなり", self.bamboo_bend)
-        f.addRow("竹の高さ", self.bamboo_height)
-        f.addRow("竹の透明度", self.bamboo_alpha)
-        f.addRow("竹の葉の量", self.bamboo_leaf_density)
-        f.addRow("竹林の奥行き", self.bamboo_depth_strength)
-        f.addRow("前後レイヤー幅", self.bamboo_layer_spread)
-        f.addRow("竹のハイライト", self.bamboo_highlight_alpha)
-        f.addRow("足元影", self.bamboo_ground_shadow_enabled)
-        f.addRow("奥の霞", self.bamboo_atmosphere_enabled)
-        self._add_effect_block(f, "流れ星", "shooting_star", "流れ星が斜めに走る", 3, 0.8, 18.0, 230, ripple=False)
-        self._add_effect_block(f, "流星群", "meteor_shower", "流星群が連続して流れる", 18, 0.9, 12.0, 220, ripple=False)
-        self._add_effect_block(f, "バルーン", "balloon", "バルーンがゆっくり登る", 12, 0.20, 34.0, 220, ripple=False)
+        f.addRow(lds_tr("竹林"), self.bamboo_grove_enabled)
+        f.addRow(lds_tr("竹の本数"), self.bamboo_count)
+        f.addRow(lds_tr("竹の太さ"), self.bamboo_thickness)
+        f.addRow(lds_tr("竹の角度"), self.bamboo_angle)
+        f.addRow(lds_tr("竹のしなり"), self.bamboo_bend)
+        f.addRow(lds_tr("竹の高さ"), self.bamboo_height)
+        f.addRow(lds_tr("竹の透明度"), self.bamboo_alpha)
+        f.addRow(lds_tr("竹の葉の量"), self.bamboo_leaf_density)
+        f.addRow(lds_tr("竹林の奥行き"), self.bamboo_depth_strength)
+        f.addRow(lds_tr("前後レイヤー幅"), self.bamboo_layer_spread)
+        f.addRow(lds_tr("竹のハイライト"), self.bamboo_highlight_alpha)
+        f.addRow(lds_tr("足元影"), self.bamboo_ground_shadow_enabled)
+        f.addRow(lds_tr("奥の霞"), self.bamboo_atmosphere_enabled)
+        self._add_effect_block(f, lds_tr("流れ星"), "shooting_star", lds_tr("流れ星が斜めに走る"), 3, 0.8, 18.0, 230, ripple=False)
+        self._add_effect_block(f, lds_tr("流星群"), "meteor_shower", lds_tr("流星群が連続して流れる"), 18, 0.9, 12.0, 220, ripple=False)
+        self._add_effect_block(f, lds_tr("バルーン"), "balloon", lds_tr("バルーンがゆっくり登る"), 12, 0.20, 34.0, 220, ripple=False)
 
 
     def _set_extra_effect_toggles(self, value):
@@ -1775,8 +2038,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self.rose_petal_alpha.setValue(215)
     def _build_sunrise_tab(self):
         f = self.sunrise_form
-        self._section(f, "朝焼け")
-        self.sunrise_enabled_tab = QCheckBox("朝焼けを描画")
+        self._section(f, lds_tr("朝焼け"))
+        self.sunrise_enabled_tab = QCheckBox(lds_tr("朝焼けを描画"))
         self.sunrise_enabled_tab.setChecked(bool(getattr(self.settings, "sunrise_enabled", False)))
         self.sunrise_enabled.toggled.connect(self.sunrise_enabled_tab.setChecked)
         self.sunrise_enabled_tab.toggled.connect(self.sunrise_enabled.setChecked)
@@ -1785,15 +2048,15 @@ class EffectsOverlayEditorDialog(QDialog):
         self.sunrise_warmth = self._double_spin(0.0, 1.0, getattr(self.settings, "sunrise_warmth", 0.72), 0.01)
         self.sunrise_horizon_y = self._double_spin(0.0, 1.0, getattr(self.settings, "sunrise_horizon_y", 0.72), 0.01)
         self.sunrise_spread = self._double_spin(0.05, 1.0, getattr(self.settings, "sunrise_spread", 0.62), 0.01)
-        f.addRow("朝焼け", self.sunrise_enabled_tab)
-        f.addRow("朝焼け角度", self.sunrise_angle)
-        f.addRow("朝焼けの強さ", self.sunrise_strength)
-        f.addRow("朝焼け具合", self.sunrise_warmth)
-        f.addRow("地平線Y", self.sunrise_horizon_y)
-        f.addRow("広がり", self.sunrise_spread)
+        f.addRow(lds_tr("朝焼け"), self.sunrise_enabled_tab)
+        f.addRow(lds_tr("朝焼け角度"), self.sunrise_angle)
+        f.addRow(lds_tr("朝焼けの強さ"), self.sunrise_strength)
+        f.addRow(lds_tr("朝焼け具合"), self.sunrise_warmth)
+        f.addRow(lds_tr("地平線Y"), self.sunrise_horizon_y)
+        f.addRow(lds_tr("広がり"), self.sunrise_spread)
 
-        self._section(f, "太陽")
-        self.sun_enabled_tab = QCheckBox("太陽を描画")
+        self._section(f, lds_tr("太陽"))
+        self.sun_enabled_tab = QCheckBox(lds_tr("太陽を描画"))
         self.sun_enabled_tab.setChecked(bool(getattr(self.settings, "sun_enabled", False)))
         self.sun_enabled.toggled.connect(self.sun_enabled_tab.setChecked)
         self.sun_enabled_tab.toggled.connect(self.sun_enabled.setChecked)
@@ -1802,15 +2065,15 @@ class EffectsOverlayEditorDialog(QDialog):
         self.sun_radius = self._double_spin(4.0, 3000.0, getattr(self.settings, "sun_radius", 82.0), 1.0)
         self.sun_alpha = self._int_spin(0, 255, getattr(self.settings, "sun_alpha", 235))
         self.sun_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "sun_angle", 0.0), 1.0)
-        f.addRow("太陽", self.sun_enabled_tab)
-        f.addRow("太陽X位置", self.sun_x)
-        f.addRow("太陽Y位置", self.sun_y)
-        f.addRow("太陽半径", self.sun_radius)
-        f.addRow("太陽透明度", self.sun_alpha)
-        f.addRow("太陽角度", self.sun_angle)
+        f.addRow(lds_tr("太陽"), self.sun_enabled_tab)
+        f.addRow(lds_tr("太陽X位置"), self.sun_x)
+        f.addRow(lds_tr("太陽Y位置"), self.sun_y)
+        f.addRow(lds_tr("太陽半径"), self.sun_radius)
+        f.addRow(lds_tr("太陽透明度"), self.sun_alpha)
+        f.addRow(lds_tr("太陽角度"), self.sun_angle)
 
-        self._section(f, "太陽光")
-        self.sunlight_enabled_tab = QCheckBox("太陽光を描画")
+        self._section(f, lds_tr("太陽光"))
+        self.sunlight_enabled_tab = QCheckBox(lds_tr("太陽光を描画"))
         self.sunlight_enabled_tab.setChecked(bool(getattr(self.settings, "sunlight_enabled", False)))
         self.sunlight_enabled.toggled.connect(self.sunlight_enabled_tab.setChecked)
         self.sunlight_enabled_tab.toggled.connect(self.sunlight_enabled.setChecked)
@@ -1818,14 +2081,14 @@ class EffectsOverlayEditorDialog(QDialog):
         self.sunlight_radius = self._double_spin(10.0, 3000.0, getattr(self.settings, "sunlight_radius", 420.0), 5.0)
         self.sunlight_alpha = self._int_spin(0, 255, getattr(self.settings, "sunlight_alpha", 92))
         self.sunlight_beam_width = self._double_spin(0.05, 1.0, getattr(self.settings, "sunlight_beam_width", 0.38), 0.01)
-        f.addRow("太陽光", self.sunlight_enabled_tab)
-        f.addRow("太陽光角度", self.sunlight_angle)
-        f.addRow("太陽光半径", self.sunlight_radius)
-        f.addRow("太陽光透明度", self.sunlight_alpha)
-        f.addRow("太陽光幅", self.sunlight_beam_width)
+        f.addRow(lds_tr("太陽光"), self.sunlight_enabled_tab)
+        f.addRow(lds_tr("太陽光角度"), self.sunlight_angle)
+        f.addRow(lds_tr("太陽光半径"), self.sunlight_radius)
+        f.addRow(lds_tr("太陽光透明度"), self.sunlight_alpha)
+        f.addRow(lds_tr("太陽光幅"), self.sunlight_beam_width)
 
-        self._section(f, "レンズフレア")
-        self.lens_flare_enabled_tab = QCheckBox("レンズフレアを描画")
+        self._section(f, lds_tr("レンズフレア"))
+        self.lens_flare_enabled_tab = QCheckBox(lds_tr("レンズフレアを描画"))
         self.lens_flare_enabled_tab.setChecked(bool(getattr(self.settings, "lens_flare_enabled", False)))
         self.lens_flare_enabled.toggled.connect(self.lens_flare_enabled_tab.setChecked)
         self.lens_flare_enabled_tab.toggled.connect(self.lens_flare_enabled.setChecked)
@@ -1833,29 +2096,29 @@ class EffectsOverlayEditorDialog(QDialog):
         self.lens_flare_alpha = self._int_spin(0, 255, getattr(self.settings, "lens_flare_alpha", 128))
         self.lens_flare_size = self._double_spin(0.1, 4.0, getattr(self.settings, "lens_flare_size", 1.0), 0.05)
         self.lens_flare_count = self._int_spin(0, 12, getattr(self.settings, "lens_flare_count", 6))
-        f.addRow("レンズフレア", self.lens_flare_enabled_tab)
-        f.addRow("フレア角度", self.lens_flare_angle)
-        f.addRow("フレア透明度", self.lens_flare_alpha)
-        f.addRow("フレアサイズ", self.lens_flare_size)
-        f.addRow("フレア数", self.lens_flare_count)
+        f.addRow(lds_tr("レンズフレア"), self.lens_flare_enabled_tab)
+        f.addRow(lds_tr("フレア角度"), self.lens_flare_angle)
+        f.addRow(lds_tr("フレア透明度"), self.lens_flare_alpha)
+        f.addRow(lds_tr("フレアサイズ"), self.lens_flare_size)
+        f.addRow(lds_tr("フレア数"), self.lens_flare_count)
 
-        self._section(f, "色")
-        self.sunrise_color_top = self._color_row_on(f, "朝焼け上部色", getattr(self.settings, "sunrise_color_top", "#1B2C64"))
-        self.sunrise_color_mid = self._color_row_on(f, "朝焼け中間色", getattr(self.settings, "sunrise_color_mid", "#FF8A5C"))
-        self.sunrise_color_horizon = self._color_row_on(f, "朝焼け地平線色", getattr(self.settings, "sunrise_color_horizon", "#FFD08A"))
-        self.sun_color = self._color_row_on(f, "太陽色", getattr(self.settings, "sun_color", "#FFD36E"))
-        self.sun_edge_color = self._color_row_on(f, "太陽縁色", getattr(self.settings, "sun_edge_color", "#FF7A3D"))
-        self.sunlight_color = self._color_row_on(f, "太陽光色", getattr(self.settings, "sunlight_color", "#FFD08A"))
-        self.lens_flare_color = self._color_row_on(f, "レンズフレア色", getattr(self.settings, "lens_flare_color", "#FFE2A6"))
+        self._section(f, lds_tr("色"))
+        self.sunrise_color_top = self._color_row_on(f, lds_tr("朝焼け上部色"), getattr(self.settings, "sunrise_color_top", "#1B2C64"))
+        self.sunrise_color_mid = self._color_row_on(f, lds_tr("朝焼け中間色"), getattr(self.settings, "sunrise_color_mid", "#FF8A5C"))
+        self.sunrise_color_horizon = self._color_row_on(f, lds_tr("朝焼け地平線色"), getattr(self.settings, "sunrise_color_horizon", "#FFD08A"))
+        self.sun_color = self._color_row_on(f, lds_tr("太陽色"), getattr(self.settings, "sun_color", "#FFD36E"))
+        self.sun_edge_color = self._color_row_on(f, lds_tr("太陽縁色"), getattr(self.settings, "sun_edge_color", "#FF7A3D"))
+        self.sunlight_color = self._color_row_on(f, lds_tr("太陽光色"), getattr(self.settings, "sunlight_color", "#FFD08A"))
+        self.lens_flare_color = self._color_row_on(f, lds_tr("レンズフレア色"), getattr(self.settings, "lens_flare_color", "#FFE2A6"))
 
     def _build_moon_tab(self):
         f = self.moon_form
-        self._section(f, "月本体")
-        self.moon_body_enabled_tab = QCheckBox("月本体を描画")
+        self._section(f, lds_tr("月本体"))
+        self.moon_body_enabled_tab = QCheckBox(lds_tr("月本体を描画"))
         self.moon_body_enabled_tab.setChecked(bool(getattr(self.settings, "moon_body_enabled", False)))
-        self.moonlight_enabled_tab = QCheckBox("月光を描画")
+        self.moonlight_enabled_tab = QCheckBox(lds_tr("月光を描画"))
         self.moonlight_enabled_tab.setChecked(bool(getattr(self.settings, "moonlight_enabled", False)))
-        self.moon_shadow_enabled_tab = QCheckBox("月影を描画")
+        self.moon_shadow_enabled_tab = QCheckBox(lds_tr("月影を描画"))
         self.moon_shadow_enabled_tab.setChecked(bool(getattr(self.settings, "moon_shadow_enabled", False)))
         self.moon_body_enabled.toggled.connect(self.moon_body_enabled_tab.setChecked)
         self.moon_body_enabled_tab.toggled.connect(self.moon_body_enabled.setChecked)
@@ -1870,46 +2133,46 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moon_alpha = self._int_spin(0, 255, getattr(self.settings, "moon_alpha", 230))
         self.moon_crater_count = self._int_spin(0, 40, getattr(self.settings, "moon_crater_count", 9))
         self.moon_crater_alpha = self._int_spin(0, 255, getattr(self.settings, "moon_crater_alpha", 54))
-        f.addRow("月本体", self.moon_body_enabled_tab)
-        f.addRow("月光", self.moonlight_enabled_tab)
-        f.addRow("月影", self.moon_shadow_enabled_tab)
-        f.addRow("X位置", self.moon_x)
-        f.addRow("Y位置", self.moon_y)
-        f.addRow("月本体角度", self.moon_body_angle)
-        f.addRow("半径", self.moon_radius)
-        f.addRow("透明度", self.moon_alpha)
-        f.addRow("クレーター数", self.moon_crater_count)
-        f.addRow("クレーター透明度", self.moon_crater_alpha)
-        self._section(f, "月光")
+        f.addRow(lds_tr("月本体"), self.moon_body_enabled_tab)
+        f.addRow(lds_tr("月光"), self.moonlight_enabled_tab)
+        f.addRow(lds_tr("月影"), self.moon_shadow_enabled_tab)
+        f.addRow(lds_tr("X位置"), self.moon_x)
+        f.addRow(lds_tr("Y位置"), self.moon_y)
+        f.addRow(lds_tr("月本体角度"), self.moon_body_angle)
+        f.addRow(lds_tr("半径"), self.moon_radius)
+        f.addRow(lds_tr("透明度"), self.moon_alpha)
+        f.addRow(lds_tr("クレーター数"), self.moon_crater_count)
+        f.addRow(lds_tr("クレーター透明度"), self.moon_crater_alpha)
+        self._section(f, lds_tr("月光"))
         self.moonlight_radius = self._double_spin(10.0, 900.0, getattr(self.settings, "moonlight_radius", 260.0), 5.0)
         self.moonlight_alpha = self._int_spin(0, 255, getattr(self.settings, "moonlight_alpha", 82))
         self.moonlight_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "moonlight_angle", 0.0), 1.0)
-        self.moonlight_beam_enabled = QCheckBox("月光ビーム")
+        self.moonlight_beam_enabled = QCheckBox(lds_tr("月光ビーム"))
         self.moonlight_beam_enabled.setChecked(bool(getattr(self.settings, "moonlight_beam_enabled", True)))
         self.moonlight_beam_alpha = self._int_spin(0, 255, getattr(self.settings, "moonlight_beam_alpha", 44))
         self.moonlight_beam_width = self._double_spin(0.05, 1.0, getattr(self.settings, "moonlight_beam_width", 0.34), 0.01)
-        f.addRow("月光半径", self.moonlight_radius)
-        f.addRow("月光透明度", self.moonlight_alpha)
-        f.addRow("月光角度", self.moonlight_angle)
-        f.addRow("ビーム", self.moonlight_beam_enabled)
-        f.addRow("ビーム透明度", self.moonlight_beam_alpha)
-        f.addRow("ビーム幅", self.moonlight_beam_width)
-        self._section(f, "月影")
+        f.addRow(lds_tr("月光半径"), self.moonlight_radius)
+        f.addRow(lds_tr("月光透明度"), self.moonlight_alpha)
+        f.addRow(lds_tr("月光角度"), self.moonlight_angle)
+        f.addRow(lds_tr("ビーム"), self.moonlight_beam_enabled)
+        f.addRow(lds_tr("ビーム透明度"), self.moonlight_beam_alpha)
+        f.addRow(lds_tr("ビーム幅"), self.moonlight_beam_width)
+        self._section(f, lds_tr("月影"))
         self.moon_shadow_alpha = self._int_spin(0, 255, getattr(self.settings, "moon_shadow_alpha", 70))
         self.moon_shadow_offset_x = self._double_spin(-300.0, 300.0, getattr(self.settings, "moon_shadow_offset_x", 28.0), 1.0)
         self.moon_shadow_offset_y = self._double_spin(-300.0, 300.0, getattr(self.settings, "moon_shadow_offset_y", 38.0), 1.0)
         self.moon_shadow_angle = self._double_spin(-360.0, 360.0, getattr(self.settings, "moon_shadow_angle", 0.0), 1.0)
         self.moon_shadow_blur_radius = self._double_spin(4.0, 600.0, getattr(self.settings, "moon_shadow_blur_radius", 150.0), 5.0)
-        f.addRow("月影透明度", self.moon_shadow_alpha)
-        f.addRow("影Xオフセット", self.moon_shadow_offset_x)
-        f.addRow("影Yオフセット", self.moon_shadow_offset_y)
-        f.addRow("月影角度", self.moon_shadow_angle)
-        f.addRow("影ぼかし半径", self.moon_shadow_blur_radius)
-        self._section(f, "色")
-        self.moon_color = self._color_row_on(f, "月色", getattr(self.settings, "moon_color", "#FFF3C4"))
-        self.moon_edge_color = self._color_row_on(f, "月の縁色", getattr(self.settings, "moon_edge_color", "#C9D7FF"))
-        self.moonlight_color = self._color_row_on(f, "月光色", getattr(self.settings, "moonlight_color", "#CFE8FF"))
-        self.moon_shadow_color = self._color_row_on(f, "月影色", getattr(self.settings, "moon_shadow_color", "#061028"))
+        f.addRow(lds_tr("月影透明度"), self.moon_shadow_alpha)
+        f.addRow(lds_tr("影Xオフセット"), self.moon_shadow_offset_x)
+        f.addRow(lds_tr("影Yオフセット"), self.moon_shadow_offset_y)
+        f.addRow(lds_tr("月影角度"), self.moon_shadow_angle)
+        f.addRow(lds_tr("影ぼかし半径"), self.moon_shadow_blur_radius)
+        self._section(f, lds_tr("色"))
+        self.moon_color = self._color_row_on(f, lds_tr("月色"), getattr(self.settings, "moon_color", "#FFF3C4"))
+        self.moon_edge_color = self._color_row_on(f, lds_tr("月の縁色"), getattr(self.settings, "moon_edge_color", "#C9D7FF"))
+        self.moonlight_color = self._color_row_on(f, lds_tr("月光色"), getattr(self.settings, "moonlight_color", "#CFE8FF"))
+        self.moon_shadow_color = self._color_row_on(f, lds_tr("月影色"), getattr(self.settings, "moon_shadow_color", "#061028"))
 
     def build_settings(self):
         return EffectOverlaySettings(
@@ -2090,6 +2353,15 @@ class EffectsOverlayEditorDialog(QDialog):
             snow_ripple_enabled=self.snow_ripple_enabled.isChecked(),
             snow_ripple_chance=self.snow_ripple_chance.value(),
             snow_surface_y=self.snow_surface_y.value(),
+            snow_accumulation_enabled=self.snow_accumulation_enabled.isChecked(),
+            snow_accumulation_start_y=self.snow_accumulation_start_y.value(),
+            snow_accumulation_max_depth=self.snow_accumulation_max_depth.value(),
+            snow_accumulation_build_rate=self.snow_accumulation_build_rate.value(),
+            snow_accumulation_column_width=self.snow_accumulation_column_width.value(),
+            snow_accumulation_alpha=self.snow_accumulation_alpha.value(),
+            snow_accumulation_mouse_remove_enabled=self.snow_accumulation_mouse_remove_enabled.isChecked(),
+            snow_accumulation_remove_radius=self.snow_accumulation_remove_radius.value(),
+            snow_accumulation_remove_strength=self.snow_accumulation_remove_strength.value(),
             snow_crystal_enabled=self.snow_crystal_enabled.isChecked(),
             snow_crystal_count=self.snow_crystal_count.value(),
             snow_crystal_speed=self.snow_crystal_speed.value(),
@@ -2601,6 +2873,15 @@ class EffectOverlaySettings:
     snow_ripple_enabled: bool = True
     snow_ripple_chance: float = 0.38
     snow_surface_y: float = 0.86
+    snow_accumulation_enabled: bool = False
+    snow_accumulation_start_y: float = 1.0
+    snow_accumulation_max_depth: float = 1.0
+    snow_accumulation_build_rate: float = 7.0
+    snow_accumulation_column_width: float = 7.0
+    snow_accumulation_alpha: int = 230
+    snow_accumulation_mouse_remove_enabled: bool = True
+    snow_accumulation_remove_radius: float = 58.0
+    snow_accumulation_remove_strength: float = 72.0
     snow_crystal_enabled: bool = False
     snow_crystal_count: int = 22
     snow_crystal_speed: float = 0.12
@@ -3090,6 +3371,15 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         snow_ripple_enabled=bool(defaults.get("snow_ripple_enabled", True)),
         snow_ripple_chance=float(defaults.get("snow_ripple_chance", 0.38)),
         snow_surface_y=float(defaults.get("snow_surface_y", 0.86)),
+        snow_accumulation_enabled=bool(defaults.get("snow_accumulation_enabled", False)),
+        snow_accumulation_start_y=max(0.0, min(1.0, float(defaults.get("snow_accumulation_start_y", 1.0)))),
+        snow_accumulation_max_depth=max(0.05, min(1.0, float(defaults.get("snow_accumulation_max_depth", 1.0)))),
+        snow_accumulation_build_rate=max(0.0, min(120.0, float(defaults.get("snow_accumulation_build_rate", 7.0)))),
+        snow_accumulation_column_width=max(2.0, min(30.0, float(defaults.get("snow_accumulation_column_width", 7.0)))),
+        snow_accumulation_alpha=max(0, min(255, int(defaults.get("snow_accumulation_alpha", 230)))),
+        snow_accumulation_mouse_remove_enabled=bool(defaults.get("snow_accumulation_mouse_remove_enabled", True)),
+        snow_accumulation_remove_radius=max(4.0, min(300.0, float(defaults.get("snow_accumulation_remove_radius", 58.0)))),
+        snow_accumulation_remove_strength=max(1.0, min(400.0, float(defaults.get("snow_accumulation_remove_strength", 72.0)))),
         snow_crystal_enabled=bool(defaults.get("snow_crystal_enabled", False)),
         snow_crystal_count=max(0, int(defaults.get("snow_crystal_count", 22))),
         snow_crystal_speed=float(defaults.get("snow_crystal_speed", 0.12)),
@@ -3392,6 +3682,391 @@ def get_studio_window_opacity(theme):
         return 0.96
     return 0.92
 
+
+
+
+
+
+def _qss_rgba(hex_color: str, alpha: int = 255) -> str:
+    """Return rgba(r,g,b,a) for Qt style sheets. Keeps UI styling robust."""
+    try:
+        c = QColor(str(hex_color or "#FFFFFF"))
+        return f"rgba({c.red()}, {c.green()}, {c.blue()}, {max(0, min(255, int(alpha)))})"
+    except Exception:
+        return f"rgba(255, 255, 255, {max(0, min(255, int(alpha)))})"
+
+
+def get_studio_settings_palette(theme):
+    """Palette used by settings dialogs. It follows the current Studio theme.
+
+    The goal is Photoshop-like contrast: dark panels, clear borders, blue/cyan
+    accent colors, and readable beginner help cards. Light theme keeps the same
+    structure but uses a bright surface.
+    """
+    theme = normalize_studio_theme(theme)
+    if theme == STUDIO_THEME_LIGHT:
+        return {
+            "surface": "#F3F6FA",
+            "panel": "#FFFFFF",
+            "panel2": "#EEF3F9",
+            "text": "#17202A",
+            "muted": "#4F6275",
+            "accent": "#1473E6",
+            "accent2": "#00A8CC",
+            "border": "#B8C7D8",
+            "warn": "#B45B00",
+        }
+    if theme == STUDIO_THEME_MATERIAL:
+        return {
+            "surface": "#18212B",
+            "panel": "#202B36",
+            "panel2": "#263442",
+            "text": "#F3F7FA",
+            "muted": "#B7C8D6",
+            "accent": "#64B5F6",
+            "accent2": "#80CBC4",
+            "border": "#3E5A70",
+            "warn": "#FFD180",
+        }
+    if theme == STUDIO_THEME_LIQUID_GLASS:
+        return {
+            "surface": "#121B2A",
+            "panel": "#1A2A3D",
+            "panel2": "#223A54",
+            "text": "#FFF7F7",
+            "muted": "#D8E7F2",
+            "accent": STUDIO_ACCENT_SOFT_RED_STRONG,
+            "accent2": "#8BE8FF",
+            "border": "#6A91B8",
+            "warn": "#FFD8A8",
+        }
+    return {
+        "surface": "#1F2229",
+        "panel": "#2A2D35",
+        "panel2": "#323640",
+        "text": "#F4F6F8",
+        "muted": "#B8C1CC",
+        "accent": "#31A8FF",
+        "accent2": "#00D2B8",
+        "border": "#4A5568",
+        "warn": "#FFCC66",
+    }
+
+
+def build_beginner_photoshop_settings_qss(theme):
+    """Build a Photoshop-like, beginner-friendly QSS for settings dialogs."""
+    p = get_studio_settings_palette(theme)
+    return f"""
+        QDialog {{
+            background: {p['surface']};
+            color: {p['text']};
+            font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
+            font-size: 13px;
+        }}
+        QTabWidget::pane {{
+            background: {p['panel']};
+            border: 1px solid {p['border']};
+            border-radius: 14px;
+            top: -1px;
+        }}
+        QTabBar::tab {{
+            background: {p['panel2']};
+            color: {p['muted']};
+            border: 1px solid {p['border']};
+            border-bottom: none;
+            padding: 9px 14px;
+            min-height: 26px;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            margin-right: 3px;
+            font-weight: 650;
+        }}
+        QTabBar::tab:selected {{
+            background: {p['panel']};
+            color: {p['text']};
+            border-top: 3px solid {p['accent']};
+        }}
+        QTabBar::tab:hover {{
+            color: {p['text']};
+            border-top: 3px solid {p['accent2']};
+        }}
+        QScrollArea {{
+            background: transparent;
+            border: none;
+        }}
+        QLabel {{
+            color: {p['text']};
+            background: transparent;
+        }}
+        QLabel#BeginnerTitle {{
+            color: {p['text']};
+            font-size: 20px;
+            font-weight: 850;
+            padding: 4px 2px;
+        }}
+        QLabel#BeginnerGuide {{
+            color: {p['muted']};
+            background: {_qss_rgba(p['panel2'], 230)};
+            border: 1px solid {_qss_rgba(p['accent'], 120)};
+            border-radius: 12px;
+            padding: 10px 12px;
+            line-height: 145%;
+        }}
+        QLabel#BeginnerSection {{
+            color: {p['accent2']};
+            font-size: 14px;
+            font-weight: 850;
+            margin-top: 12px;
+            padding: 7px 10px;
+            background: {_qss_rgba(p['panel2'], 190)};
+            border-left: 4px solid {p['accent']};
+            border-radius: 8px;
+        }}
+        QPushButton {{
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 {p['panel2']}, stop:1 {p['panel']});
+            color: {p['text']};
+            border: 1px solid {p['border']};
+            border-radius: 10px;
+            padding: 8px 13px;
+            min-height: 30px;
+            font-weight: 700;
+        }}
+        QPushButton:hover {{
+            border: 1px solid {p['accent']};
+            background: {_qss_rgba(p['accent'], 45)};
+        }}
+        QPushButton:pressed {{
+            background: {_qss_rgba(p['accent'], 85)};
+        }}
+        QCheckBox {{
+            color: {p['text']};
+            spacing: 8px;
+            min-height: 28px;
+            font-weight: 560;
+        }}
+        QCheckBox::indicator {{
+            width: 18px;
+            height: 18px;
+            border-radius: 5px;
+            border: 1px solid {p['border']};
+            background: {p['panel2']};
+        }}
+        QCheckBox::indicator:checked {{
+            background: {p['accent']};
+            border: 1px solid {p['accent']};
+        }}
+        QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
+            background: {p['panel2']};
+            color: {p['text']};
+            border: 1px solid {p['border']};
+            border-radius: 8px;
+            padding: 6px 8px;
+            min-height: 26px;
+            selection-background-color: {p['accent']};
+        }}
+        QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
+            border: 1px solid {p['accent']};
+        }}
+        QSpinBox::up-button, QDoubleSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::down-button {{
+            width: 22px;
+            border: none;
+            background: {_qss_rgba(p['accent'], 35)};
+        }}
+        QToolTip {{
+            color: {p['text']};
+            background: {p['panel']};
+            border: 1px solid {p['accent']};
+            padding: 7px;
+            border-radius: 6px;
+        }}
+    """
+
+
+def apply_beginner_photoshop_settings_style(dialog, theme=None):
+    """Apply Photoshop-like styling to a settings dialog without changing logic."""
+    try:
+        if theme is None:
+            parent = dialog.parent()
+            canvas = getattr(parent, "canvas", None)
+            theme = get_canvas_studio_theme(canvas) if canvas is not None else DEFAULT_STUDIO_THEME
+        dialog.setStyleSheet(build_beginner_photoshop_settings_qss(theme))
+    except Exception:
+        pass
+
+
+def make_beginner_guide_label(title: str, body: str) -> QLabel:
+    """Create a reusable beginner help card."""
+    label = QLabel(f"<b>{title}</b><br>{body}")
+    label.setObjectName("BeginnerGuide")
+    label.setWordWrap(True)
+    label.setTextFormat(Qt.TextFormat.RichText)
+    return label
+
+
+def set_beginner_tooltip(widget, text: str):
+    """Set a tooltip safely. Useful when UI labels are short but beginners need help."""
+    try:
+        if widget is not None:
+            widget.setToolTip(str(text or ""))
+    except Exception:
+        pass
+
+
+
+def build_beginner_photoshop_main_qss(theme):
+    """Extra QSS for the main widget editor.
+
+    This is intentionally additive: the existing Studio theme still provides the
+    base look, while this layer makes the editing screen more Photoshop-like and
+    easier for beginners to scan.
+    """
+    p = get_studio_settings_palette(theme)
+    return f"""
+        QMainWindow {{
+            background: {p['surface']};
+        }}
+        QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel {{
+            background: {_qss_rgba(p['panel'], 236)};
+            border: 1px solid {_qss_rgba(p['border'], 210)};
+            border-radius: 18px;
+        }}
+        QScrollArea#PropertyScrollArea, QScrollArea#SideScrollArea {{
+            background: transparent;
+            border: none;
+        }}
+        QLabel#Title {{
+            font-size: 22px;
+            font-weight: 900;
+            color: {p['text']};
+            padding: 2px 0px 6px 0px;
+        }}
+        QLabel#SectionTitle {{
+            color: {p['accent2']};
+            font-size: 14px;
+            font-weight: 900;
+            margin-top: 10px;
+            padding: 7px 10px;
+            background: {_qss_rgba(p['panel2'], 190)};
+            border-left: 4px solid {p['accent']};
+            border-radius: 8px;
+        }}
+        QLabel#SubText, QLabel#StatusText {{
+            color: {p['muted']};
+            font-size: 12px;
+        }}
+        QLabel#BeginnerGuide {{
+            color: {p['muted']};
+            background: {_qss_rgba(p['panel2'], 220)};
+            border: 1px solid {_qss_rgba(p['accent'], 115)};
+            border-radius: 12px;
+            padding: 10px 12px;
+            line-height: 145%;
+        }}
+        QTextEdit#HelpBox {{
+            color: {p['muted']};
+            background: {_qss_rgba(p['panel2'], 220)};
+            border: 1px solid {_qss_rgba(p['border'], 190)};
+            border-radius: 12px;
+            padding: 9px;
+            selection-background-color: {p['accent']};
+        }}
+        QListWidget#LayerList {{
+            color: {p['text']};
+            background: {_qss_rgba(p['panel2'], 225)};
+            border: 1px solid {_qss_rgba(p['border'], 200)};
+            border-radius: 12px;
+            padding: 6px;
+            outline: 0;
+        }}
+        QListWidget#LayerList::item {{
+            min-height: 30px;
+            padding: 6px 8px;
+            border-radius: 8px;
+        }}
+        QListWidget#LayerList::item:selected {{
+            background: {_qss_rgba(p['accent'], 105)};
+            color: {p['text']};
+            border: 1px solid {p['accent']};
+        }}
+        QListWidget#LayerList::item:hover {{
+            background: {_qss_rgba(p['accent2'], 55)};
+        }}
+        QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
+            background: {_qss_rgba(p['panel2'], 235)};
+            color: {p['text']};
+            border: 1px solid {_qss_rgba(p['border'], 220)};
+            border-radius: 9px;
+            padding: 6px 8px;
+            min-height: 26px;
+            selection-background-color: {p['accent']};
+        }}
+        QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
+            border: 1px solid {p['accent']};
+            background: {_qss_rgba(p['panel2'], 255)};
+        }}
+        QCheckBox {{
+            color: {p['text']};
+            spacing: 8px;
+            min-height: 28px;
+            font-weight: 600;
+        }}
+        QCheckBox::indicator {{
+            width: 18px;
+            height: 18px;
+            border-radius: 5px;
+            border: 1px solid {_qss_rgba(p['border'], 230)};
+            background: {_qss_rgba(p['panel2'], 245)};
+        }}
+        QCheckBox::indicator:checked {{
+            background: {p['accent']};
+            border: 1px solid {p['accent']};
+        }}
+        QPushButton {{
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 {_qss_rgba(p['panel2'], 255)}, stop:1 {_qss_rgba(p['panel'], 255)});
+            color: {p['text']};
+            border: 1px solid {_qss_rgba(p['border'], 230)};
+            border-radius: 11px;
+            padding: 8px 12px;
+            min-height: 32px;
+            font-weight: 760;
+        }}
+        QPushButton:hover {{
+            border: 1px solid {p['accent']};
+            background: {_qss_rgba(p['accent'], 50)};
+        }}
+        QPushButton:pressed {{
+            background: {_qss_rgba(p['accent'], 90)};
+        }}
+        QPushButton#DangerButton {{
+            border: 1px solid {_qss_rgba('#FF6B6B', 220)};
+            color: #FFDADA;
+        }}
+        QPushButton#PrimaryButton {{
+            border: 1px solid {p['accent']};
+            background: {_qss_rgba(p['accent'], 65)};
+        }}
+        QToolTip {{
+            color: {p['text']};
+            background: {p['panel']};
+            border: 1px solid {p['accent']};
+            padding: 7px;
+            border-radius: 6px;
+        }}
+    """
+
+
+def apply_beginner_photoshop_main_style(studio, theme=None):
+    """Apply only the beginner/Photoshop additive layer to a main editor window."""
+    try:
+        if theme is None:
+            canvas = getattr(studio, "canvas", None)
+            theme = get_canvas_studio_theme(canvas) if canvas is not None else DEFAULT_STUDIO_THEME
+        current = studio.styleSheet() or ""
+        extra = build_beginner_photoshop_main_qss(theme)
+        if extra not in current:
+            studio.setStyleSheet(current + "\n" + extra)
+    except Exception:
+        pass
 
 def set_canvas_studio_theme(canvas, theme):
     canvas.studio_theme = normalize_studio_theme(theme)
@@ -4559,6 +5234,9 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_sakura_tree_emit_time = 0.0
         self._extra_effects: Dict[str, List[ExtraEffectParticle]] = {}
         self._last_extra_ripple_time = 0.0
+        self._snow_accum_heights = []
+        self._snow_accum_rect_key = None
+        self._last_snow_accum_update = 0.0
         self._moon_drag_offset = QPointF(0.0, 0.0)
         self._bamboo_grove_cache_key = None
         self._bamboo_grove_cache = []
@@ -5403,6 +6081,98 @@ class EffectsOverlayWidget(BaseWidget):
         self._ripples.append(EffectRipple(float(item.x), float(surface_y), now, base, color, max(0.05, float(getattr(settings, "ripple_speed", 1.0))) * 0.85))
         self._last_extra_ripple_time = now
 
+    def _snow_accumulation_base_y(self, r: QRectF, settings: EffectOverlaySettings) -> float:
+        """積雪が積もり始める基準Y座標を返す。0.0=上端、1.0=下端。"""
+        ratio = max(0.0, min(1.0, float(getattr(settings, "snow_accumulation_start_y", 1.0))))
+        return r.top() + r.height() * ratio
+
+    def _ensure_snow_accumulation(self, r: QRectF, settings: EffectOverlaySettings):
+        column_w = max(2.0, min(30.0, float(getattr(settings, "snow_accumulation_column_width", 7.0))))
+        count = max(8, min(900, int(math.ceil(max(1.0, r.width()) / column_w))))
+        start_y_key = round(max(0.0, min(1.0, float(getattr(settings, "snow_accumulation_start_y", 1.0)))), 3)
+        key = (int(r.left()), int(r.top()), int(r.width()), int(r.height()), count, start_y_key)
+        if getattr(self, "_snow_accum_rect_key", None) == key and len(getattr(self, "_snow_accum_heights", [])) == count:
+            return
+        old = list(getattr(self, "_snow_accum_heights", []))
+        self._snow_accum_heights = [float(old[min(len(old)-1, int(i*len(old)/max(1,count)))]) if old else 0.0 for i in range(count)]
+        self._snow_accum_rect_key = key
+        self._last_snow_accum_update = time.time()
+
+    def _update_snow_accumulation(self, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "snow_accumulation_enabled", False)):
+            self._last_snow_accum_update = now
+            return
+        self._ensure_snow_accumulation(r, settings)
+        heights = getattr(self, "_snow_accum_heights", [])
+        if not heights:
+            return
+        dt = max(0.0, min(0.15, now - float(getattr(self, "_last_snow_accum_update", now) or now)))
+        self._last_snow_accum_update = now
+        base_y = self._snow_accumulation_base_y(r, settings)
+        available_depth = max(1.0, base_y - r.top())
+        max_depth = max(1.0, available_depth * max(0.05, min(1.0, float(getattr(settings, "snow_accumulation_max_depth", 1.0)))))
+        rate = max(0.0, float(getattr(settings, "snow_accumulation_build_rate", 7.0)))
+        if dt <= 0.0 or rate <= 0.0:
+            return
+        snow_factor = 0.35 + min(2.0, max(0.0, float(getattr(settings, "snow_count", 90))) / 140.0)
+        for i in range(len(heights)):
+            drift = 0.72 + 0.28 * math.sin(now * 0.45 + i * 0.73)
+            heights[i] = min(max_depth, max(0.0, heights[i] + rate * snow_factor * drift * dt))
+        if len(heights) >= 3:
+            smoothed = heights[:]
+            for i in range(1, len(heights) - 1):
+                smoothed[i] = heights[i] * 0.72 + (heights[i - 1] + heights[i + 1]) * 0.14
+            self._snow_accum_heights = smoothed
+
+    def _remove_snow_accumulation_at(self, pos: QPointF, settings: EffectOverlaySettings, strong: bool = False):
+        if not bool(getattr(settings, "snow_accumulation_enabled", False)) or not bool(getattr(settings, "snow_accumulation_mouse_remove_enabled", True)):
+            return
+        r = self.rect
+        self._ensure_snow_accumulation(r, settings)
+        heights = getattr(self, "_snow_accum_heights", [])
+        if not heights or r.width() <= 0:
+            return
+        radius = max(4.0, float(getattr(settings, "snow_accumulation_remove_radius", 58.0))) * (1.35 if strong else 1.0)
+        strength = max(1.0, float(getattr(settings, "snow_accumulation_remove_strength", 72.0))) * (1.45 if strong else 1.0)
+        column_w = max(1.0, r.width() / max(1, len(heights)))
+        center = int((float(pos.x()) - r.left()) / column_w)
+        reach = int(math.ceil(radius / column_w)) + 1
+        for i in range(max(0, center - reach), min(len(heights), center + reach + 1)):
+            cx = r.left() + (i + 0.5) * column_w
+            dist = abs(cx - float(pos.x()))
+            if dist <= radius:
+                heights[i] = max(0.0, heights[i] - strength * ((1.0 - dist / max(1.0, radius)) ** 0.65))
+
+    def _draw_snow_accumulation(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if not bool(getattr(settings, "snow_accumulation_enabled", False)):
+            return
+        self._update_snow_accumulation(r, settings, now)
+        heights = getattr(self, "_snow_accum_heights", [])
+        if not heights or r.width() <= 0 or r.height() <= 0:
+            return
+        alpha = max(0, min(255, int(getattr(settings, "snow_accumulation_alpha", 230) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0:
+            return
+        column_w = r.width() / max(1, len(heights))
+        base_y = self._snow_accumulation_base_y(r, settings)
+        path = QPainterPath(); path.moveTo(r.left(), base_y)
+        for i, h in enumerate(heights):
+            x = r.left() + i * column_w
+            y = base_y - max(0.0, h) + math.sin(now * 0.35 + i * 0.55) * min(3.0, h * 0.05)
+            path.lineTo(x, y)
+        path.lineTo(r.right(), base_y - max(0.0, heights[-1])); path.lineTo(r.right(), base_y); path.closeSubpath()
+        top = QColor(getattr(settings, "snow_color", "#F5FCFF")); top.setAlpha(alpha)
+        shadow = QColor(getattr(settings, "snow_edge_color", "#CFEFFF")); shadow.setAlpha(max(0, min(255, int(alpha * 0.82))))
+        grad = QLinearGradient(r.left(), r.top(), r.left(), r.bottom()); grad.setColorAt(0.0, top); grad.setColorAt(1.0, shadow)
+        p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing, True); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawPath(path)
+        pen = QPen(QColor(255, 255, 255, max(0, min(255, int(alpha * 0.72)))), max(1.0, min(4.0, column_w * 0.22))); pen.setCapStyle(Qt.PenCapStyle.RoundCap); p.setPen(pen)
+        surface = QPainterPath()
+        for i, h in enumerate(heights):
+            x = r.left() + i * column_w
+            y = base_y - max(0.0, h) + math.sin(now * 0.35 + i * 0.55) * min(3.0, h * 0.05)
+            surface.moveTo(x, y) if i == 0 else surface.lineTo(x, y)
+        p.drawPath(surface); p.restore()
+
     def _draw_extra_effects(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         if bool(getattr(settings, "water_surface_enabled", False)) or bool(getattr(settings, "puddle_enabled", False)):
             self._draw_water_surface(p, r, settings, now)
@@ -5410,6 +6180,7 @@ class EffectsOverlayWidget(BaseWidget):
             self._draw_ice_surface(p, r, settings, now)
         if bool(getattr(settings, "milky_way_enabled", False)):
             self._draw_milky_way(p, r, settings, now)
+        self._draw_snow_accumulation(p, r, settings, now)
         if not hasattr(self, "_extra_effects"):
             if bool(getattr(settings, "bamboo_grove_enabled", False)):
                 self._draw_bamboo_grove(p, r, settings, now)
@@ -5570,7 +6341,7 @@ class EffectsOverlayWidget(BaseWidget):
         blur = max(0.0, min(24.0, float(blur)))
         if image.isNull() or blur <= 0.05:
             return image
-        # 軽量な疑似ブラー: 縮小→拡大を1〜2回。QGraphicsEffectを使わないのでpaintEvent内でも安全。
+        
         factor = max(2, min(10, int(1.0 + blur * 0.45)))
         w = max(1, image.width() // factor)
         h = max(1, image.height() // factor)
@@ -6142,11 +6913,11 @@ class EffectsOverlayWidget(BaseWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setPen(Qt.PenStyle.NoPen)
 
-        # soft water shadow, also curved/rounded
+        
         p.setBrush(QBrush(shadow))
         p.drawEllipse(QPointF(size * 0.04, size * 0.25), size * 1.10, size * 0.36)
 
-        # Rounded body: drawn entirely with cubic curves for a plump silhouette.
+        
         body_path = QPainterPath()
         body_path.moveTo(-size * 0.88, 0.0)
         body_path.cubicTo(-size * 0.70, -size * 0.68, size * 0.10, -size * 0.78, size * 0.88, -size * 0.18)
@@ -6161,7 +6932,7 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(body_grad))
         p.drawPath(body_path)
 
-        # Tail: curved fan with wagging tip.
+        
         tail = QPainterPath()
         tail.moveTo(-size * 0.74, 0.0)
         tail.cubicTo(-size * 1.02, -size * 0.56 + tail_wag, -size * 1.42, -size * 0.42 + tail_wag, -size * 1.28, -size * 0.02 + tail_wag * 0.30)
@@ -6172,7 +6943,7 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(tail_color))
         p.drawPath(tail)
 
-        # Dorsal fin: rounded curve, not triangular.
+        
         dorsal = QPainterPath()
         dorsal.moveTo(-size * 0.18, -size * 0.48)
         dorsal.cubicTo(-size * 0.02, -size * 0.92, size * 0.30, -size * 0.82, size * 0.44, -size * 0.38)
@@ -6181,7 +6952,7 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(hi))
         p.drawPath(dorsal)
 
-        # Lower fin, also a soft curve.
+        
         lower_fin = QPainterPath()
         lower_fin.moveTo(-size * 0.02, size * 0.24)
         lower_fin.cubicTo(size * 0.10, size * 0.64, size * 0.44, size * 0.58, size * 0.42, size * 0.20)
@@ -6192,7 +6963,7 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(fin_color))
         p.drawPath(lower_fin)
 
-        # Curved cheek highlight.
+        
         shine = QPainterPath()
         shine.moveTo(size * 0.18, -size * 0.33)
         shine.cubicTo(size * 0.42, -size * 0.45, size * 0.68, -size * 0.32, size * 0.78, -size * 0.12)
@@ -6202,7 +6973,7 @@ class EffectsOverlayWidget(BaseWidget):
         p.setBrush(QBrush(shine_color))
         p.drawPath(shine)
 
-        # Eye and tiny curved mouth.
+        
         eye = QColor(4, 22, 28, max(0, min(255, int(alpha * 0.90))))
         p.setBrush(QBrush(eye))
         p.drawEllipse(QPointF(size * 0.62, -size * 0.12), max(1.2, size * 0.055), max(1.2, size * 0.055))
@@ -6523,7 +7294,7 @@ class EffectsOverlayWidget(BaseWidget):
         while y < reflected.height():
             h = min(slice_h, reflected.height() - y)
             fade = 1.0 - min(1.0, y / max(1.0, reflected.height())) * 0.62
-            # 水面より硬い氷面に見せるため、揺らぎは小さく角張った周期にする
+            
             offset = math.sin(phase + y * 0.045) * wave * fade
             offset += math.sin(phase * 0.37 + y * 0.135) * wave * 0.32 * fade
             src_rect = QRectF(0, y, reflected.width(), h)
@@ -6854,7 +7625,7 @@ class EffectsOverlayWidget(BaseWidget):
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(path)
-        # 水面境界のきらめき線
+        
         edge = QColor(hi)
         edge.setAlpha(max(0, min(255, int(alpha * 0.78))))
         p.setPen(QPen(edge, max(1.0, 1.3 + wave_height * 0.025)))
@@ -8126,7 +8897,7 @@ class EffectsOverlayWidget(BaseWidget):
         direction = float(getattr(self, "_petal_gust_direction", 1.0))
         wave = math.sin(now * (1.65 if rose else 1.85) + phase + seed * 0.013)
         fine = math.sin(now * 4.7 + seed * 0.031) * 0.18
-        # 突風中は全体を同じ横方向へ強く流し、少しだけ上方向へ巻き上げる
+        
         x = direction * base * (0.92 + 0.18 * wave + fine)
         lift = 0.18 if gusting else 0.06
         y = -abs(base) * (lift + 0.05 * math.sin(now * 2.0 + seed))
@@ -8208,6 +8979,7 @@ class EffectsOverlayWidget(BaseWidget):
         try:
             settings = get_effect_overlay_settings(self.cfg)
             self._apply_petal_mouse_flutter(QPointF(pos), settings, time.time(), strong=False)
+            self._remove_snow_accumulation_at(QPointF(pos), settings, strong=False)
         except Exception:
             pass
 
@@ -8231,6 +9003,7 @@ class EffectsOverlayWidget(BaseWidget):
         if settings.mouse_flee_enabled:
             self._push_particles_away(QPointF(pos), strength=420.0)
 
+        self._remove_snow_accumulation_at(QPointF(pos), settings, strong=True)
         self._apply_petal_mouse_flutter(QPointF(pos), settings, time.time(), strong=True)
 
     def on_mouse_release(self, pos: QPoint):
@@ -10528,7 +11301,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle("Lite Desktop Studio v1.5.6 - ウィジェット編集")
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -10539,33 +11312,33 @@ class WidgetEditor(QDialog):
         self.font_size = QSpinBox()
         self.font_size.setRange(8, 72)
         self.font_size.setValue(widget.cfg.font_size)
-        self.mirror_reflect_enabled = QCheckBox("鏡面反射に含める")
+        self.mirror_reflect_enabled = QCheckBox(lds_tr("鏡面反射に含める"))
         self.mirror_reflect_enabled.setChecked(bool(getattr(widget.cfg, "mirror_reflect_enabled", True)))
 
         self.text = QTextEdit()
         self.text.setPlainText(widget.cfg.text)
 
-        color_btn = QPushButton("🎨 色を選択")
+        color_btn = QPushButton(lds_tr("🎨 色を選択"))
         color_btn.clicked.connect(self.pick_color)
 
-        bg_btn = QPushButton("🖼️ 背景色を選択")
+        bg_btn = QPushButton(lds_tr("🖼️ 背景色を選択"))
         bg_btn.clicked.connect(self.pick_bg)
 
         btns = QHBoxLayout()
-        save = QPushButton("💾 保存")
-        cancel = QPushButton("✖ キャンセル")
+        save = QPushButton(lds_tr("💾 保存"))
+        cancel = QPushButton(lds_tr("✖ キャンセル"))
         save.clicked.connect(self.accept)
         cancel.clicked.connect(self.reject)
         btns.addWidget(save)
         btns.addWidget(cancel)
 
-        layout.addRow("タイトル", self.title)
-        layout.addRow("アクセント色", self.color)
+        layout.addRow(lds_tr("タイトル"), self.title)
+        layout.addRow(lds_tr("アクセント色"), self.color)
         layout.addRow("", color_btn)
-        layout.addRow("背景色", self.bg)
+        layout.addRow(lds_tr("背景色"), self.bg)
         layout.addRow("", bg_btn)
-        layout.addRow("フォントサイズ", self.font_size)
-        layout.addRow("鏡面反射", self.mirror_reflect_enabled)
+        layout.addRow(lds_tr("フォントサイズ"), self.font_size)
+        layout.addRow(lds_tr("鏡面反射"), self.mirror_reflect_enabled)
         layout.addRow("HTML / Text", self.text)
         layout.addRow(btns)
 
@@ -10697,8 +11470,8 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle("Lite Desktop Studio v1.5.6")
-        self.resize(960, 640)
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
+        self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
         self.apply_style()
@@ -10708,6 +11481,76 @@ class LiteDeskStudio(QMainWindow):
         self.ui_timer = QTimer(self)
         self.ui_timer.timeout.connect(self.refresh_runtime_status)
         self.ui_timer.start(500)
+
+    def apply_beginner_editor_window_geometry(self):
+        """Make the main widget editor larger and readable, while staying on screen.
+
+        The previous default size was compact. This screen-aware sizing keeps the
+        editor comfortable on large monitors and still safe on smaller displays.
+        """
+        min_w = 1180
+        min_h = 780
+        fallback_w = 1280
+        fallback_h = 840
+        try:
+            self.setMinimumSize(min_w, min_h)
+        except Exception:
+            pass
+        try:
+            screen = QApplication.primaryScreen()
+            if screen is None:
+                raise RuntimeError("primary screen is unavailable")
+            geom = screen.availableGeometry()
+            target_w = min(1440, max(min_w, int(geom.width() * 0.88)))
+            target_h = min(940, max(min_h, int(geom.height() * 0.88)))
+            target_w = min(target_w, max(min_w, geom.width() - 40))
+            target_h = min(target_h, max(min_h, geom.height() - 40))
+            self.resize(target_w, target_h)
+            try:
+                self.move(
+                    geom.x() + max(0, (geom.width() - self.width()) // 2),
+                    geom.y() + max(0, (geom.height() - self.height()) // 2),
+                )
+            except Exception:
+                pass
+        except Exception:
+            self.resize(fallback_w, fallback_h)
+
+    def configure_readable_help_text(self, text_edit, min_height=180, fixed_height=None):
+        """Make explanatory QTextEdit boxes easier to read for beginners."""
+        try:
+            text_edit.setReadOnly(True)
+        except Exception:
+            pass
+        try:
+            text_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        except Exception:
+            try:
+                text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
+            except Exception:
+                pass
+        try:
+            text_edit.setMinimumHeight(int(min_height))
+        except Exception:
+            pass
+        if fixed_height is not None:
+            try:
+                text_edit.setFixedHeight(int(fixed_height))
+            except Exception:
+                pass
+        try:
+            font = text_edit.font()
+            if font.pointSize() < 11:
+                font.setPointSize(11)
+            text_edit.setFont(font)
+        except Exception:
+            pass
+        try:
+            text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        except Exception:
+            pass
+        return text_edit
 
     def build_ui(self):
         root = QWidget()
@@ -10720,12 +11563,65 @@ class LiteDeskStudio(QMainWindow):
         main.addWidget(self.build_left_panel(), 0)
         main.addWidget(self.build_center_panel(), 1)
         main.addWidget(self.build_property_panel(), 0)
+        self.apply_beginner_main_tooltips()
+
+    def apply_beginner_main_tooltips(self):
+        """Beginner explanations for the main widget editor controls."""
+        tips = {
+            "btn_add_visualizer": "音楽に合わせて動くバー表示を追加します。まずはこのボタンで追加し、右側でサイズや色を調整します。",
+            "btn_add_effects_overlay": "花びら・雨・月・水面などの背景演出を追加します。細かい設定は中央の『エフェクト設定』から開けます。",
+            "btn_add_system": "CPU、メモリ、ディスク使用率を表示するウィジェットを追加します。",
+            "btn_add_volume": "音量を表示・操作するウィジェットを追加します。",
+            "btn_add_clock": "アナログ時計を追加します。デジタル時刻の表示は右側で切り替えできます。",
+            "btn_add_network": "通信速度を表示するウィジェットを追加します。DOWN/UP色は右側で変更できます。",
+            "btn_add_calendar": "カレンダーを表示するウィジェットを追加します。",
+            "btn_add_media": "再生/一時停止など、音楽プレイヤー操作用のウィジェットを追加します。",
+            "btn_add_html_js": "JavaScriptを含むHTMLウィジェットを追加します。初心者は通常のHTML/CSS風から始めるのがおすすめです。",
+            "btn_add_html": "文字や簡単なHTML/CSS風デザインを表示するウィジェットを追加します。",
+            "btn_add_weather": "天気ウィジェットを追加します。地域名は右側のプロパティで変更します。",
+            "layer_list": "追加したウィジェットの一覧です。ここで選ぶと、右側に編集項目が表示されます。",
+            "btn_layer_down": "選択中のウィジェットを背面に移動します。重なり順を直したい時に使います。",
+            "btn_layer_up": "選択中のウィジェットを前面に移動します。",
+            "edit_mode_check": "ONにすると、ウィジェットをドラッグ移動・編集できます。普段使う時はOFFにすると誤操作を防げます。",
+            "theme_combo": "メイン設定画面の見た目テーマを切り替えます。右側の説明や色もテーマに合わせて見やすくなります。",
+            "btn_effects_editor": "エフェクトオーバーレイの詳細設定を開きます。",
+            "btn_save": "現在の配置と設定を保存します。",
+            "btn_reload": "画面を再読み込みします。表示が乱れた時に使います。",
+            "btn_duplicate": "選択中のウィジェットをコピーします。",
+            "btn_delete": "選択中のウィジェットを削除します。削除前に選択対象を確認してください。",
+            "btn_export": "現在の設定をファイルとして保存します。別PCへの移動やバックアップに使えます。",
+            "btn_import": "保存済みの設定ファイルを読み込みます。",
+            "btn_close_canvas": "アプリを終了します。終了前に保存しておくと安心です。",
+            "prop_type": "選択中ウィジェットの種類です。ここは確認用なので編集できません。",
+            "prop_title": "ウィジェット名です。レイヤー一覧で見分けやすい名前にできます。",
+            "prop_x": "画面左からの位置です。ドラッグ移動でも変更できます。",
+            "prop_y": "画面上からの位置です。ドラッグ移動でも変更できます。",
+            "prop_w": "ウィジェットの横幅です。大きくすると表示領域が広がります。",
+            "prop_h": "ウィジェットの高さです。",
+            "prop_color": "文字やグラフなどのアクセント色です。ボタンから色を選ぶのがおすすめです。",
+            "prop_bg": "背景色です。透明度と組み合わせて見た目を調整します。",
+            "prop_bg_alpha": "背景の濃さです。0は透明、255は不透明です。",
+            "prop_font_size": "文字の大きさです。見づらい時は少し大きくしてください。",
+            "prop_mirror_reflect_enabled": "水面や氷面の反射に、このウィジェットを含めるかを選びます。",
+        }
+        for name, tip in tips.items():
+            set_beginner_tooltip(getattr(self, name, None), tip)
+        for name in ("btn_save", "btn_effects_editor"):
+            try:
+                getattr(self, name).setObjectName("PrimaryButton")
+            except Exception:
+                pass
+        for name in ("btn_delete", "btn_close_canvas"):
+            try:
+                getattr(self, name).setObjectName("DangerButton")
+            except Exception:
+                pass
 
     def build_left_panel(self):
         scroll = QScrollArea()
         scroll.setObjectName("SideScrollArea")
         scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(250)
+        scroll.setFixedWidth(300)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         panel = QWidget()
@@ -10736,30 +11632,35 @@ class LiteDeskStudio(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("🧩 LiteDesk Studio")
+        title = QLabel(lds_tr("🧩 Lite Desktop Studio"))
         title.setObjectName("Title")
         layout.addWidget(title)
 
-        subtitle = QLabel("🪄 ウィジェットを追加して、直感的に編集できます。")
+        subtitle = QLabel(lds_tr("🪄 ウィジェットを追加して、直感的に編集できます。"))
         subtitle.setWordWrap(True)
         subtitle.setObjectName("SubText")
         layout.addWidget(subtitle)
 
-        add_label = QLabel("➕ Add Widget")
+        layout.addWidget(make_beginner_guide_label(
+            lds_tr("左から追加、右で編集"),
+            lds_tr("使いたい部品を追加したら、下のLayersで選択します。選んだ部品の位置・サイズ・色は右側のPropertiesで変更できます。")
+        ))
+
+        add_label = QLabel(lds_tr("➕ Add Widget"))
         add_label.setObjectName("SectionTitle")
         layout.addWidget(add_label)
 
-        self.btn_add_visualizer = QPushButton("🎵 音楽ビジュアライザー")
-        self.btn_add_effects_overlay = QPushButton("✨ エフェクトオーバーレイ")
-        self.btn_add_system = QPushButton("📊 CPU / Memory / Disk")
-        self.btn_add_volume = QPushButton("🔊 音量操作")
-        self.btn_add_clock = QPushButton("🕒 アナログ時計")
-        self.btn_add_network = QPushButton("📡 通信状況")
-        self.btn_add_calendar = QPushButton("📅 カレンダー")
-        self.btn_add_media = QPushButton("🎧 音楽プレイヤー操作")
-        self.btn_add_html_js = QPushButton("🧪 JavaScript HTML")
-        self.btn_add_html = QPushButton("🌐 HTML / CSS 風")
-        self.btn_add_weather = QPushButton("🌤️ 天気")
+        self.btn_add_visualizer = QPushButton(lds_tr("🎵 音楽ビジュアライザー"))
+        self.btn_add_effects_overlay = QPushButton(lds_tr("✨ エフェクトオーバーレイ"))
+        self.btn_add_system = QPushButton(lds_tr("📊 CPU / Memory / Disk"))
+        self.btn_add_volume = QPushButton(lds_tr("🔊 音量操作"))
+        self.btn_add_clock = QPushButton(lds_tr("🕒 アナログ時計"))
+        self.btn_add_network = QPushButton(lds_tr("📡 通信状況"))
+        self.btn_add_calendar = QPushButton(lds_tr("📅 カレンダー"))
+        self.btn_add_media = QPushButton(lds_tr("🎧 音楽プレイヤー操作"))
+        self.btn_add_html_js = QPushButton(lds_tr("🧪 JavaScript HTML"))
+        self.btn_add_html = QPushButton(lds_tr("🌐 HTML / CSS 風"))
+        self.btn_add_weather = QPushButton(lds_tr("🌤️ 天気"))
 
         self.btn_add_visualizer.clicked.connect(lambda: self.add_widget("visualizer"))
         self.btn_add_effects_overlay.clicked.connect(lambda: self.add_widget("effects_overlay"))
@@ -10790,7 +11691,7 @@ class LiteDeskStudio(QMainWindow):
             button.setMinimumHeight(36)
             layout.addWidget(button)
 
-        layer_label = QLabel("📚 Layers")
+        layer_label = QLabel(lds_tr("📚 Layers"))
         layer_label.setObjectName("SectionTitle")
         layout.addWidget(layer_label)
 
@@ -10801,8 +11702,8 @@ class LiteDeskStudio(QMainWindow):
 
         layer_buttons = QHBoxLayout()
 
-        self.btn_layer_down = QPushButton("⬇ 背面")
-        self.btn_layer_up = QPushButton("⬆ 前面")
+        self.btn_layer_down = QPushButton(lds_tr("⬇ 背面"))
+        self.btn_layer_up = QPushButton(lds_tr("⬆ 前面"))
 
         self.btn_layer_down.clicked.connect(self.move_backward)
         self.btn_layer_up.clicked.connect(self.move_forward)
@@ -10814,13 +11715,264 @@ class LiteDeskStudio(QMainWindow):
 
         return scroll
 
+    def update_language_button_text(self):
+        """Update the language toggle button label."""
+        try:
+            lang = _lds_normalize_lang(get_litedesktopstudio_language())
+            if lang.lower().startswith("en"):
+                label = "🌐 Lang: English / 日本語へ切替"
+            else:
+                label = "🌐 Lang: 日本語 / Switch to English"
+            if hasattr(self, "btn_language"):
+                self.btn_language.setText(lds_tr(label))
+                self.btn_language.setToolTip(lds_tr("UIの表示言語を切り替えます。英語では en_US.qm を読み込みます。"))
+        except Exception:
+            pass
+
+    def _snapshot_canvas_widget_configs(self):
+        """Capture widget configs before language switching."""
+        snapshot = {"configs": [], "selected_index": -1, "edit_mode": None}
+        try:
+            widgets = list(getattr(self.canvas, "widgets", []) or [])
+            selected = getattr(self.canvas, "selected", None)
+            if selected in widgets:
+                snapshot["selected_index"] = widgets.index(selected)
+            elif hasattr(self, "layer_list") and self.layer_list is not None:
+                snapshot["selected_index"] = self.layer_list.currentRow()
+            snapshot["edit_mode"] = getattr(self.canvas, "edit_mode", None)
+            for widget in widgets:
+                cfg = widget.to_config() if hasattr(widget, "to_config") else getattr(widget, "cfg", None)
+                snapshot["configs"].append(asdict(cfg) if cfg is not None else {})
+        except Exception:
+            pass
+        return snapshot
+
+    def _restore_canvas_widget_configs(self, snapshot):
+        """Restore desktop widget configs captured before a language switch."""
+        try:
+            if not isinstance(snapshot, dict):
+                return
+            widgets = list(getattr(self.canvas, "widgets", []) or [])
+            configs = list(snapshot.get("configs", []) or [])
+            if len(widgets) != len(configs):
+                return
+            for widget, cfg_data in zip(widgets, configs):
+                cfg = getattr(widget, "cfg", None)
+                if cfg is None or not isinstance(cfg_data, dict):
+                    continue
+                for key, value in cfg_data.items():
+                    if hasattr(cfg, key):
+                        setattr(cfg, key, value)
+                try:
+                    ensure_effect_overlay_fields(cfg)
+                except Exception:
+                    pass
+            selected_index = snapshot.get("selected_index", -1)
+            try:
+                selected_index = int(selected_index)
+            except Exception:
+                selected_index = -1
+            for widget in widgets:
+                try:
+                    widget.selected = False
+                except Exception:
+                    pass
+            if 0 <= selected_index < len(widgets):
+                self.canvas.selected = widgets[selected_index]
+                try:
+                    widgets[selected_index].selected = True
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, "layer_list") and self.layer_list is not None:
+                        blocked = self.layer_list.blockSignals(True)
+                        self.layer_list.setCurrentRow(selected_index)
+                        self.layer_list.blockSignals(blocked)
+                except Exception:
+                    pass
+            else:
+                self.canvas.selected = None
+            if snapshot.get("edit_mode") is not None:
+                try:
+                    self.canvas.edit_mode = bool(snapshot.get("edit_mode"))
+                except Exception:
+                    pass
+            try:
+                self.canvas.update_platform_hit_mask()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def on_language_button_clicked(self):
+        """Toggle language without changing desktop widget placement."""
+        snapshot = self._snapshot_canvas_widget_configs()
+        try:
+            app = QApplication.instance()
+            current = _lds_normalize_lang(get_litedesktopstudio_language())
+            next_lang = "ja_JP" if current.lower().startswith("en") else "en_US"
+            loaded = set_litedesktopstudio_language(app, next_lang)
+
+            
+            self._restore_canvas_widget_configs(snapshot)
+            self.canvas.language = next_lang
+
+            self.apply_language_to_existing_ui()
+
+            
+            self._restore_canvas_widget_configs(snapshot)
+            self.canvas.language = next_lang
+
+            
+            try:
+                self.canvas.save_config()
+            except Exception:
+                pass
+            save_litedesktopstudio_language_preference(next_lang)
+
+            if next_lang.lower().startswith("en") and not loaded:
+                QMessageBox.warning(
+                    self,
+                    lds_tr("翻訳ファイル"),
+                    lds_tr("en_US.qm が見つからない、または読み込めませんでした。en_US.qm を実行ファイルと同じフォルダー、または translations フォルダーに配置してください。")
+                )
+        except Exception as exc:
+            self._restore_canvas_widget_configs(snapshot)
+            QMessageBox.warning(self, lds_tr("言語切替"), lds_tr(f"言語切替に失敗しました: {exc}"))
+
+    def _set_widget_text(self, attr_name: str, source_text: str):
+        try:
+            widget = getattr(self, attr_name, None)
+            if widget is not None:
+                widget.setText(lds_tr(source_text))
+        except Exception:
+            pass
+
+    def _set_form_label_text(self, field_attr_name: str, source_text: str):
+        try:
+            form = getattr(self, "property_form", None)
+            field = getattr(self, field_attr_name, None)
+            if form is not None and field is not None:
+                label = form.labelForField(field)
+                if label is not None:
+                    label.setText(lds_tr(source_text))
+        except Exception:
+            pass
+
+    def apply_language_to_existing_ui(self):
+        """Retranslate existing widgets in-place without changing layout geometry."""
+        try:
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
+            try:
+                self.canvas.setWindowTitle(lds_tr(APP_NAME))
+            except Exception:
+                pass
+
+            
+            widget_texts = {
+                "btn_add_visualizer": "🎵 音楽ビジュアライザー",
+                "btn_add_effects_overlay": "✨ エフェクトオーバーレイ",
+                "btn_add_system": "📊 CPU / Memory / Disk",
+                "btn_add_volume": "🔊 音量操作",
+                "btn_add_clock": "🕒 アナログ時計",
+                "btn_add_network": "📡 通信状況",
+                "btn_add_calendar": "📅 カレンダー",
+                "btn_add_media": "🎧 音楽プレイヤー操作",
+                "btn_add_html_js": "🧪 JavaScript HTML",
+                "btn_add_html": "🌐 HTML / CSS 風",
+                "btn_add_weather": "🌤️ 天気",
+                "btn_layer_down": "⬇ 背面",
+                "btn_layer_up": "⬆ 前面",
+                "status_label": "📌 Status",
+                "edit_mode_check": "✏️ 編集モード",
+                "btn_effects_editor": "✨ エフェクト設定",
+                "btn_save": "💾 設定を保存",
+                "btn_reload": "🔄 UIを再読み込み",
+                "btn_duplicate": "📄 複製",
+                "btn_delete": "🗑️ 削除",
+                "btn_export": "📤 エクスポート",
+                "btn_import": "📥 インポート",
+                "btn_close_canvas": "🚪 アプリ終了",
+                "prop_mirror_reflect_enabled": "🪞 このウィジェットを水面/氷面の鏡面反射に含める",
+                "btn_pick_color": "🎯 アクセント色を選択",
+                "btn_pick_bg": "🖼️ 背景色を選択",
+                "btn_pick_cpu_color": "🧠 CPU色を選択",
+                "btn_pick_memory_color": "💽 Memory色を選択",
+                "btn_pick_disk_color": "💾 Disk色を選択",
+                "btn_pick_network_down_color": "⬇️ DOWN色を選択",
+                "btn_pick_network_up_color": "⬆️ UP色を選択",
+                "prop_clock_show_digital": "🕒 デジタル時刻を表示",
+                "prop_visualizer_flip_vertical": "↕️ ビジュアライザーを上下反転",
+                "prop_visualizer_peak_bar_enabled": "━ スペクトルピークバーを表示",
+                "prop_visualizer_glow_enabled": "💡 スペクトル発光を有効化",
+                "prop_visualizer_frame_rate_enabled": "🎞️ FPS制限を使う",
+            }
+            for attr_name, source_text in widget_texts.items():
+                self._set_widget_text(attr_name, source_text)
+
+            if getattr(self.canvas, "selected", None) is None:
+                self._set_widget_text("selected_name", "🔎 No widget selected")
+
+            try:
+                self.prop_weather_location.setPlaceholderText(lds_tr("例: Kobe / Tokyo / Osaka"))
+            except Exception:
+                pass
+
+            
+            
+            form_labels = {
+                "prop_type": "🧩 Type",
+                "prop_title": "🔖 Title",
+                "prop_x": "↔️ X",
+                "prop_y": "↕️ Y",
+                "prop_w": "📐 Width",
+                "prop_h": "📏 Height",
+                "prop_color": "🎨 Color",
+                "prop_bg": "🖼️ Background",
+                "prop_bg_alpha": "透明度",
+                "prop_mirror_reflect_enabled": "鏡面反射対象",
+                "prop_cpu_color": "🧠 CPU Color",
+                "prop_memory_color": "💽 Memory Color",
+                "prop_disk_color": "💾 Disk Color",
+                "prop_weather_location": "🌍 Weather Location",
+                "prop_network_down_color": "⬇️ Network DOWN Color",
+                "prop_network_up_color": "⬆️ Network UP Color",
+                "prop_font_size": "🔤 Font Size",
+                "prop_visualizer_bar_width_scale": "📏 スペクトルバー幅",
+                "prop_visualizer_orientation": "🧭 スペクトル展開方向",
+                "prop_visualizer_frame_rate": "🎞️ FPS",
+            }
+            for field_attr_name, source_text in form_labels.items():
+                self._set_form_label_text(field_attr_name, source_text)
+
+            self.update_language_button_text()
+            try:
+                self.update_studio_theme_button_text()
+            except Exception:
+                pass
+            
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def rebuild_ui_after_language_change(self):
+        """Backward-compatible wrapper.  It no longer rebuilds layouts."""
+        self.apply_language_to_existing_ui()
+
     def open_effects_overlay_editor(self):
         widget = getattr(self.canvas, "selected", None)
         if widget is None or widget.cfg.type != "effects_overlay":
             QMessageBox.information(
                 self,
-                "エフェクト設定",
-                "Effects Overlay ウィジェットを選択してください。"
+                lds_tr("エフェクト設定"),
+                lds_tr("Effects Overlay ウィジェットを選択してください。")
             )
             return
 
@@ -10852,11 +12004,11 @@ class LiteDeskStudio(QMainWindow):
 
         top = QHBoxLayout()
 
-        self.status_label = QLabel("📌 Status")
+        self.status_label = QLabel(lds_tr("📌 Status"))
         self.status_label.setObjectName("StatusText")
         top.addWidget(self.status_label, 1)
 
-        self.edit_mode_check = QCheckBox("✏️ 編集モード")
+        self.edit_mode_check = QCheckBox(lds_tr("✏️ 編集モード"))
         self.edit_mode_check.setChecked(self.canvas.edit_mode)
         self.edit_mode_check.stateChanged.connect(self.on_edit_mode_changed)
         top.addWidget(self.edit_mode_check)
@@ -10865,39 +12017,50 @@ class LiteDeskStudio(QMainWindow):
         self.populate_studio_theme_combo()
         self.theme_combo.currentIndexChanged.connect(self.on_studio_theme_combo_changed)
         top.addWidget(self.theme_combo)
+
+        self.btn_language = QPushButton()
+        self.btn_language.setMinimumHeight(32)
+        self.btn_language.clicked.connect(self.on_language_button_clicked)
+        top.addWidget(self.btn_language)
+
         self.update_studio_theme_button_text()
+        self.update_language_button_text()
         layout.addLayout(top)
 
         help_box = QTextEdit()
         help_box.setReadOnly(True)
-        help_box.setFixedHeight(120)
+        self.configure_readable_help_text(help_box, min_height=190, fixed_height=210)
         help_box.setObjectName("HelpBox")
-        help_box.setPlainText(
-            "操作方法:\n"
-            "・デスクトップ上のウィジェットはドラッグで移動できます。\n"
-            "・Layers からウィジェットを選択できます。\n"
-            "・右側の Properties で位置、サイズ、色、HTMLを編集できます。\n"
-            "・Volume ウィジェット上でホイールすると音量を変更できます。\n"
-            "・Eキーで編集モード切替、Deleteキーで削除できます。"
-        )
+        help_box.setPlainText(lds_tr(
+            "初心者向けの操作方法:\n"
+            "1. 左のAdd Widgetから部品を追加します。\n"
+            "2. 左のLayersで編集したい部品を選びます。\n"
+            "3. 右のPropertiesで位置・サイズ・色を調整します。\n"
+            "4. 編集が終わったら『設定を保存』を押します。\n"
+            "補足: 編集モードONならドラッグ移動できます。Eキーで編集モード切替、Deleteキーで削除できます。"
+        ))
         layout.addWidget(help_box)
+        layout.addWidget(make_beginner_guide_label(
+            lds_tr("中央は操作パネルです"),
+            lds_tr("保存・複製・削除・インポート/エクスポートなど、全体操作をここにまとめています。危険な操作は赤系の枠で目立つようにしています。")
+        ))
 
-        action_label = QLabel("⚡ Actions")
+        action_label = QLabel(lds_tr("⚡ Actions"))
         action_label.setObjectName("SectionTitle")
         layout.addWidget(action_label)
 
         action_grid = QGridLayout()
         action_grid.setSpacing(8)
-        self.btn_effects_editor = QPushButton("✨ エフェクト設定")
+        self.btn_effects_editor = QPushButton(lds_tr("✨ エフェクト設定"))
         self.btn_effects_editor.clicked.connect(self.open_effects_overlay_editor)
         layout.addWidget(self.btn_effects_editor)
-        self.btn_save = QPushButton("💾 設定を保存")
-        self.btn_reload = QPushButton("🔄 UIを再読み込み")
-        self.btn_duplicate = QPushButton("📄 複製")
-        self.btn_delete = QPushButton("🗑️ 削除")
-        self.btn_export = QPushButton("📤 エクスポート")
-        self.btn_import = QPushButton("📥 インポート")
-        self.btn_close_canvas = QPushButton("🚪 アプリ終了")
+        self.btn_save = QPushButton(lds_tr("💾 設定を保存"))
+        self.btn_reload = QPushButton(lds_tr("🔄 UIを再読み込み"))
+        self.btn_duplicate = QPushButton(lds_tr("📄 複製"))
+        self.btn_delete = QPushButton(lds_tr("🗑️ 削除"))
+        self.btn_export = QPushButton(lds_tr("📤 エクスポート"))
+        self.btn_import = QPushButton(lds_tr("📥 インポート"))
+        self.btn_close_canvas = QPushButton(lds_tr("🚪 アプリ終了"))
         self.btn_save.clicked.connect(self.save)
         self.btn_reload.clicked.connect(self.reload_ui)
         self.btn_duplicate.clicked.connect(self.duplicate)
@@ -10923,13 +12086,13 @@ class LiteDeskStudio(QMainWindow):
         layout.addLayout(action_grid)
         layout.addStretch(1)
 
-        performance_label = QLabel("🚀 Performance")
+        performance_label = QLabel(lds_tr("🚀 Performance"))
         performance_label.setObjectName("SectionTitle")
         layout.addWidget(performance_label)
 
         self.performance_text = QTextEdit()
         self.performance_text.setReadOnly(True)
-        self.performance_text.setFixedHeight(120)
+        self.configure_readable_help_text(self.performance_text, min_height=150, fixed_height=170)
         self.performance_text.setObjectName("HelpBox")
         layout.addWidget(self.performance_text)
 
@@ -10939,7 +12102,7 @@ class LiteDeskStudio(QMainWindow):
         scroll = QScrollArea()
         scroll.setObjectName("PropertyScrollArea")
         scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(370)
+        scroll.setFixedWidth(440)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         panel = QWidget()
@@ -10951,13 +12114,18 @@ class LiteDeskStudio(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("🛠️ Properties")
+        title = QLabel(lds_tr("🛠️ Properties"))
         title.setObjectName("Title")
         layout.addWidget(title)
 
-        self.selected_name = QLabel("🔎 No widget selected")
+        self.selected_name = QLabel(lds_tr("🔎 No widget selected"))
         self.selected_name.setObjectName("SubText")
         layout.addWidget(self.selected_name)
+
+        layout.addWidget(make_beginner_guide_label(
+            lds_tr("右側は選択中ウィジェットの編集"),
+            lds_tr("まずはタイトル・位置・サイズ・色だけ触れば十分です。数値が分からない場合は、ウィジェットをドラッグ移動してから微調整してください。")
+        ))
 
         form = QFormLayout()
         self.property_form = form
@@ -10990,7 +12158,7 @@ class LiteDeskStudio(QMainWindow):
         self.prop_bg_alpha.setRange(0, 255)
         self.prop_bg_alpha.setValue(155)
         self.prop_bg_alpha.valueChanged.connect(self.apply_properties_live)
-        self.prop_mirror_reflect_enabled = QCheckBox("🪞 このウィジェットを水面/氷面の鏡面反射に含める")
+        self.prop_mirror_reflect_enabled = QCheckBox(lds_tr("🪞 このウィジェットを水面/氷面の鏡面反射に含める"))
         self.prop_mirror_reflect_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_cpu_color = QLineEdit()
         self.prop_memory_color = QLineEdit()
@@ -11003,32 +12171,32 @@ class LiteDeskStudio(QMainWindow):
         self.prop_memory_color.textChanged.connect(self.apply_properties_live)
         self.prop_disk_color.textChanged.connect(self.apply_properties_live)
 
-        self.btn_pick_color = QPushButton("🎯 アクセント色を選択")
-        self.btn_pick_bg = QPushButton("🖼️ 背景色を選択")
+        self.btn_pick_color = QPushButton(lds_tr("🎯 アクセント色を選択"))
+        self.btn_pick_bg = QPushButton(lds_tr("🖼️ 背景色を選択"))
 
         self.btn_pick_color.clicked.connect(self.pick_color)
         self.btn_pick_bg.clicked.connect(self.pick_bg)
         self.prop_network_down_color.textChanged.connect(self.apply_properties_live)
         self.prop_network_up_color.textChanged.connect(self.apply_properties_live)
-        self.btn_pick_cpu_color = QPushButton("🧠 CPU色を選択")
-        self.btn_pick_memory_color = QPushButton("💽 Memory色を選択")
-        self.btn_pick_disk_color = QPushButton("💾 Disk色を選択")
+        self.btn_pick_cpu_color = QPushButton(lds_tr("🧠 CPU色を選択"))
+        self.btn_pick_memory_color = QPushButton(lds_tr("💽 Memory色を選択"))
+        self.btn_pick_disk_color = QPushButton(lds_tr("💾 Disk色を選択"))
 
         self.btn_pick_cpu_color.clicked.connect(self.pick_cpu_color)
         self.btn_pick_memory_color.clicked.connect(self.pick_memory_color)
         self.btn_pick_disk_color.clicked.connect(self.pick_disk_color)
-        self.btn_pick_network_down_color = QPushButton("⬇️ DOWN色を選択")
-        self.btn_pick_network_up_color = QPushButton("⬆️ UP色を選択")
+        self.btn_pick_network_down_color = QPushButton(lds_tr("⬇️ DOWN色を選択"))
+        self.btn_pick_network_up_color = QPushButton(lds_tr("⬆️ UP色を選択"))
         self.prop_font_size = QSpinBox()
         self.prop_font_size.setRange(8, 72)
         self.prop_font_size.valueChanged.connect(self.apply_properties_live)
-        self.prop_clock_show_digital = QCheckBox("🕒 デジタル時刻を表示")
+        self.prop_clock_show_digital = QCheckBox(lds_tr("🕒 デジタル時刻を表示"))
         self.prop_clock_show_digital.stateChanged.connect(self.apply_properties_live)
-        self.prop_visualizer_flip_vertical = QCheckBox("↕️ ビジュアライザーを上下反転")
+        self.prop_visualizer_flip_vertical = QCheckBox(lds_tr("↕️ ビジュアライザーを上下反転"))
         self.prop_visualizer_flip_vertical.stateChanged.connect(self.apply_properties_live)
-        self.prop_visualizer_peak_bar_enabled = QCheckBox("━ スペクトルピークバーを表示")
+        self.prop_visualizer_peak_bar_enabled = QCheckBox(lds_tr("━ スペクトルピークバーを表示"))
         self.prop_visualizer_peak_bar_enabled.stateChanged.connect(self.apply_properties_live)
-        self.prop_visualizer_glow_enabled = QCheckBox("💡 スペクトル発光を有効化")
+        self.prop_visualizer_glow_enabled = QCheckBox(lds_tr("💡 スペクトル発光を有効化"))
         self.prop_visualizer_glow_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_visualizer_bar_width_scale = QDoubleSpinBox()
         self.prop_visualizer_bar_width_scale.setRange(0.35, 2.40)
@@ -11036,10 +12204,10 @@ class LiteDeskStudio(QMainWindow):
         self.prop_visualizer_bar_width_scale.setSingleStep(0.05)
         self.prop_visualizer_bar_width_scale.valueChanged.connect(self.apply_properties_live)
         self.prop_visualizer_orientation = QComboBox()
-        self.prop_visualizer_orientation.addItem("横向きに展開", "horizontal")
-        self.prop_visualizer_orientation.addItem("縦向きに展開", "vertical")
+        self.prop_visualizer_orientation.addItem(lds_tr("横向きに展開"), "horizontal")
+        self.prop_visualizer_orientation.addItem(lds_tr("縦向きに展開"), "vertical")
         self.prop_visualizer_orientation.currentIndexChanged.connect(self.apply_properties_live)
-        self.prop_visualizer_frame_rate_enabled = QCheckBox("🎞️ FPS制限を使う")
+        self.prop_visualizer_frame_rate_enabled = QCheckBox(lds_tr("🎞️ FPS制限を使う"))
         self.prop_visualizer_frame_rate_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_visualizer_frame_rate = QSpinBox()
         self.prop_visualizer_frame_rate.setRange(1, 500)
@@ -11047,7 +12215,7 @@ class LiteDeskStudio(QMainWindow):
         self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
         self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
         self.prop_weather_location = QLineEdit()
-        self.prop_weather_location.setPlaceholderText("例: Kobe / Tokyo / Osaka")
+        self.prop_weather_location.setPlaceholderText(lds_tr("例: Kobe / Tokyo / Osaka"))
         self.prop_weather_location.textChanged.connect(self.apply_properties_live)
 
         form.addRow("🧩 Type", self.prop_type)
@@ -11060,8 +12228,8 @@ class LiteDeskStudio(QMainWindow):
         form.addRow("", self.btn_pick_color)
         form.addRow("🖼️ Background", self.prop_bg)
         form.addRow("", self.btn_pick_bg)
-        form.addRow("透明度", self.prop_bg_alpha)
-        form.addRow("鏡面反射対象", self.prop_mirror_reflect_enabled)
+        form.addRow(lds_tr("透明度"), self.prop_bg_alpha)
+        form.addRow(lds_tr("鏡面反射対象"), self.prop_mirror_reflect_enabled)
         form.addRow("🧠 CPU Color", self.prop_cpu_color)
         form.addRow("", self.btn_pick_cpu_color)
 
@@ -11100,8 +12268,8 @@ class LiteDeskStudio(QMainWindow):
         form.addRow("", self.prop_visualizer_flip_vertical)
         form.addRow("", self.prop_visualizer_peak_bar_enabled)
         form.addRow("", self.prop_visualizer_glow_enabled)
-        form.addRow("📏 スペクトルバー幅", self.prop_visualizer_bar_width_scale)
-        form.addRow("🧭 スペクトル展開方向", self.prop_visualizer_orientation)
+        form.addRow(lds_tr("📏 スペクトルバー幅"), self.prop_visualizer_bar_width_scale)
+        form.addRow(lds_tr("🧭 スペクトル展開方向"), self.prop_visualizer_orientation)
         form.addRow("", self.prop_visualizer_frame_rate_enabled)
         form.addRow("🎞️ FPS", self.prop_visualizer_frame_rate)
         self.visualizer_only_property_widgets = [
@@ -11120,7 +12288,7 @@ class LiteDeskStudio(QMainWindow):
 
         layout.addLayout(form)
 
-        html_label = QLabel("🧾 HTML / Text")
+        html_label = QLabel(lds_tr("🧾 HTML / Text"))
         html_label.setObjectName("SectionTitle")
         layout.addWidget(html_label)
 
@@ -11134,8 +12302,8 @@ class LiteDeskStudio(QMainWindow):
 
         bottom = QHBoxLayout()
 
-        self.btn_apply = QPushButton("✅ 反映")
-        self.btn_reset_selection = QPushButton("🧹 選択解除")
+        self.btn_apply = QPushButton(lds_tr("✅ 反映"))
+        self.btn_reset_selection = QPushButton(lds_tr("🧹 選択解除"))
 
         self.btn_apply.clicked.connect(lambda: self.apply_properties(save=True))
         self.btn_reset_selection.clicked.connect(self.clear_selection)
@@ -11246,8 +12414,8 @@ class LiteDeskStudio(QMainWindow):
         if widget is None or widget.cfg.type != "effects_overlay":
             QMessageBox.information(
                 self,
-                "エフェクト設定",
-                "Effects Overlay ウィジェットを選択してください。"
+                lds_tr("エフェクト設定"),
+                lds_tr("Effects Overlay ウィジェットを選択してください。")
             )
             return
 
@@ -11731,7 +12899,7 @@ class LiteDeskStudio(QMainWindow):
     def save(self):
         self.apply_properties(save=True)
         self.canvas.save_config()
-        QMessageBox.information(self, "保存", "設定を保存しました。")
+        QMessageBox.information(self, lds_tr("保存"), lds_tr("設定を保存しました。"))
 
     def reload_ui(self):
         self.refresh_layer_list()
@@ -11745,7 +12913,7 @@ class LiteDeskStudio(QMainWindow):
         self.exporting_config = True
 
         try:
-            dialog = QFileDialog(self, "設定をエクスポート")
+            dialog = QFileDialog(self, lds_tr("設定をエクスポート"))
             dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
             dialog.setNameFilter("JSON Files (*.json)")
             dialog.setDefaultSuffix("json")
@@ -11773,10 +12941,10 @@ class LiteDeskStudio(QMainWindow):
                 path += ".json"
 
             self.canvas.export_config_to(path)
-            QMessageBox.information(self, "エクスポート", "設定を書き出しました。")
+            QMessageBox.information(self, lds_tr("エクスポート"), lds_tr("設定を書き出しました。"))
 
         except Exception as e:
-            QMessageBox.warning(self, "エラー", str(e))
+            QMessageBox.warning(self, lds_tr("エラー"), str(e))
 
         finally:
             self.exporting_config = False
@@ -11788,7 +12956,7 @@ class LiteDeskStudio(QMainWindow):
         self.importing_config = True
 
         try:
-            dialog = QFileDialog(self, "設定をインポート")
+            dialog = QFileDialog(self, lds_tr("設定をインポート"))
             dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
             dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
             dialog.setNameFilter("JSON Files (*.json)")
@@ -11814,10 +12982,10 @@ class LiteDeskStudio(QMainWindow):
             self.canvas.import_config_from(path)
             self.refresh_layer_list()
             self.load_selected_to_editor()
-            QMessageBox.information(self, "インポート", "設定を読み込みました。")
+            QMessageBox.information(self, lds_tr("インポート"), lds_tr("設定を読み込みました。"))
 
         except Exception as e:
-            QMessageBox.warning(self, "エラー", str(e))
+            QMessageBox.warning(self, lds_tr("エラー"), str(e))
 
         finally:
             self.importing_config = False
@@ -11864,7 +13032,12 @@ class LiteDeskStudio(QMainWindow):
             STUDIO_THEME_MATERIAL: self.STUDIO_MATERIAL_STYLESHEET,
             STUDIO_THEME_LIGHT: self.STUDIO_LIGHT_STYLESHEET,
         }
-        studio.setStyleSheet(stylesheet_map.get(theme, self.STUDIO_LIQUID_GLASS_STYLESHEET))
+        stylesheet = stylesheet_map.get(theme, self.STUDIO_LIQUID_GLASS_STYLESHEET)
+        try:
+            stylesheet += "\n" + build_beginner_photoshop_main_qss(theme)
+        except Exception:
+            pass
+        studio.setStyleSheet(stylesheet)
 
     def apply_window_opacity(self):
         try:
@@ -11958,8 +13131,9 @@ class DesktopCanvas(QWidget):
     def __init__(self):
         super().__init__()
         self.studio_theme = DEFAULT_STUDIO_THEME
+        self.language = _lds_normalize_lang(get_litedesktopstudio_language())
         self.volume_sliding = False
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(lds_tr(APP_NAME))
         self.setProperty("effectGpuStatus", effect_gpu_status_text())
         self.setProperty("effectFrameIntervalMs", self._effective_effect_frame_interval_ms() if hasattr(self, "_effective_effect_frame_interval_ms") else 16)
         self.setMouseTracking(True)
@@ -12047,8 +13221,8 @@ class DesktopCanvas(QWidget):
         try:
             if widget is None or not hasattr(widget, "cfg"):
                 return False
-            # EffectsOverlayWidget has dedicated per-effect reflection paths. Including it in the
-            # source image would recursively mirror entire overlay layers, so keep it out here.
+            
+            
             if isinstance(widget, EffectsOverlayWidget):
                 return False
             if hasattr(widget, "reflects_in_mirrors"):
@@ -12274,6 +13448,7 @@ class DesktopCanvas(QWidget):
     def export_config_to(self, path: str):
         data = {
             "studio_theme": get_canvas_studio_theme(self),
+            LDS_LANGUAGE_CONFIG_KEY: _lds_normalize_lang(getattr(self, "language", get_litedesktopstudio_language())),
             "widgets": [asdict(w.to_config()) for w in self.widgets]
         }
 
@@ -12774,6 +13949,7 @@ class DesktopCanvas(QWidget):
     def save_config(self):
         data = {
             "studio_theme": get_canvas_studio_theme(self),
+            LDS_LANGUAGE_CONFIG_KEY: _lds_normalize_lang(getattr(self, "language", get_litedesktopstudio_language())),
             "widgets": [asdict(w.to_config()) for w in self.widgets]
         }
         try:
@@ -12870,6 +14046,8 @@ class DesktopCanvas(QWidget):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 self.studio_theme = normalize_studio_theme(data.get("studio_theme", DEFAULT_STUDIO_THEME))
+                self.language = _lds_normalize_lang(data.get(LDS_LANGUAGE_CONFIG_KEY, get_litedesktopstudio_language()))
+                set_litedesktopstudio_language(QApplication.instance(), self.language)
             self.widgets = []
             for item in data.get("widgets", []):
                 cfg = widget_config_from_dict(item)
@@ -12888,6 +14066,7 @@ class DesktopCanvas(QWidget):
 def main():
     configure_effect_gpu_backend_before_app(True)
     app = QApplication(sys.argv)
+    install_litedesktopstudio_translator(app, load_litedesktopstudio_language_preference())
     detect_effect_gpu_backend()
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
