@@ -12027,14 +12027,7 @@ class LiteDeskStudio(QMainWindow):
         help_box.setReadOnly(True)
         self.configure_readable_help_text(help_box, min_height=190, fixed_height=210)
         help_box.setObjectName("HelpBox")
-        help_box.setPlainText(lds_tr(
-            "初心者向けの操作方法:\n"
-            "1. 左のAdd Widgetから部品を追加します。\n"
-            "2. 左のLayersで編集したい部品を選びます。\n"
-            "3. 右のPropertiesで位置・サイズ・色を調整します。\n"
-            "4. 編集が終わったら『設定を保存』を押します。\n"
-            "補足: 編集モードONならドラッグ移動できます。Eキーで編集モード切替、Deleteキーで削除できます。"
-        ))
+        help_box.setPlainText(lds_tr("初心者向けの操作方法:\n1. 左のAdd Widgetから部品を追加します。\n2. 左のLayersで編集したい部品を選びます。\n3. 右のPropertiesで位置・サイズ・色を調整します。\n4. 編集が終わったら『設定を保存』を押します。\n補足: 編集モードONならドラッグ移動できます。Eキーで編集モード切替、Deleteキーで削除できます。"))
         layout.addWidget(help_box)
         layout.addWidget(make_beginner_guide_label(
             lds_tr("中央は操作パネルです"),
@@ -13013,7 +13006,7 @@ class LiteDeskStudio(QMainWindow):
         )
 
         self.performance_text.setPlainText(
-            "軽量化状態:\n"
+            "lightened state:\n"
             f"・Widget count: {len(self.canvas.widgets)}\n"
             "・Renderer: QPainter direct rendering\n"
             "・Audio analysis: background thread\n"
