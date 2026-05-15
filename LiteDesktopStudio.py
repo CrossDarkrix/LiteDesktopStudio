@@ -795,15 +795,15 @@ class EffectsOverlayEditorDialog(QDialog):
         theme_grid.setVerticalSpacing(6)
         self.theme_preset_buttons = []
         theme_presets = [
-            ("🌙 静かな夜空", "quiet_night"),
-            ("🌌 月夜の水面", "moonlit_water"),
-            ("🌸 春の花びら", "spring_petals"),
-            ("🎋 竹林の小径", "bamboo_path"),
-            ("🌧 雨と波紋", "rain_ripples"),
-            ("❄ 雪景色", "snow_scene"),
-            ("🧊 氷河の鏡面", "glacier_mirror"),
-            ("☄ 流星群", "meteor_sky"),
-            ("🔥 炎と水", "fire_and_water"),
+            ('🌙 ' + lds_tr("静かな夜空"), "quiet_night"),
+            ('🌌 ' + lds_tr("月夜の水面"), "moonlit_water"),
+            ('🌸 ' + lds_tr("春の花びら"), "spring_petals"),
+            ('🎋 ' + lds_tr("竹林の小径"), "bamboo_path"),
+            ('🌧 ' + lds_tr("雨と波紋"), "rain_ripples"),
+            ('❄ ' + lds_tr("雪景色"), "snow_scene"),
+            ('🧊 ' + lds_tr("氷河の鏡面"), "glacier_mirror"),
+            ('☄ ' + lds_tr("流星群"), "meteor_sky"),
+            ('🔥 ' + lds_tr("炎と水"), "fire_and_water"),
         ]
         for i, (label, theme_id) in enumerate(theme_presets):
             btn = QPushButton(label)
