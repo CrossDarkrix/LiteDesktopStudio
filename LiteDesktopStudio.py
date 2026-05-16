@@ -26,9 +26,10 @@ from PySide6.QtCore import (
     QEvent,
     QUrl,
     QPointF,
-    QRect, QCoreApplication,
- QTranslator,
- QLocale,
+    QRect,
+    QCoreApplication,
+    QTranslator,
+    QLocale,
 
 )
 from PySide6.QtGui import (
@@ -74,8 +75,14 @@ from PySide6.QtWidgets import (
 )
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
-except Exception:
+except:
     QOpenGLWidget = None
+
+def lds_tr(text: str) -> str:
+    try:
+        return QApplication.translate("LiteDesktopStudio", str(text))
+    except:
+        return str(text)
 
 warnings.filterwarnings(
     "ignore",
@@ -100,7 +107,7 @@ _LDS_TRANSLATOR_PATH = ""
 def _lds_app_base_dir() -> str:
     try:
         return os.path.dirname(os.path.abspath(__file__))
-    except Exception:
+    except:
         return os.getcwd()
 
 
@@ -114,12 +121,12 @@ def _lds_normalize_lang(lang=None) -> str:
     """
     try:
         value = (lang or "").strip()
-    except Exception:
+    except:
         value = ""
     if not value:
         try:
             value = os.environ.get("LITEDESKTOPSTUDIO_LANG", "").strip()
-        except Exception:
+        except:
             value = ""
     if not value:
         try:
@@ -137,7 +144,7 @@ def _lds_normalize_lang(lang=None) -> str:
                 if arg.startswith("--locale="):
                     value = arg.split("=", 1)[1].strip()
                     break
-        except Exception:
+        except:
             value = ""
     if not value:
         value = LDS_DEFAULT_LANGUAGE
@@ -151,14 +158,6 @@ def _lds_normalize_lang(lang=None) -> str:
 
 def _lds_is_source_language(lang=None) -> bool:
     return _lds_normalize_lang(lang).split("_", 1)[0].lower() == LDS_SOURCE_LANGUAGE.split("_", 1)[0].lower()
-
-
-def lds_tr(text: str) -> str:
-    try:
-        return QCoreApplication.translate("LiteDesktopStudio", str(text))
-    except Exception:
-        return str(text)
-
 
 def _lds_translation_candidates(locale_name: str, translations_dir=None) -> List[str]:
     language_name = locale_name.split("_", 1)[0]
@@ -190,7 +189,7 @@ def _lds_translation_candidates(locale_name: str, translations_dir=None) -> List
     return candidates
 
 
-def install_litedesktopstudio_translator(app, lang=None, translations_dir=None) -> bool:
+def install_litedesktopstudio_translator(app, lang=None, translations_dir=None, translator=None) -> bool:
     global _LDS_TRANSLATOR, _LDS_TRANSLATOR_LANG, _LDS_TRANSLATOR_PATH
     try:
         if app is None:
@@ -199,7 +198,7 @@ def install_litedesktopstudio_translator(app, lang=None, translations_dir=None) 
         try:
             if _LDS_TRANSLATOR is not None:
                 app.removeTranslator(_LDS_TRANSLATOR)
-        except Exception:
+        except:
             pass
         _LDS_TRANSLATOR = None
         _LDS_TRANSLATOR_LANG = locale_name
@@ -208,23 +207,27 @@ def install_litedesktopstudio_translator(app, lang=None, translations_dir=None) 
         
         if _lds_is_source_language(locale_name):
             return True
-
-        translator = QTranslator(app)
+        if lang == 'ja_JP':
+            __locas = QLocale.Language.Japanese
+        else:
+            __locas = QLocale.Language.English
+        if not translator:
+            translator = QTranslator(app)
         for qm_path in _lds_translation_candidates(locale_name, translations_dir):
             try:
-                if os.path.exists(qm_path) and translator.load(qm_path):
-                    app.installTranslator(translator)
+                if os.path.exists(qm_path) and translator.load(__locas, qm_path):
+                    QCoreApplication.installTranslator(translator)
                     _LDS_TRANSLATOR = translator
                     _LDS_TRANSLATOR_PATH = qm_path
                     try:
                         app._litedesktopstudio_translator = translator
-                    except Exception:
+                    except:
                         pass
                     return True
-            except Exception:
+            except:
                 pass
         return False
-    except Exception:
+    except:
         return False
 
 
@@ -246,10 +249,10 @@ def load_litedesktopstudio_language_preference(default=None) -> str:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            lang = data.get(LDS_LANGUAGE_CONFIG_KEY) or data.get("locale") or data.get("lang")
+            lang = data.get(LDS_LANGUAGE_CONFIG_KEY) or data.get("locale") or data.get("language")
             if lang:
                 return _lds_normalize_lang(lang)
-    except Exception:
+    except:
         pass
     return _lds_normalize_lang(default or LDS_DEFAULT_LANGUAGE)
 
@@ -264,13 +267,13 @@ def save_litedesktopstudio_language_preference(lang: str) -> bool:
                     loaded = json.load(f)
                 if isinstance(loaded, dict):
                     data = loaded
-            except Exception:
+            except:
                 data = {}
         data[LDS_LANGUAGE_CONFIG_KEY] = _lds_normalize_lang(lang)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
-    except Exception:
+    except:
         return False
 
 
@@ -288,12 +291,24 @@ STUDIO_THEME_ORDER = [
     STUDIO_THEME_MATERIAL,
     STUDIO_THEME_LIGHT,
 ]
-STUDIO_THEME_LABELS = {
-    STUDIO_THEME_LIQUID_GLASS: lds_tr("Liquid Glass"),
-    STUDIO_THEME_DARK: lds_tr("Dark"),
-    STUDIO_THEME_MATERIAL: lds_tr("Material"),
-    STUDIO_THEME_LIGHT: lds_tr("Light"),
+# Theme labels are translated dynamically.
+# Japanese is the source UI language, so source labels are Japanese.
+# English fallback labels are used when no .qm translation is available.
+STUDIO_THEME_LABEL_SOURCES = {
+    STUDIO_THEME_LIQUID_GLASS: "リキッドグラス",
+    STUDIO_THEME_DARK: "ダーク",
+    STUDIO_THEME_MATERIAL: "マテリアル",
+    STUDIO_THEME_LIGHT: "ライト",
 }
+STUDIO_THEME_LABEL_FALLBACKS = {
+    STUDIO_THEME_LIQUID_GLASS: "Liquid Glass",
+    STUDIO_THEME_DARK: "Dark",
+    STUDIO_THEME_MATERIAL: "Material",
+    STUDIO_THEME_LIGHT: "Light",
+}
+# Backward-compatible alias for older code paths. Do not use this for display;
+# call get_studio_theme_label() so the current translator/language is respected.
+STUDIO_THEME_LABELS = STUDIO_THEME_LABEL_SOURCES
 STUDIO_ACCENT_SOFT_RED = "#FFB3B3"
 STUDIO_ACCENT_SOFT_RED_STRONG = "#FF8F8F"
 THREADS = []
@@ -320,7 +335,7 @@ EFFECT_GPU_STATUS = {
 def _safe_qt_app_attr(name: str):
     try:
         return getattr(Qt.ApplicationAttribute, name)
-    except Exception:
+    except:
         return None
 
 
@@ -341,7 +356,7 @@ def configure_effect_gpu_backend_before_app(force: bool = True) -> bool:
             if attr is not None:
                 try:
                     QApplication.setAttribute(attr, True)
-                except Exception:
+                except:
                     pass
         try:
             fmt = QSurfaceFormat()
@@ -351,7 +366,7 @@ def configure_effect_gpu_backend_before_app(force: bool = True) -> bool:
             fmt.setDepthBufferSize(0)
             fmt.setStencilBufferSize(0)
             QSurfaceFormat.setDefaultFormat(fmt)
-        except Exception:
+        except:
             pass
         EFFECT_GPU_STATUS.update({"configured": True, "message": lds_tr("Qt GPU支援設定を適用しました")})
         return True
@@ -374,12 +389,12 @@ def detect_effect_gpu_backend() -> Dict[str, object]:
             backend = "OpenGL"
             try:
                 backend = f"OpenGL {fmt.majorVersion()}.{fmt.minorVersion()}"
-            except Exception:
+            except:
                 pass
             status.update({"available": True, "backend": backend, "message": lds_tr("GPU支援描画が利用可能です")})
             try:
                 ctx.doneCurrent()
-            except Exception:
+            except:
                 pass
         else:
             status.update({"available": False, "backend": "Raster/Fallback", "message": lds_tr("OpenGLコンテキストを作成できないためCPU描画にフォールバックします")})
@@ -736,10 +751,10 @@ class EffectsOverlayEditorDialog(QDialog):
             canvas = getattr(parent, "canvas", None)
             theme = get_canvas_studio_theme(canvas) if canvas is not None else DEFAULT_STUDIO_THEME
             self.setWindowOpacity(get_studio_window_opacity(theme))
-        except Exception:
+        except:
             try:
                 self.setWindowOpacity(0.90)
-            except Exception:
+            except:
                 pass
         from PySide6.QtWidgets import QTabWidget, QGroupBox
 
@@ -761,7 +776,7 @@ class EffectsOverlayEditorDialog(QDialog):
         outer.addWidget(title)
         try:
             apply_beginner_photoshop_settings_style(self, theme)
-        except Exception:
+        except:
             pass
         outer.addWidget(make_beginner_guide_label(
             lds_tr("まずはここだけ見ればOK"),
@@ -971,7 +986,7 @@ class EffectsOverlayEditorDialog(QDialog):
         for form, title, body in guides:
             try:
                 form.addRow(make_beginner_guide_label(title, body))
-            except Exception:
+            except:
                 pass
 
     def _create_tab(self, title):
@@ -1813,7 +1828,7 @@ class EffectsOverlayEditorDialog(QDialog):
         if widget is not None and hasattr(widget, "setValue"):
             try:
                 widget.setValue(value)
-            except Exception:
+            except:
                 pass
 
     def _theme_set_text(self, name: str, value: str):
@@ -2020,7 +2035,7 @@ class EffectsOverlayEditorDialog(QDialog):
 
         try:
             self.apply_to_config()
-        except Exception:
+        except:
             pass
 
     def set_rose_petals_only(self):
@@ -2564,52 +2579,52 @@ class EffectsOverlayEditorDialog(QDialog):
             self.widget._ripples.clear()
             self.widget._rose_petals.clear()
             self.widget._extra_effects.clear()
-        except Exception:
+        except:
             pass
 
         try:
             self.widget._last_petal_ripple_time = 0.0
-        except Exception:
+        except:
             pass
         try:
             self.widget._rose_petals.clear()
-        except Exception:
+        except:
             pass
 
         try:
             self.widget._last_petal_ripple_time = 0.0
-        except Exception:
+        except:
             pass
         try:
             self.widget._rose_flowers.clear()
-        except Exception:
+        except:
             pass
         try:
             self.widget._blooming_roses.clear()
-        except Exception:
+        except:
             pass
         try:
             self.widget._rose_petals.clear()
-        except Exception:
+        except:
             pass
         try:
             self.widget._last_flower_ripple_time = 0.0
-        except Exception:
+        except:
             pass
         try:
             self.widget._sakura_petals.clear()
-        except Exception:
+        except:
             pass
         try:
             self.widget._last_sakura_ripple_time = 0.0
             self.widget._last_sakura_tree_emit_time = 0.0
-        except Exception:
+        except:
             pass
         try:
             if hasattr(self.widget, "_extra_effects"):
                 self.widget._extra_effects.clear()
             self.widget._last_extra_ripple_time = 0.0
-        except Exception:
+        except:
             pass
         try:
             if hasattr(self.widget, "_ice_surface_cache_signature"):
@@ -2617,21 +2632,21 @@ class EffectsOverlayEditorDialog(QDialog):
                 self.widget._ice_surface_cache_image = None
                 self.widget._ice_reflected_effects_cache_signature = None
                 self.widget._ice_reflected_effects_cache_image = None
-        except Exception:
+        except:
             pass
         try:
             if hasattr(self.widget, "_water_fish"):
                 self.widget._water_fish.clear()
             self.widget._water_fish_rect_key = None
             self.widget._last_water_fish_update = 0.0
-        except Exception:
+        except:
             pass
         try:
             parent = self.parent()
             if parent is not None and hasattr(parent, "canvas"):
                 parent.canvas.save_config()
                 parent.canvas.update()
-        except Exception:
+        except:
             pass
 
     def accept_with_apply(self):
@@ -3151,7 +3166,7 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
 
     try:
         data = json.loads(raw)
-    except Exception:
+    except:
         data = {}
 
     if not isinstance(data, dict):
@@ -3665,9 +3680,32 @@ def get_next_studio_theme(value):
     return STUDIO_THEME_ORDER[(index + 1) % len(STUDIO_THEME_ORDER)]
 
 
-def get_studio_theme_label(value):
+def get_studio_theme_label(value, lang=None):
+    """Return a Studio theme label for the current UI language.
+
+    Important: this must be evaluated at display time, not at module import time.
+    QTranslator is installed after QApplication is created, so translating theme
+    labels in a global dictionary would freeze them in the wrong language.
+    """
     value = normalize_studio_theme(value)
-    return STUDIO_THEME_LABELS.get(value, STUDIO_THEME_LABELS[DEFAULT_STUDIO_THEME])
+    source_label = STUDIO_THEME_LABEL_SOURCES.get(value, STUDIO_THEME_LABEL_SOURCES[DEFAULT_STUDIO_THEME])
+    fallback_label = STUDIO_THEME_LABEL_FALLBACKS.get(value, STUDIO_THEME_LABEL_FALLBACKS[DEFAULT_STUDIO_THEME])
+    locale_name = _lds_normalize_lang(lang or get_litedesktopstudio_language())
+
+    # Japanese is the source UI language. When Japanese is selected, return the
+    # Japanese source label directly, e.g. "リキッドグラス".
+    if _lds_is_source_language(locale_name):
+        return source_label
+
+    # For English or other languages, prefer the .qm translation for the
+    # Japanese source label. If that entry is not in the .qm file, use a safe
+    # built-in English fallback so labels never stay Japanese in English mode.
+    translated = lds_tr(source_label)
+    if translated and translated != source_label:
+        return translated
+    if locale_name.lower().startswith("en"):
+        return fallback_label
+    return source_label
 
 
 def get_studio_window_opacity(theme):
@@ -3692,7 +3730,7 @@ def _qss_rgba(hex_color: str, alpha: int = 255) -> str:
     try:
         c = QColor(str(hex_color or "#FFFFFF"))
         return f"rgba({c.red()}, {c.green()}, {c.blue()}, {max(0, min(255, int(alpha)))})"
-    except Exception:
+    except:
         return f"rgba(255, 255, 255, {max(0, min(255, int(alpha)))})"
 
 
@@ -3890,7 +3928,7 @@ def apply_beginner_photoshop_settings_style(dialog, theme=None):
             canvas = getattr(parent, "canvas", None)
             theme = get_canvas_studio_theme(canvas) if canvas is not None else DEFAULT_STUDIO_THEME
         dialog.setStyleSheet(build_beginner_photoshop_settings_qss(theme))
-    except Exception:
+    except:
         pass
 
 
@@ -3908,7 +3946,7 @@ def set_beginner_tooltip(widget, text: str):
     try:
         if widget is not None:
             widget.setToolTip(str(text or ""))
-    except Exception:
+    except:
         pass
 
 
@@ -4065,7 +4103,7 @@ def apply_beginner_photoshop_main_style(studio, theme=None):
         extra = build_beginner_photoshop_main_qss(theme)
         if extra not in current:
             studio.setStyleSheet(current + "\n" + extra)
-    except Exception:
+    except:
         pass
 
 def set_canvas_studio_theme(canvas, theme):
@@ -4172,12 +4210,12 @@ def create_runtime_controllers(canvas):
     if is_windows():
         try:
             canvas.volume = VolumeController()
-        except Exception:
+        except:
             canvas.volume = DummyVolumeController()
 
         try:
             canvas.media = MediaController()
-        except Exception:
+        except:
             canvas.media = DummyMediaController()
 
         try:
@@ -4197,7 +4235,7 @@ def hide_js_views_if_present(canvas):
     try:
         if hasattr(canvas, "js_html_views"):
             canvas.js_html_views.set_visible(False)
-    except Exception:
+    except:
         pass
 
 
@@ -4205,7 +4243,7 @@ def show_js_views_if_present(canvas):
     try:
         if hasattr(canvas, "js_html_views"):
             canvas.js_html_views.set_visible(True)
-    except Exception:
+    except:
         pass
 
 def build_safe_ctx(canvas):
@@ -4224,31 +4262,31 @@ def stop_runtime_controllers(canvas):
     try:
         if hasattr(canvas, "audio") and canvas.audio is not None:
             canvas.audio.stop()
-    except Exception:
+    except:
         pass
 
     try:
         if hasattr(canvas, "volume") and canvas.volume is not None:
             canvas.volume.stop()
-    except Exception:
+    except:
         pass
 
     try:
         if hasattr(canvas, "media_meta") and canvas.media_meta is not None:
             canvas.media_meta.stop()
-    except Exception:
+    except:
         pass
 
     try:
         if hasattr(canvas, "weather") and canvas.weather is not None:
             canvas.weather.stop()
-    except Exception:
+    except:
         pass
 
     try:
         if hasattr(canvas, "js_html_views") and canvas.js_html_views is not None:
             canvas.js_html_views.clear()
-    except Exception:
+    except:
         pass
 
 def get_network_down_color(cfg):
@@ -4266,7 +4304,7 @@ def widget_bg_color(cfg, default_alpha=155):
 
     try:
         alpha = int(alpha)
-    except Exception:
+    except:
         alpha = default_alpha
 
     alpha = max(0, min(255, alpha))
@@ -4300,7 +4338,7 @@ class WindowsTheme:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as key:
                 value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
                 return value == 0
-        except Exception:
+        except:
             return False
 
     @staticmethod
@@ -4314,7 +4352,7 @@ class WindowsTheme:
                 ctypes.byref(value),
                 ctypes.sizeof(value),
             )
-        except Exception:
+        except:
             pass
 
 class VolumeController:
@@ -4352,7 +4390,7 @@ class VolumeController:
                     need_uninit = False
                 else:
                     raise
-            except Exception:
+            except:
                 need_uninit = False
 
             device = AudioUtilities.GetSpeakers()
@@ -4376,7 +4414,7 @@ class VolumeController:
 
             try:
                 device_name = getattr(device, "FriendlyName", "Speakers")
-            except Exception:
+            except:
                 device_name = "Speakers"
 
             with self._lock:
@@ -4434,7 +4472,7 @@ class VolumeController:
                             self._mute_cache = mute
                             self.available = True
 
-                    except Exception:
+                    except:
                         pass
 
                     last_poll = now
@@ -4447,19 +4485,19 @@ class VolumeController:
         finally:
             try:
                 endpoint = None
-            except Exception:
+            except:
                 pass
 
             try:
                 if need_uninit:
                     comtypes.CoUninitialize()
-            except Exception:
+            except:
                 pass
 
             try:
                 if "need_uninit" in locals() and need_uninit:
                     comtypes.CoUninitialize()
-            except Exception:
+            except:
                 pass
 
     def get_volume(self) -> int:
@@ -4493,7 +4531,7 @@ class VolumeController:
         self._running = False
         try:
             self._cmd_queue.put(("stop",))
-        except Exception:
+        except:
             pass
 
 class AudioEngine:
@@ -4522,7 +4560,7 @@ class AudioEngine:
     def _run(self):
         try:
             self._run_soundcard_loopback()
-        except Exception:
+        except:
             self.use_fake = True
             self.backend_name = "fallback"
             self._run_fake()
@@ -4542,7 +4580,7 @@ class AudioEngine:
                 for mic in loopbacks:
                     if speaker_name in mic.name.lower() or mic.name.lower() in speaker_name:
                         return mic
-            except Exception:
+            except:
                 pass
 
             
@@ -4698,7 +4736,7 @@ class WeatherEngine:
         
         try:
             seconds = float(seconds)
-        except Exception:
+        except:
             seconds = 600.0
         seconds = max(60.0, min(86400.0, seconds))
         with self._lock:
@@ -5087,7 +5125,7 @@ class SystemMonitor:
             self.last_net_recv = recv
             self.last_net_update = now
             self._push_network_history(self.net_down, self.net_up)
-        except Exception:
+        except:
             self.net_up = 0.0
             self.net_down = 0.0
             self._push_network_history(0.0, 0.0)
@@ -5109,17 +5147,17 @@ class SystemMonitor:
         if now - self.last_update >= 0.5:
             try:
                 self.cpu = psutil.cpu_percent(interval=None)
-            except Exception:
+            except:
                 self.cpu = 0.0
 
             try:
                 self.memory = psutil.virtual_memory().percent
-            except Exception:
+            except:
                 self.memory = 0.0
 
             try:
                 self.disk = psutil.disk_usage(os.path.abspath(os.sep)).percent
-            except Exception:
+            except:
                 self.disk = 0.0
             if now - self.last_net_update >= 1.0:
                 self.update_network(now)
@@ -5198,13 +5236,13 @@ class BaseWidget:
         """Return whether this widget should be included in water/ice mirror source images."""
         try:
             return bool(getattr(self.cfg, "mirror_reflect_enabled", True))
-        except Exception:
+        except:
             return True
 
     def set_reflects_in_mirrors(self, value: bool):
         try:
             self.cfg.mirror_reflect_enabled = bool(value)
-        except Exception:
+        except:
             pass
 
 class EffectsOverlayWidget(BaseWidget):
@@ -5419,7 +5457,7 @@ class EffectsOverlayWidget(BaseWidget):
             try:
                 if rect is None or rect.isNull() or not rect.isValid():
                     continue
-            except Exception:
+            except:
                 continue
             bounds = QRectF(rect) if not has_bounds else bounds.united(rect)
             has_bounds = True
@@ -5538,7 +5576,7 @@ class EffectsOverlayWidget(BaseWidget):
         if "_water_reflection_cache_key" in getattr(self, "__dict__", {}):
             try:
                 delattr(self, "_water_reflection_cache_key")
-            except Exception:
+            except:
                 pass
         self._water_reflection_source_image = ctx.get("reflection_source_image") if isinstance(ctx, dict) else None
         r = self.rect
@@ -5556,7 +5594,7 @@ class EffectsOverlayWidget(BaseWidget):
         if bool(getattr(settings, "gpu_acceleration_enabled", True)) and bool(getattr(settings, "gpu_acceleration_smooth_pixmaps", True)):
             try:
                 p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-            except Exception:
+            except:
                 pass
 
         if settings.background_alpha > 0:
@@ -5639,7 +5677,7 @@ class EffectsOverlayWidget(BaseWidget):
         """Safely read an angle setting in degrees."""
         try:
             return float(getattr(settings, name, default))
-        except Exception:
+        except:
             return float(default)
 
     def _rotated_offset(self, x: float, y: float, angle_degrees: float) -> QPointF:
@@ -6373,7 +6411,7 @@ class EffectsOverlayWidget(BaseWidget):
                             "width": max(0.03, min(1.20, float(item.get("width", base_w)))),
                             "height": max(0.015, min(0.70, float(item.get("height", base_h)))),
                         })
-        except Exception:
+        except:
             loaded = []
         if len(loaded) >= count:
             return loaded[:count]
@@ -7203,7 +7241,7 @@ class EffectsOverlayWidget(BaseWidget):
         finally:
             try:
                 settings.water_mirror_wave = old_wave
-            except Exception:
+            except:
                 pass
 
     def _ice_surface_rect(self, r: QRectF, settings: EffectOverlaySettings) -> QRectF:
@@ -8976,7 +9014,7 @@ class EffectsOverlayWidget(BaseWidget):
             settings = get_effect_overlay_settings(self.cfg)
             self._apply_petal_mouse_flutter(QPointF(pos), settings, time.time(), strong=False)
             self._remove_snow_accumulation_at(QPointF(pos), settings, strong=False)
-        except Exception:
+        except:
             pass
 
     def on_mouse_press(self, pos: QPoint):
@@ -9368,7 +9406,7 @@ class VisualizerWidget(BaseWidget):
     def _visualizer_bar_width_scale(self):
         try:
             scale = float(getattr(self.cfg, "visualizer_bar_width_scale", 1.0))
-        except Exception:
+        except:
             scale = 1.0
         return max(0.35, min(2.4, scale))
 
@@ -9377,7 +9415,7 @@ class VisualizerWidget(BaseWidget):
             return 0.0
         try:
             fps = int(getattr(self.cfg, "visualizer_frame_rate", 60))
-        except Exception:
+        except:
             fps = 60
         fps = max(1, min(240, fps))
         return 1.0 / fps
@@ -9718,7 +9756,7 @@ class MediaMetadataEngine:
                 info = session.get_playback_info()
                 status = getattr(info, "playback_status", "")
                 playback_status = str(status).split(".")[-1]
-            except Exception:
+            except:
                 playback_status = ""
 
             thumb_bytes = b""
@@ -9752,7 +9790,7 @@ class MediaMetadataEngine:
 
             try:
                 from winsdk.windows.storage.streams import DataReader
-            except Exception:
+            except:
                 pass
 
             reader = DataReader(stream)
@@ -9763,12 +9801,12 @@ class MediaMetadataEngine:
 
             try:
                 reader.close()
-            except Exception:
+            except:
                 pass
 
             return bytes(data)
 
-        except Exception:
+        except:
             return b""
 
 class MediaPlayerWidget(BaseWidget):
@@ -9810,7 +9848,7 @@ class MediaPlayerWidget(BaseWidget):
 
         try:
             bg = widget_bg_color(self.cfg)
-        except Exception:
+        except:
             bg = QColor(self.cfg.bg or "#10141C")
             bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
 
@@ -10034,7 +10072,7 @@ class NetworkWidget(BaseWidget):
 
         try:
             bg = widget_bg_color(self.cfg)
-        except Exception:
+        except:
             bg = QColor(self.cfg.bg or "#10141C")
             bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
 
@@ -10782,7 +10820,7 @@ class JSHtmlViewManager:
         for view in list(getattr(self, "views", {}).values()):
             try:
                 view.setVisible(visible)
-            except Exception:
+            except:
                 pass
 
     def sync(self, widgets):
@@ -10812,7 +10850,7 @@ class JSHtmlViewManager:
             try:
                 view.hide()
                 view.deleteLater()
-            except Exception:
+            except:
                 pass
 
     def clear(self):
@@ -10820,7 +10858,7 @@ class JSHtmlViewManager:
             try:
                 view.hide()
                 view.deleteLater()
-            except Exception:
+            except:
                 pass
 
         self.views.clear()
@@ -10836,7 +10874,7 @@ class JSHtmlViewManager:
         try:
             page = view.page()
             page.setBackgroundColor(Qt.transparent)
-        except Exception:
+        except:
             pass
 
         try:
@@ -10846,9 +10884,9 @@ class JSHtmlViewManager:
                 settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
                 settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
                 settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-            except Exception:
+            except:
                 pass
-        except Exception:
+        except:
             pass
         thread = Thread()
         thread.set_func(view.show)
@@ -10878,7 +10916,7 @@ class JSHtmlViewManager:
             self.last_html[key] = html
             try:
                 view.setHtml(html, QUrl("about:blank"))
-            except Exception:
+            except:
                 view.setHtml(html)
 
         if not view.isVisible():
@@ -11032,7 +11070,7 @@ class WeatherWidget(BaseWidget):
 
         try:
             bg = widget_bg_color(self.cfg)
-        except Exception:
+        except:
             bg = QColor(self.cfg.bg or "#10141C")
             bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
 
@@ -11490,7 +11528,7 @@ class LiteDeskStudio(QMainWindow):
         fallback_h = 840
         try:
             self.setMinimumSize(min_w, min_h)
-        except Exception:
+        except:
             pass
         try:
             screen = QApplication.primaryScreen()
@@ -11507,44 +11545,44 @@ class LiteDeskStudio(QMainWindow):
                     geom.x() + max(0, (geom.width() - self.width()) // 2),
                     geom.y() + max(0, (geom.height() - self.height()) // 2),
                 )
-            except Exception:
+            except:
                 pass
-        except Exception:
+        except:
             self.resize(fallback_w, fallback_h)
 
     def configure_readable_help_text(self, text_edit, min_height=180, fixed_height=None):
         """Make explanatory QTextEdit boxes easier to read for beginners."""
         try:
             text_edit.setReadOnly(True)
-        except Exception:
+        except:
             pass
         try:
             text_edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        except Exception:
+        except:
             try:
                 text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
-            except Exception:
+            except:
                 pass
         try:
             text_edit.setMinimumHeight(int(min_height))
-        except Exception:
+        except:
             pass
         if fixed_height is not None:
             try:
                 text_edit.setFixedHeight(int(fixed_height))
-            except Exception:
+            except:
                 pass
         try:
             font = text_edit.font()
             if font.pointSize() < 11:
                 font.setPointSize(11)
             text_edit.setFont(font)
-        except Exception:
+        except:
             pass
         try:
             text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        except Exception:
+        except:
             pass
         return text_edit
 
@@ -11605,12 +11643,12 @@ class LiteDeskStudio(QMainWindow):
         for name in ("btn_save", "btn_effects_editor"):
             try:
                 getattr(self, name).setObjectName("PrimaryButton")
-            except Exception:
+            except:
                 pass
         for name in ("btn_delete", "btn_close_canvas"):
             try:
                 getattr(self, name).setObjectName("DangerButton")
-            except Exception:
+            except:
                 pass
 
     def build_left_panel(self):
@@ -11722,7 +11760,7 @@ class LiteDeskStudio(QMainWindow):
             if hasattr(self, "btn_language"):
                 self.btn_language.setText(lds_tr(label))
                 self.btn_language.setToolTip(lds_tr("UIの表示言語を切り替えます。英語では en_US.qm を読み込みます。"))
-        except Exception:
+        except:
             pass
 
     def _snapshot_canvas_widget_configs(self):
@@ -11739,7 +11777,7 @@ class LiteDeskStudio(QMainWindow):
             for widget in widgets:
                 cfg = widget.to_config() if hasattr(widget, "to_config") else getattr(widget, "cfg", None)
                 snapshot["configs"].append(asdict(cfg) if cfg is not None else {})
-        except Exception:
+        except:
             pass
         return snapshot
 
@@ -11761,47 +11799,47 @@ class LiteDeskStudio(QMainWindow):
                         setattr(cfg, key, value)
                 try:
                     ensure_effect_overlay_fields(cfg)
-                except Exception:
+                except:
                     pass
             selected_index = snapshot.get("selected_index", -1)
             try:
                 selected_index = int(selected_index)
-            except Exception:
+            except:
                 selected_index = -1
             for widget in widgets:
                 try:
                     widget.selected = False
-                except Exception:
+                except:
                     pass
             if 0 <= selected_index < len(widgets):
                 self.canvas.selected = widgets[selected_index]
                 try:
                     widgets[selected_index].selected = True
-                except Exception:
+                except:
                     pass
                 try:
                     if hasattr(self, "layer_list") and self.layer_list is not None:
                         blocked = self.layer_list.blockSignals(True)
                         self.layer_list.setCurrentRow(selected_index)
                         self.layer_list.blockSignals(blocked)
-                except Exception:
+                except:
                     pass
             else:
                 self.canvas.selected = None
             if snapshot.get("edit_mode") is not None:
                 try:
                     self.canvas.edit_mode = bool(snapshot.get("edit_mode"))
-                except Exception:
+                except:
                     pass
             try:
                 self.canvas.update_platform_hit_mask()
-            except Exception:
+            except:
                 pass
             try:
                 self.canvas.update()
-            except Exception:
+            except:
                 pass
-        except Exception:
+        except:
             pass
 
     def on_language_button_clicked(self):
@@ -11826,7 +11864,7 @@ class LiteDeskStudio(QMainWindow):
             
             try:
                 self.canvas.save_config()
-            except Exception:
+            except:
                 pass
             save_litedesktopstudio_language_preference(next_lang)
 
@@ -11845,7 +11883,7 @@ class LiteDeskStudio(QMainWindow):
             widget = getattr(self, attr_name, None)
             if widget is not None:
                 widget.setText(lds_tr(source_text))
-        except Exception:
+        except:
             pass
 
     def _set_form_label_text(self, field_attr_name: str, source_text: str):
@@ -11856,7 +11894,7 @@ class LiteDeskStudio(QMainWindow):
                 label = form.labelForField(field)
                 if label is not None:
                     label.setText(lds_tr(source_text))
-        except Exception:
+        except:
             pass
 
     def apply_language_to_existing_ui(self):
@@ -11865,7 +11903,7 @@ class LiteDeskStudio(QMainWindow):
             self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
-            except Exception:
+            except:
                 pass
 
             
@@ -11915,7 +11953,7 @@ class LiteDeskStudio(QMainWindow):
 
             try:
                 self.prop_weather_location.setPlaceholderText(lds_tr("例: Kobe / Tokyo / Osaka"))
-            except Exception:
+            except:
                 pass
 
             
@@ -11948,14 +11986,14 @@ class LiteDeskStudio(QMainWindow):
             self.update_language_button_text()
             try:
                 self.update_studio_theme_button_text()
-            except Exception:
+            except:
                 pass
             
             try:
                 self.canvas.update()
-            except Exception:
+            except:
                 pass
-        except Exception:
+        except:
             pass
 
     def rebuild_ui_after_language_change(self):
@@ -12317,7 +12355,7 @@ class LiteDeskStudio(QMainWindow):
                 label = self.property_form.labelForField(widget)
                 if label is not None:
                     label.setVisible(visible)
-            except Exception:
+            except:
                 pass
 
     def pick_network_down_color(self):
@@ -12350,7 +12388,7 @@ class LiteDeskStudio(QMainWindow):
                 label = self.property_form.labelForField(widget)
                 if label is not None:
                     label.setVisible(visible)
-            except Exception:
+            except:
                 pass
 
     def set_visualizer_controls_visible(self, visible: bool):
@@ -12363,7 +12401,7 @@ class LiteDeskStudio(QMainWindow):
                 label = self.property_form.labelForField(widget)
                 if label is not None:
                     label.setVisible(visible)
-            except Exception:
+            except:
                 pass
 
     def set_clock_controls_visible(self, visible: bool):
@@ -12376,7 +12414,7 @@ class LiteDeskStudio(QMainWindow):
                 label = self.property_form.labelForField(widget)
                 if label is not None:
                     label.setVisible(visible)
-            except Exception:
+            except:
                 pass
 
     def add_widget(self, kind):
@@ -12418,7 +12456,7 @@ class LiteDeskStudio(QMainWindow):
             widget._rose_flowers.clear()
             widget._blooming_roses.clear()
             widget._sakura_petals.clear()
-        except Exception:
+        except:
             pass
 
         self.canvas.save_config()
@@ -12434,7 +12472,7 @@ class LiteDeskStudio(QMainWindow):
                 label = self.property_form.labelForField(widget)
                 if label is not None:
                     label.setVisible(visible)
-            except Exception:
+            except:
                 pass
 
     def refresh_layer_list(self):
@@ -12461,7 +12499,7 @@ class LiteDeskStudio(QMainWindow):
         finally:
             try:
                 self.layer_list.blockSignals(False)
-            except Exception:
+            except:
                 pass
 
             self.updating_ui = False
@@ -12592,7 +12630,7 @@ class LiteDeskStudio(QMainWindow):
                 )
                 try:
                     self.prop_visualizer_bar_width_scale.setValue(max(0.35, min(2.40, float(getattr(cfg, "visualizer_bar_width_scale", 1.0)))))
-                except Exception:
+                except:
                     self.prop_visualizer_bar_width_scale.setValue(1.0)
                 orientation = str(getattr(cfg, "visualizer_orientation", "horizontal") or "horizontal").lower()
                 idx = self.prop_visualizer_orientation.findData("vertical" if orientation == "vertical" else "horizontal")
@@ -13024,7 +13062,7 @@ class LiteDeskStudio(QMainWindow):
         stylesheet = stylesheet_map.get(theme, self.STUDIO_LIQUID_GLASS_STYLESHEET)
         try:
             stylesheet += "\n" + build_beginner_photoshop_main_qss(theme)
-        except Exception:
+        except:
             pass
         studio.setStyleSheet(stylesheet)
 
@@ -13032,10 +13070,10 @@ class LiteDeskStudio(QMainWindow):
         try:
             theme = get_canvas_studio_theme(self.canvas)
             self.setWindowOpacity(get_studio_window_opacity(theme))
-        except Exception:
+        except:
             try:
                 self.setWindowOpacity(0.92)
-            except Exception:
+            except:
                 pass
 
     def apply_style(self):
@@ -13067,12 +13105,15 @@ class LiteDeskStudio(QMainWindow):
         if not hasattr(self, "theme_combo"):
             return
         theme = get_canvas_studio_theme(self.canvas)
+        # Rebuild item text every time because theme labels depend on the active
+        # UI language/translator. Data values are stable theme IDs, so selection
+        # can be restored safely after repopulating.
         self.theme_combo.blockSignals(True)
         try:
+            self.theme_combo.clear()
+            for theme_key in STUDIO_THEME_ORDER:
+                self.theme_combo.addItem(get_studio_theme_label(theme_key), theme_key)
             index = self.theme_combo.findData(theme)
-            if index < 0:
-                self.populate_studio_theme_combo()
-                index = self.theme_combo.findData(theme)
             if index >= 0:
                 self.theme_combo.setCurrentIndex(index)
         finally:
@@ -13088,7 +13129,7 @@ class LiteDeskStudio(QMainWindow):
         self.apply_style()
         try:
             self.canvas.save_config()
-        except Exception:
+        except:
             pass
 
     def toggle_studio_theme(self):
@@ -13098,20 +13139,20 @@ class LiteDeskStudio(QMainWindow):
         self.apply_style()
         try:
             self.canvas.save_config()
-        except Exception:
+        except:
             pass
 
     def closeEvent(self, event):
         try:
             if hasattr(self, "ui_timer") and self.ui_timer is not None:
                 self.ui_timer.stop()
-        except Exception:
+        except:
             pass
 
         try:
             if hasattr(self, "canvas") and self.canvas is not None:
                 self.canvas.show_canvas_after_studio_if_needed()
-        except Exception:
+        except:
             pass
 
         event.accept()
@@ -13163,7 +13204,7 @@ class DesktopCanvas(QWidget):
         self.load_config()
         try:
             self.audio.start()
-        except Exception:
+        except:
             pass
         self.update_platform_hit_mask()
 
@@ -13185,7 +13226,7 @@ class DesktopCanvas(QWidget):
                 elif isinstance(widget, VisualizerWidget):
                     if bool(getattr(widget.cfg, "visualizer_frame_rate_enabled", True)):
                         fps_values.append(max(1, min(240, int(getattr(widget.cfg, "visualizer_frame_rate", 60)))))
-        except Exception:
+        except:
             fps_values = []
         fps = min(fps_values) if fps_values else 60
         return max(4, int(round(1000.0 / max(1, fps))))
@@ -13217,14 +13258,14 @@ class DesktopCanvas(QWidget):
             if hasattr(widget, "reflects_in_mirrors"):
                 return bool(widget.reflects_in_mirrors())
             return bool(getattr(widget.cfg, "mirror_reflect_enabled", True))
-        except Exception:
+        except:
             return False
 
     def update_platform_hit_mask(self):
         if is_windows():
             try:
                 self.clearMask()
-            except Exception:
+            except:
                 pass
             return
 
@@ -13236,7 +13277,7 @@ class DesktopCanvas(QWidget):
                 try:
                     hit_rect = widget.interaction_rect() if hasattr(widget, "interaction_rect") else widget.rect
                     rect = hit_rect.toAlignedRect()
-                except Exception:
+                except:
                     rect = QRect(
                         int(widget.cfg.x),
                         int(widget.cfg.y),
@@ -13267,12 +13308,12 @@ class DesktopCanvas(QWidget):
         try:
             if hasattr(self, "js_html_views"):
                 self.js_html_views.set_visible(False)
-        except Exception:
+        except:
             pass
 
         try:
             self.hide()
-        except Exception:
+        except:
             pass
 
     def show_canvas_after_studio_if_needed(self):
@@ -13283,12 +13324,12 @@ class DesktopCanvas(QWidget):
             self.raise_()
             self.update_platform_hit_mask()
             self.update()
-        except Exception:
+        except:
             pass
         try:
             if hasattr(self, "js_html_views"):
                 self.js_html_views.set_visible(True)
-        except Exception:
+        except:
             pass
 
     def resizeEvent(self, event):
@@ -13296,7 +13337,7 @@ class DesktopCanvas(QWidget):
 
         try:
             self.update_platform_hit_mask()
-        except Exception:
+        except:
             pass
 
     def widget_at_pos(self, pos: QPoint):
@@ -13334,7 +13375,7 @@ class DesktopCanvas(QWidget):
             try:
                 self.control_panel.refresh_layer_list()
                 self.control_panel.load_selected_to_editor()
-            except Exception:
+            except:
                 pass
 
     def select_widget_by_index(self, index: int):
@@ -13475,7 +13516,7 @@ class DesktopCanvas(QWidget):
             if self.render_timer.interval() != interval:
                 self.render_timer.setInterval(interval)
             self.setProperty("effectFrameIntervalMs", interval)
-        except Exception:
+        except:
             pass
         self.js_html_views.sync(self.widgets)
         self.update()
@@ -13523,7 +13564,7 @@ class DesktopCanvas(QWidget):
                     if self.should_widget_reflect_in_mirrors(src_w):
                         src_w.paint(rp, source_ctx)
                 rp.end()
-        except Exception:
+        except:
             reflection_source_image = None
         ctx["reflection_source_image"] = reflection_source_image
 
@@ -13944,7 +13985,7 @@ class DesktopCanvas(QWidget):
         try:
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
+        except:
             pass
 
     def load_config(self):
@@ -14043,7 +14084,7 @@ class DesktopCanvas(QWidget):
                 self.widgets.append(create_widget(cfg))
             self.update_platform_hit_mask()
 
-        except Exception:
+        except:
             self.widgets = []
 
     def closeEvent(self, event):
@@ -14055,7 +14096,7 @@ class DesktopCanvas(QWidget):
 def main():
     configure_effect_gpu_backend_before_app(True)
     app = QApplication(sys.argv)
-    install_litedesktopstudio_translator(app, load_litedesktopstudio_language_preference())
+    install_litedesktopstudio_translator(app, load_litedesktopstudio_language_preference(), translator=QTranslator(app))
     detect_effect_gpu_backend()
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
