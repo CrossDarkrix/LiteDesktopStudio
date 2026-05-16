@@ -79,10 +79,26 @@ except:
     QOpenGLWidget = None
 
 def lds_tr(text: str) -> str:
+    """Translate UI text.
+
+    Primary path: Qt .qm translation files.
+    Fallback path: a small built-in dictionary for labels added by this file,
+    so cloud-related controls remain usable in Japanese or English even when
+    external translation files are not installed.
+    """
+    source = str(text)
     try:
-        return QApplication.translate("LiteDesktopStudio", str(text))
+        translated = QApplication.translate("LiteDesktopStudio", source)
     except:
-        return str(text)
+        translated = source
+    try:
+        if translated and translated != source:
+            return translated
+        lang = (globals().get("_LDS_TRANSLATOR_LANG") or QLocale.system().name() or "ja_JP").split("_", 1)[0].lower()
+        table = globals().get("LDS_BUILTIN_TRANSLATIONS", {}).get(lang, {})
+        return table.get(source, translated or source)
+    except:
+        return translated or source
 
 warnings.filterwarnings(
     "ignore",
@@ -102,6 +118,40 @@ LDS_LANGUAGE_CONFIG_KEY = "language"
 _LDS_TRANSLATOR = None
 _LDS_TRANSLATOR_LANG = ""
 _LDS_TRANSLATOR_PATH = ""
+
+
+# Built-in fallback translations for labels introduced without requiring .qm files.
+# Japanese remains the source UI language. English is used when language starts with "en".
+LDS_BUILTIN_TRANSLATIONS = {
+    "en": {
+        "雲の流れ": "Cloud drift",
+        "雲": "Clouds",
+        "柔らかい雲が空をゆっくり流れる": "Soft clouds drift slowly across the sky",
+        "雲の色": "Cloud color",
+        "雲の影色": "Cloud shadow color",
+        "雲のハイライト色": "Cloud highlight color",
+        "雲の高さ": "Cloud altitude",
+        "雲の奥行き": "Cloud depth",
+        "雲の柔らかさ": "Cloud softness",
+        "雲の形ランダム度": "Cloud shape randomness",
+        "雲の立体感": "Cloud volume",
+        "軽量ミスト雲": "Lightweight mist clouds",
+        "軽量キャッシュ雲": "Lightweight cached clouds",
+        "入道雲の盛り上がり": "Cumulus tower strength",
+        "入道雲ふわふわ感": "Cumulus fluffiness",
+        "入道雲モード": "Cumulus cloud mode",
+        "雲キャッシュ最大数": "Cloud cache limit",
+        "雲キャッシュ品質": "Cloud cache quality",
+        "雲キャッシュを使う": "Use cloud cache",
+        "ミスト透明感": "Mist translucency",
+        "ミスト横伸び": "Mist stretch",
+        "ミスト密度": "Mist density",
+        "ミスト雲を使う": "Use mist clouds",
+        "雲を反射": "Reflect clouds",
+        "反射: 雲": "Reflection: Clouds",
+    },
+    "ja": {},
+}
 
 
 def _lds_app_base_dir() -> str:
@@ -554,6 +604,29 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "balloon_speed": 0.20,
     "balloon_size": 34.0,
     "balloon_alpha": 220,
+    "cloud_enabled": False,
+    "cloud_count": 9,
+    "cloud_speed": 0.075,
+    "cloud_size": 92.0,
+    "cloud_alpha": 185,
+    "cloud_color": "#F4FAFF",
+    "cloud_shadow_color": "#B8C7D8",
+    "cloud_highlight_color": "#FFFFFF",
+    "cloud_altitude": 0.22,
+    "cloud_depth": 0.42,
+    "cloud_softness": 0.72,
+    "cloud_shape_randomness": 0.85,
+    "cloud_volume_strength": 0.90,
+    "cloud_mist_enabled": True,
+    "cloud_mist_density": 0.52,
+    "cloud_mist_stretch": 1.55,
+    "cloud_mist_translucency": 0.86,
+    "cloud_cache_enabled": True,
+    "cloud_cache_quality_scale": 0.62,
+    "cloud_cache_max_items": 96,
+    "cloud_cumulus_enabled": True,
+    "cloud_cumulus_fluffiness": 0.88,
+    "cloud_cumulus_tower_strength": 0.72,
     "star_sky_enabled": False,
     "star_sky_count": 360,
     "star_sky_speed": 0.35,
@@ -610,6 +683,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_mirror_reflect_shooting_star": True,
     "water_mirror_reflect_meteor_shower": True,
     "water_mirror_reflect_rain": True,
+    "water_mirror_reflect_cloud": True,
     "puddle_enabled": False,
     "puddle_x": 0.50,
     "puddle_y": 0.84,
@@ -638,6 +712,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "ice_reflect_shooting_star": True,
     "ice_reflect_meteor_shower": True,
     "ice_reflect_rain": True,
+    "ice_reflect_cloud": True,
     "ice_alpha": 178,
     "ice_color": "#9BDDF2",
     "ice_edge_color": "#E8FBFF",
@@ -819,6 +894,7 @@ class EffectsOverlayEditorDialog(QDialog):
             ('🧊 ' + lds_tr("氷河の鏡面"), "glacier_mirror"),
             ('☄ ' + lds_tr("流星群"), "meteor_sky"),
             ('🔥 ' + lds_tr("炎と水"), "fire_and_water"),
+            ('☁️ ' + lds_tr("雲の流れ"), "cloud_drift"),
         ]
         for i, (label, theme_id) in enumerate(theme_presets):
             btn = QPushButton(label)
@@ -1472,6 +1548,43 @@ class EffectsOverlayEditorDialog(QDialog):
     def _build_extra_sky_tab(self):
         f = self.extra_sky_form
         self._add_effect_block(f, lds_tr("火の玉"), "fireball", lds_tr("火の玉がゆらゆら上から降りる"), 10, 0.34, 20.0, 225, ripple=False)
+        self._add_effect_block(f, lds_tr("雲"), "cloud", lds_tr("柔らかい雲が空をゆっくり流れる"), 9, 0.075, 92.0, 185, ripple=False)
+        self.cloud_color = self._color_row_on(f, lds_tr("雲の色"), getattr(self.settings, "cloud_color", "#F4FAFF"))
+        self.cloud_shadow_color = self._color_row_on(f, lds_tr("雲の影色"), getattr(self.settings, "cloud_shadow_color", "#B8C7D8"))
+        self.cloud_highlight_color = self._color_row_on(f, lds_tr("雲のハイライト色"), getattr(self.settings, "cloud_highlight_color", "#FFFFFF"))
+        self.cloud_altitude = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_altitude", 0.22), 0.01)
+        self.cloud_depth = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_depth", 0.42), 0.01)
+        self.cloud_softness = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_softness", 0.72), 0.01)
+        self.cloud_shape_randomness = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_shape_randomness", 0.85), 0.01)
+        self.cloud_volume_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_volume_strength", 0.90), 0.01)
+        f.addRow(lds_tr("雲の高さ"), self.cloud_altitude)
+        f.addRow(lds_tr("雲の奥行き"), self.cloud_depth)
+        f.addRow(lds_tr("雲の柔らかさ"), self.cloud_softness)
+        f.addRow(lds_tr("雲の形ランダム度"), self.cloud_shape_randomness)
+        f.addRow(lds_tr("雲の立体感"), self.cloud_volume_strength)
+        self.cloud_mist_enabled = QCheckBox(lds_tr("ミスト雲を使う"))
+        self.cloud_mist_enabled.setChecked(bool(getattr(self.settings, "cloud_mist_enabled", True)))
+        self.cloud_mist_density = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_mist_density", 0.52), 0.01)
+        self.cloud_mist_stretch = self._double_spin(0.5, 3.0, getattr(self.settings, "cloud_mist_stretch", 1.55), 0.05)
+        self.cloud_mist_translucency = self._double_spin(0.1, 1.0, getattr(self.settings, "cloud_mist_translucency", 0.86), 0.01)
+        f.addRow(lds_tr("軽量ミスト雲"), self.cloud_mist_enabled)
+        f.addRow(lds_tr("ミスト密度"), self.cloud_mist_density)
+        f.addRow(lds_tr("ミスト横伸び"), self.cloud_mist_stretch)
+        f.addRow(lds_tr("ミスト透明感"), self.cloud_mist_translucency)
+        self.cloud_cache_enabled = QCheckBox(lds_tr("雲キャッシュを使う"))
+        self.cloud_cache_enabled.setChecked(bool(getattr(self.settings, "cloud_cache_enabled", True)))
+        self.cloud_cache_quality_scale = self._double_spin(0.25, 1.0, getattr(self.settings, "cloud_cache_quality_scale", 0.62), 0.01)
+        self.cloud_cache_max_items = self._int_spin(8, 512, getattr(self.settings, "cloud_cache_max_items", 96))
+        self.cloud_cumulus_enabled = QCheckBox(lds_tr("入道雲モード"))
+        self.cloud_cumulus_enabled.setChecked(bool(getattr(self.settings, "cloud_cumulus_enabled", True)))
+        self.cloud_cumulus_fluffiness = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_cumulus_fluffiness", 0.88), 0.01)
+        self.cloud_cumulus_tower_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_cumulus_tower_strength", 0.72), 0.01)
+        f.addRow(lds_tr("軽量キャッシュ雲"), self.cloud_cache_enabled)
+        f.addRow(lds_tr("雲キャッシュ品質"), self.cloud_cache_quality_scale)
+        f.addRow(lds_tr("雲キャッシュ最大数"), self.cloud_cache_max_items)
+        f.addRow(lds_tr("入道雲モード"), self.cloud_cumulus_enabled)
+        f.addRow(lds_tr("入道雲ふわふわ感"), self.cloud_cumulus_fluffiness)
+        f.addRow(lds_tr("入道雲の盛り上がり"), self.cloud_cumulus_tower_strength)
         self._add_effect_block(f, lds_tr("満天の星空"), "star_sky", lds_tr("遠くで小さくキラキラ光る星"), 360, 0.35, 1.6, 220, ripple=False)
         self._section(f, lds_tr("天の川"))
         self.milky_way_enabled = QCheckBox(lds_tr("天の川を描画"))
@@ -1548,6 +1661,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self.water_mirror_reflect_meteor_shower.setChecked(bool(getattr(self.settings, "water_mirror_reflect_meteor_shower", True)))
         self.water_mirror_reflect_rain = QCheckBox(lds_tr("雨を反射"))
         self.water_mirror_reflect_rain.setChecked(bool(getattr(self.settings, "water_mirror_reflect_rain", True)))
+        self.water_mirror_reflect_cloud = QCheckBox(lds_tr("雲を反射"))
+        self.water_mirror_reflect_cloud.setChecked(bool(getattr(self.settings, "water_mirror_reflect_cloud", True)))
         f.addRow(lds_tr("水面"), self.water_surface_enabled)
         f.addRow(lds_tr("水たまり"), self.puddle_enabled)
         f.addRow(lds_tr("水たまりX"), self.puddle_x)
@@ -1593,6 +1708,7 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow(lds_tr("反射: 流れ星"), self.water_mirror_reflect_shooting_star)
         f.addRow(lds_tr("反射: 流星群"), self.water_mirror_reflect_meteor_shower)
         f.addRow(lds_tr("反射: 雨"), self.water_mirror_reflect_rain)
+        f.addRow(lds_tr("反射: 雲"), self.water_mirror_reflect_cloud)
         self._section(f, lds_tr("氷・氷河"))
         self.ice_enabled = QCheckBox(lds_tr("リアル寄りの氷・氷河を描画"))
         self.ice_enabled.setChecked(bool(getattr(self.settings, "ice_enabled", False)))
@@ -1640,6 +1756,8 @@ class EffectsOverlayEditorDialog(QDialog):
         self.ice_reflect_meteor_shower.setChecked(bool(getattr(self.settings, "ice_reflect_meteor_shower", True)))
         self.ice_reflect_rain = QCheckBox(lds_tr("雨を反射"))
         self.ice_reflect_rain.setChecked(bool(getattr(self.settings, "ice_reflect_rain", True)))
+        self.ice_reflect_cloud = QCheckBox(lds_tr("雲を反射"))
+        self.ice_reflect_cloud.setChecked(bool(getattr(self.settings, "ice_reflect_cloud", True)))
         self.ice_reflect_effects_enabled.setChecked(bool(getattr(self.settings, "ice_reflect_effects_enabled", True)))
         self.ice_fog_enabled = QCheckBox(lds_tr("表面に薄い霧を掛ける"))
         self.ice_fog_enabled.setChecked(bool(getattr(self.settings, "ice_fog_enabled", True)))
@@ -1685,6 +1803,7 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow(lds_tr("反射: 流れ星"), self.ice_reflect_shooting_star)
         f.addRow(lds_tr("反射: 流星群"), self.ice_reflect_meteor_shower)
         f.addRow(lds_tr("反射: 雨"), self.ice_reflect_rain)
+        f.addRow(lds_tr("反射: 雲"), self.ice_reflect_cloud)
         f.addRow(lds_tr("薄霧"), self.ice_fog_enabled)
         f.addRow(lds_tr("霧透明度"), self.ice_fog_alpha)
         f.addRow(lds_tr("霧高さ"), self.ice_fog_height)
@@ -1728,7 +1847,7 @@ class EffectsOverlayEditorDialog(QDialog):
     def _set_extra_effect_toggles(self, value):
         for name in [
             "snow", "snow_crystal", "water_drop", "bubble", "flame", "water_spray",
-            "fireball", "star_sky", "shooting_star", "meteor_shower", "balloon",
+            "fireball", "star_sky", "shooting_star", "meteor_shower", "balloon", "cloud",
         "ice",
         ]:
             widget = getattr(self, f"{name}_enabled", None)
@@ -2022,6 +2141,30 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_extra("meteor_shower", True, count=18, speed=0.95, size=11.5, alpha=215)
             self._theme_set_checked("moon_body_enabled", True)
             self._theme_set_value("moon_alpha", 190)
+
+        elif theme_id == "cloud_drift":
+            self._theme_disable_all_visual_effects()
+            self._theme_apply_common_lightweight()
+            self._theme_set_extra("cloud", enabled=True, count=12, speed=0.08, size=105.0, alpha=190)
+            self._theme_set_text("cloud_color", "#F4FAFF")
+            self._theme_set_text("cloud_shadow_color", "#AEBED2")
+            self._theme_set_text("cloud_highlight_color", "#FFFFFF")
+            self._theme_set_value("cloud_altitude", 0.24)
+            self._theme_set_value("cloud_depth", 0.48)
+            self._theme_set_value("cloud_softness", 0.78)
+            self._theme_set_value("cloud_shape_randomness", 0.88)
+            self._theme_set_value("cloud_volume_strength", 0.92)
+            self._theme_set_checked("cloud_mist_enabled", True)
+            self._theme_set_value("cloud_mist_density", 0.54)
+            self._theme_set_value("cloud_mist_stretch", 1.65)
+            self._theme_set_value("cloud_mist_translucency", 0.88)
+            self._theme_set_checked("cloud_cache_enabled", True)
+            self._theme_set_value("cloud_cache_quality_scale", 0.62)
+            self._theme_set_value("cloud_cache_max_items", 96)
+            self._theme_set_checked("cloud_cumulus_enabled", True)
+            self._theme_set_value("cloud_cumulus_fluffiness", 0.90)
+            self._theme_set_value("cloud_cumulus_tower_strength", 0.76)
+            self._theme_set_checked("cloud_mist_enabled", False)
 
         elif theme_id == "fire_and_water":
             self._theme_set_extra("flame", True, count=54, speed=0.55, size=21.0, alpha=205)
@@ -2434,6 +2577,29 @@ class EffectsOverlayEditorDialog(QDialog):
             balloon_speed=self.balloon_speed.value(),
             balloon_size=self.balloon_size.value(),
             balloon_alpha=self.balloon_alpha.value(),
+            cloud_enabled=self.cloud_enabled.isChecked(),
+            cloud_count=self.cloud_count.value(),
+            cloud_speed=self.cloud_speed.value(),
+            cloud_size=self.cloud_size.value(),
+            cloud_alpha=self.cloud_alpha.value(),
+            cloud_color=self.cloud_color.text().strip() or "#F4FAFF",
+            cloud_shadow_color=self.cloud_shadow_color.text().strip() or "#B8C7D8",
+            cloud_highlight_color=self.cloud_highlight_color.text().strip() or "#FFFFFF",
+            cloud_altitude=self.cloud_altitude.value(),
+            cloud_depth=self.cloud_depth.value(),
+            cloud_softness=self.cloud_softness.value(),
+            cloud_shape_randomness=self.cloud_shape_randomness.value(),
+            cloud_volume_strength=self.cloud_volume_strength.value(),
+            cloud_mist_enabled=self.cloud_mist_enabled.isChecked(),
+            cloud_mist_density=self.cloud_mist_density.value(),
+            cloud_mist_stretch=self.cloud_mist_stretch.value(),
+            cloud_mist_translucency=self.cloud_mist_translucency.value(),
+            cloud_cache_enabled=self.cloud_cache_enabled.isChecked(),
+            cloud_cache_quality_scale=self.cloud_cache_quality_scale.value(),
+            cloud_cache_max_items=self.cloud_cache_max_items.value(),
+            cloud_cumulus_enabled=self.cloud_cumulus_enabled.isChecked(),
+            cloud_cumulus_fluffiness=self.cloud_cumulus_fluffiness.value(),
+            cloud_cumulus_tower_strength=self.cloud_cumulus_tower_strength.value(),
             star_sky_enabled=self.star_sky_enabled.isChecked(),
             star_sky_count=self.star_sky_count.value(),
             star_sky_speed=self.star_sky_speed.value(),
@@ -2499,6 +2665,7 @@ class EffectsOverlayEditorDialog(QDialog):
             water_mirror_reflect_shooting_star=self.water_mirror_reflect_shooting_star.isChecked(),
             water_mirror_reflect_meteor_shower=self.water_mirror_reflect_meteor_shower.isChecked(),
             water_mirror_reflect_rain=self.water_mirror_reflect_rain.isChecked(),
+            water_mirror_reflect_cloud=self.water_mirror_reflect_cloud.isChecked(),
             ice_enabled=self.ice_enabled.isChecked(),
             ice_lightweight_enabled=self.ice_lightweight_enabled.isChecked(),
             ice_static_cache_enabled=self.ice_static_cache_enabled.isChecked(),
@@ -2538,6 +2705,7 @@ class EffectsOverlayEditorDialog(QDialog):
             ice_reflect_shooting_star=self.ice_reflect_shooting_star.isChecked(),
             ice_reflect_meteor_shower=self.ice_reflect_meteor_shower.isChecked(),
             ice_reflect_rain=self.ice_reflect_rain.isChecked(),
+            ice_reflect_cloud=self.ice_reflect_cloud.isChecked(),
             ice_fog_enabled=self.ice_fog_enabled.isChecked(),
             ice_fog_alpha=self.ice_fog_alpha.value(),
             ice_fog_height=self.ice_fog_height.value(),
@@ -2954,6 +3122,29 @@ class EffectOverlaySettings:
     balloon_speed: float = 0.20
     balloon_size: float = 34.0
     balloon_alpha: int = 220
+    cloud_enabled: bool = False
+    cloud_count: int = 9
+    cloud_speed: float = 0.075
+    cloud_size: float = 92.0
+    cloud_alpha: int = 185
+    cloud_color: str = "#F4FAFF"
+    cloud_shadow_color: str = "#B8C7D8"
+    cloud_highlight_color: str = "#FFFFFF"
+    cloud_altitude: float = 0.22
+    cloud_depth: float = 0.42
+    cloud_softness: float = 0.72
+    cloud_shape_randomness: float = 0.85
+    cloud_volume_strength: float = 0.90
+    cloud_mist_enabled: bool = True
+    cloud_mist_density: float = 0.52
+    cloud_mist_stretch: float = 1.55
+    cloud_mist_translucency: float = 0.86
+    cloud_cache_enabled: bool = True
+    cloud_cache_quality_scale: float = 0.62
+    cloud_cache_max_items: int = 96
+    cloud_cumulus_enabled: bool = True
+    cloud_cumulus_fluffiness: float = 0.88
+    cloud_cumulus_tower_strength: float = 0.72
     star_sky_enabled: bool = False
     star_sky_count: int = 360
     star_sky_speed: float = 0.35
@@ -3010,6 +3201,7 @@ class EffectOverlaySettings:
     water_mirror_reflect_shooting_star: bool = True
     water_mirror_reflect_meteor_shower: bool = True
     water_mirror_reflect_rain: bool = True
+    water_mirror_reflect_cloud: bool = True
     puddle_enabled: bool = False
     puddle_x: float = 0.50
     puddle_y: float = 0.84
@@ -3058,6 +3250,7 @@ class EffectOverlaySettings:
     ice_reflect_shooting_star: bool = True
     ice_reflect_meteor_shower: bool = True
     ice_reflect_rain: bool = True
+    ice_reflect_cloud: bool = True
     ice_fog_enabled: bool = True
     ice_fog_alpha: int = 72
     ice_fog_height: float = 0.24
@@ -3452,6 +3645,29 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         balloon_speed=float(defaults.get("balloon_speed", 0.20)),
         balloon_size=float(defaults.get("balloon_size", 34.0)),
         balloon_alpha=max(0, min(255, int(defaults.get("balloon_alpha", 220)))),
+        cloud_enabled=bool(defaults.get("cloud_enabled", False)),
+        cloud_count=max(0, int(defaults.get("cloud_count", 9))),
+        cloud_speed=float(defaults.get("cloud_speed", 0.075)),
+        cloud_size=float(defaults.get("cloud_size", 92.0)),
+        cloud_alpha=max(0, min(255, int(defaults.get("cloud_alpha", 185)))),
+        cloud_color=str(defaults.get("cloud_color", "#F4FAFF")),
+        cloud_shadow_color=str(defaults.get("cloud_shadow_color", "#B8C7D8")),
+        cloud_highlight_color=str(defaults.get("cloud_highlight_color", "#FFFFFF")),
+        cloud_altitude=max(0.0, min(1.0, float(defaults.get("cloud_altitude", 0.22)))),
+        cloud_depth=max(0.0, min(1.0, float(defaults.get("cloud_depth", 0.42)))),
+        cloud_softness=max(0.0, min(1.0, float(defaults.get("cloud_softness", 0.72)))),
+        cloud_shape_randomness=max(0.0, min(1.0, float(defaults.get("cloud_shape_randomness", 0.85)))),
+        cloud_volume_strength=max(0.0, min(1.0, float(defaults.get("cloud_volume_strength", 0.90)))),
+        cloud_mist_enabled=bool(defaults.get("cloud_mist_enabled", True)),
+        cloud_mist_density=max(0.0, min(1.0, float(defaults.get("cloud_mist_density", 0.52)))),
+        cloud_mist_stretch=max(0.5, min(3.0, float(defaults.get("cloud_mist_stretch", 1.55)))),
+        cloud_mist_translucency=max(0.1, min(1.0, float(defaults.get("cloud_mist_translucency", 0.86)))),
+        cloud_cache_enabled=bool(defaults.get("cloud_cache_enabled", True)),
+        cloud_cache_quality_scale=max(0.25, min(1.0, float(defaults.get("cloud_cache_quality_scale", 0.62)))),
+        cloud_cache_max_items=max(8, min(512, int(defaults.get("cloud_cache_max_items", 96)))),
+        cloud_cumulus_enabled=bool(defaults.get("cloud_cumulus_enabled", True)),
+        cloud_cumulus_fluffiness=max(0.0, min(1.0, float(defaults.get("cloud_cumulus_fluffiness", 0.88)))),
+        cloud_cumulus_tower_strength=max(0.0, min(1.0, float(defaults.get("cloud_cumulus_tower_strength", 0.72)))),
         star_sky_enabled=bool(defaults.get("star_sky_enabled", False)),
         star_sky_count=max(0, int(defaults.get("star_sky_count", 360))),
         star_sky_speed=float(defaults.get("star_sky_speed", 0.35)),
@@ -3517,6 +3733,7 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         water_mirror_reflect_shooting_star=bool(defaults.get("water_mirror_reflect_shooting_star", True)),
         water_mirror_reflect_meteor_shower=bool(defaults.get("water_mirror_reflect_meteor_shower", True)),
         water_mirror_reflect_rain=bool(defaults.get("water_mirror_reflect_rain", True)),
+        water_mirror_reflect_cloud=bool(defaults.get("water_mirror_reflect_cloud", True)),
         ice_enabled=bool(defaults.get("ice_enabled", False)),
         ice_lightweight_enabled=bool(defaults.get("ice_lightweight_enabled", True)),
         ice_static_cache_enabled=bool(defaults.get("ice_static_cache_enabled", True)),
@@ -3556,6 +3773,7 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         ice_reflect_shooting_star=bool(defaults.get("ice_reflect_shooting_star", True)),
         ice_reflect_meteor_shower=bool(defaults.get("ice_reflect_meteor_shower", True)),
         ice_reflect_rain=bool(defaults.get("ice_reflect_rain", True)),
+        ice_reflect_cloud=bool(defaults.get("ice_reflect_cloud", True)),
         ice_fog_enabled=bool(defaults.get("ice_fog_enabled", True)),
         ice_fog_alpha=max(0, min(255, int(defaults.get("ice_fog_alpha", 72)))),
         ice_fog_height=float(defaults.get("ice_fog_height", 0.24)),
@@ -5267,6 +5485,8 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_sakura_ripple_time = 0.0
         self._last_sakura_tree_emit_time = 0.0
         self._extra_effects: Dict[str, List[ExtraEffectParticle]] = {}
+        self._cloud_render_cache = {}
+        self._cloud_render_cache_order = []
         self._last_extra_ripple_time = 0.0
         self._snow_accum_heights = []
         self._snow_accum_rect_key = None
@@ -5988,6 +6208,7 @@ class EffectsOverlayWidget(BaseWidget):
             "shooting_star": ("shooting_star_enabled", "shooting_star_count"),
             "meteor_shower": ("meteor_shower_enabled", "meteor_shower_count"),
             "balloon": ("balloon_enabled", "balloon_count"),
+            "cloud": ("cloud_enabled", "cloud_count"),
             "water_drop": ("water_drop_enabled", "water_drop_count"),
         }
 
@@ -6054,6 +6275,65 @@ class EffectsOverlayWidget(BaseWidget):
             speed = max(0.01, float(getattr(settings, "balloon_speed", 0.20)))
             size = max(8.0, float(getattr(settings, "balloon_size", 34.0))) * (0.75 + rnd.random()*0.65)
             return ExtraEffectParticle(kind, random_x(), r.bottom()+rnd.random()*h*0.45, (-10+rnd.random()*20)*speed, -(25+rnd.random()*35)*speed, size, 0.75+rnd.random()*0.25, rnd.random()*10000, rnd.random()*math.tau, (-0.4+rnd.random()*0.8)*speed, 24, now)
+        if kind == "cloud":
+            speed = max(0.0, float(getattr(settings, "cloud_speed", 0.075)))
+            base = max(18.0, float(getattr(settings, "cloud_size", 92.0)))
+            randomness = max(0.0, min(1.0, float(getattr(settings, "cloud_shape_randomness", 0.85))))
+            volume = max(0.0, min(1.0, float(getattr(settings, "cloud_volume_strength", 0.90))))
+            size = base * (0.66 + rnd.random() * (0.55 + randomness * 0.30))
+            altitude = max(0.0, min(1.0, float(getattr(settings, "cloud_altitude", 0.22))))
+            depth = max(0.0, min(1.0, float(getattr(settings, "cloud_depth", 0.42))))
+            band = max(18.0, h * max(0.04, depth))
+            x = r.left() - size * 2.5 - rnd.random() * w * 0.55
+            y = r.top() + h * altitude + (rnd.random() - 0.5) * band
+            vx = (16.0 + rnd.random() * 36.0) * speed
+            vy = (-2.0 + rnd.random() * 4.0) * speed
+            particle = ExtraEffectParticle(kind, x, y, vx, vy, size, 0.60 + rnd.random() * 0.40, rnd.random()*10000, rnd.random()*math.tau, (-0.08 + rnd.random()*0.16)*speed, 90, now)
+            shape_rng = random.Random(int(particle.seed * 1000003) & 0xFFFFFFFF)
+            lobe_count = 4 + int(shape_rng.random() * (3 + randomness * 4))
+            lobes = []
+            for idx in range(max(4, min(9, lobe_count))):
+                t = idx / max(1, lobe_count - 1)
+                ox = -0.66 + t * (1.36 + shape_rng.uniform(-0.08, 0.10) * randomness)
+                oy = shape_rng.uniform(-0.18, 0.14) * randomness + math.sin(t * math.pi) * -0.12
+                sx = shape_rng.uniform(0.34, 0.66) * (1.0 + randomness * 0.22)
+                sy = shape_rng.uniform(0.25, 0.54) * (1.0 + volume * 0.18)
+                lobes.append((ox, oy, sx, sy))
+            for _ in range(int(1 + randomness * 3)):
+                lobes.append((shape_rng.uniform(-0.42, 0.62), shape_rng.uniform(-0.34, -0.08), shape_rng.uniform(0.28, 0.52), shape_rng.uniform(0.22, 0.46)))
+            particle.cloud_lobes = lobes
+            particle.cloud_body_width = 1.42 + shape_rng.random() * 0.42
+            particle.cloud_body_height = 0.34 + shape_rng.random() * 0.24
+            particle.cloud_volume_seed = shape_rng.random() * math.tau
+            mist_density = max(0.0, min(1.0, float(getattr(settings, "cloud_mist_density", 0.52))))
+            mist_count = 3 + int(mist_density * 5)
+            mist_wisps = []
+            for idx in range(max(3, min(8, mist_count))):
+                t = idx / max(1, mist_count - 1)
+                mist_wisps.append((
+                    -0.72 + t * (1.55 + shape_rng.uniform(-0.10, 0.12)),
+                    shape_rng.uniform(-0.20, 0.18) + math.sin(t * math.pi) * -0.10,
+                    shape_rng.uniform(0.38, 0.78),
+                    shape_rng.uniform(0.16, 0.34),
+                    shape_rng.uniform(0.35, 0.88),
+                ))
+            particle.cloud_mist_wisps = mist_wisps
+            cumulus_fluffiness = max(0.0, min(1.0, float(getattr(settings, "cloud_cumulus_fluffiness", 0.88))))
+            tower_strength = max(0.0, min(1.0, float(getattr(settings, "cloud_cumulus_tower_strength", 0.72))))
+            cumulus_count = 5 + int(cumulus_fluffiness * 7)
+            cumulus_puffs = []
+            for idx in range(max(5, min(12, cumulus_count))):
+                t = idx / max(1, cumulus_count - 1)
+                crown = math.sin(t * math.pi)
+                cumulus_puffs.append((
+                    -0.62 + t * 1.30 + shape_rng.uniform(-0.10, 0.10) * cumulus_fluffiness,
+                    -0.05 - crown * (0.34 + 0.34 * tower_strength) + shape_rng.uniform(-0.08, 0.08),
+                    shape_rng.uniform(0.26, 0.58) * (1.0 + 0.22 * cumulus_fluffiness),
+                    shape_rng.uniform(0.24, 0.54) * (1.0 + 0.32 * tower_strength),
+                    shape_rng.uniform(0.42, 0.96),
+                ))
+            particle.cloud_cumulus_puffs = cumulus_puffs
+            return particle
         return ExtraEffectParticle(kind, random_x(), top_y(), 0.0, 20.0, 8.0, 1.0, rnd.random()*10000, 0.0, 0.0, 6, now)
 
     def _update_extra_effects(self, r: QRectF, settings: EffectOverlaySettings, dt: float, now: float):
@@ -6063,6 +6343,11 @@ class EffectsOverlayWidget(BaseWidget):
             enabled = bool(getattr(settings, f"{kind}_enabled", False))
             if not enabled:
                 self._extra_effects[kind] = []
+                if kind == "cloud":
+                    try:
+                        self._cloud_render_cache.clear(); self._cloud_render_cache_order.clear()
+                    except:
+                        pass
                 continue
             surface_attr = f"{kind}_surface_y"
             surface_y = r.top() + r.height() * max(0.0, min(1.0, float(getattr(settings, surface_attr, 0.86))))
@@ -6072,6 +6357,14 @@ class EffectsOverlayWidget(BaseWidget):
                 prev_y = item.y
                 if kind == "star_sky":
                     if not (r.left() - 4 <= item.x <= r.right() + 4 and r.top() - 4 <= item.y <= r.bottom() + 4):
+                        item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
+                    continue
+                if kind == "cloud":
+                    item.x += (item.vx + math.sin(now * 0.18 + item.seed) * 1.8) * dt
+                    item.y += (item.vy + math.sin(now * 0.11 + item.seed * 0.37) * 0.9) * dt
+                    item.rotation += item.rotation_speed * dt
+                    margin = max(260.0, item.size * 3.2)
+                    if item.x > r.right() + margin or item.y < r.top() - margin or item.y > r.bottom() + margin:
                         item.__dict__.update(self._new_extra_particle(kind, r, settings, now).__dict__)
                     continue
                 item.x += (item.vx + math.sin(now * 1.2 + item.seed) * 10.0) * dt
@@ -6245,6 +6538,8 @@ class EffectsOverlayWidget(BaseWidget):
                     self._draw_shooting_star(p, item, alpha)
                 elif kind == "balloon":
                     self._draw_balloon(p, item, alpha)
+                elif kind == "cloud":
+                    self._draw_cloud_particle(p, item, alpha, settings)
         if bool(getattr(settings, "bamboo_grove_enabled", False)):
             self._draw_bamboo_grove(p, r, settings, now)
 
@@ -6747,6 +7042,55 @@ class EffectsOverlayWidget(BaseWidget):
             p.drawEllipse(QPointF(0, 0), s * 0.50, s * 0.32)
             p.restore()
 
+
+    def _draw_reflected_clouds_on_water(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
+        """Reflect cloud particles onto water/ice surfaces with compression and fade."""
+        extra = getattr(self, "_extra_effects", {}) if hasattr(self, "_extra_effects") else {}
+        clouds = list(extra.get("cloud", []))
+        if not clouds:
+            return
+        wave = max(0.0, float(getattr(settings, "water_mirror_wave", 7.0)))
+        reflect_strength = 0.34
+        p.save()
+        p.setClipRect(water_rect)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for item in clouds:
+            source_y = float(getattr(item, "y", 0.0))
+            surface_y = water_rect.top()
+            reflected_y = surface_y + (surface_y - source_y) * reflect_strength
+            if reflected_y < water_rect.top() - float(getattr(item, "size", 0.0)) * 0.5 or reflected_y > water_rect.bottom() + float(getattr(item, "size", 0.0)) * 0.8:
+                continue
+            depth_t = max(0.0, min(1.0, (reflected_y - water_rect.top()) / max(1.0, water_rect.height())))
+            wobble = math.sin(now * 0.85 + reflected_y * 0.045 + float(getattr(item, "x", 0.0)) * 0.012) * wave * (1.0 - depth_t * 0.60)
+            reflected = ExtraEffectParticle(
+                getattr(item, "kind", "cloud"),
+                float(getattr(item, "x", 0.0)) + wobble,
+                reflected_y,
+                0.0,
+                0.0,
+                max(6.0, float(getattr(item, "size", 48.0)) * (0.84 - depth_t * 0.18)),
+                float(getattr(item, "alpha", 1.0)),
+                float(getattr(item, "seed", 0.0)),
+                float(getattr(item, "rotation", 0.0)),
+                0.0,
+                float(getattr(item, "life", 90.0)),
+                float(getattr(item, "created_at", now)),
+            )
+            for attr in ("cloud_lobes", "cloud_body_width", "cloud_body_height", "cloud_volume_seed"):
+                if hasattr(item, attr):
+                    setattr(reflected, attr, getattr(item, attr))
+            a = max(0, min(255, int(alpha_base * (0.26 - depth_t * 0.10))))
+            if a <= 0:
+                continue
+            p.save()
+            p.translate(QPointF(reflected.x, reflected.y))
+            p.scale(1.0, 0.52)
+            reflected.x = 0.0
+            reflected.y = 0.0
+            self._draw_cloud_particle(p, reflected, a, settings)
+            p.restore()
+        p.restore()
+
     def _draw_reflected_rain_on_water(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
         color = QColor(getattr(settings, "rain_color", "#9FD7FF"))
         base_length = float(getattr(settings, "rain_length", 16.0))
@@ -6804,6 +7148,8 @@ class EffectsOverlayWidget(BaseWidget):
             self._draw_reflected_petals_on_water(p, water_rect, settings, now, alpha_base)
         if bool(getattr(settings, "water_mirror_reflect_rain", True)):
             self._draw_reflected_rain_on_water(p, water_rect, settings, now, alpha_base)
+        if bool(getattr(settings, "water_mirror_reflect_cloud", True)):
+            self._draw_reflected_clouds_on_water(p, water_rect, settings, now, alpha_base)
         p.restore()
         if bool(getattr(settings, "water_mirror_reflect_bamboo", True)):
             self._draw_reflected_bamboo_on_water(p, r, water_rect, settings, alpha_base)
@@ -7181,6 +7527,7 @@ class EffectsOverlayWidget(BaseWidget):
             bool(getattr(settings, "ice_reflect_shooting_star", True)), len(extra.get("shooting_star", [])),
             bool(getattr(settings, "ice_reflect_meteor_shower", True)), len(extra.get("meteor_shower", [])),
             bool(getattr(settings, "ice_reflect_rain", True)), len(getattr(self, "_rain", [])),
+            bool(getattr(settings, "ice_reflect_cloud", True)), len(extra.get("cloud", [])),
             round(float(getattr(settings, "ice_mirror_wave", 2.2)), 2),
         )
 
@@ -7238,6 +7585,8 @@ class EffectsOverlayWidget(BaseWidget):
                     self._draw_reflected_shooting_effect(p, item, ice_rect, settings, now, alpha_base)
             if bool(getattr(settings, "ice_reflect_rain", True)):
                 self._draw_reflected_rain_on_water(p, ice_rect, settings, now, alpha_base)
+            if bool(getattr(settings, "ice_reflect_cloud", True)):
+                self._draw_reflected_clouds_on_water(p, ice_rect, settings, now, alpha_base)
         finally:
             try:
                 settings.water_mirror_wave = old_wave
@@ -8036,6 +8385,271 @@ class EffectsOverlayWidget(BaseWidget):
         p.setPen(QPen(QColor(230,230,230,int(alpha*0.7)), 1))
         p.drawLine(0, int(item.size), 0, int(item.size*1.9))
         p.restore()
+
+
+
+    def _draw_mist_cloud_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        """Draw a lightweight, realistic mist-like cloud.
+
+        This path uses a small number of large translucent radial gradients instead
+        of many solid lobes.  It is intentionally cheaper than the volumetric cloud
+        renderer while giving a softer, hazier silhouette.
+        """
+        p.save()
+        try:
+            base = max(12.0, float(getattr(item, "size", 80.0)))
+            opacity = max(0, min(255, int(alpha * max(0.1, min(1.0, float(getattr(settings, "cloud_mist_translucency", 0.86)))))))
+            if opacity <= 0:
+                return
+            softness = max(0.0, min(1.0, float(getattr(settings, "cloud_softness", 0.72))))
+            stretch = max(0.5, min(3.0, float(getattr(settings, "cloud_mist_stretch", 1.55))))
+            density = max(0.0, min(1.0, float(getattr(settings, "cloud_mist_density", 0.52))))
+            main = QColor(str(getattr(settings, "cloud_color", "#F4FAFF") or "#F4FAFF"))
+            shadow = QColor(str(getattr(settings, "cloud_shadow_color", "#B8C7D8") or "#B8C7D8"))
+            highlight = QColor(str(getattr(settings, "cloud_highlight_color", "#FFFFFF") or "#FFFFFF"))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.translate(QPointF(float(getattr(item, "x", 0.0)), float(getattr(item, "y", 0.0))))
+            p.rotate(math.sin(time.time() * 0.045 + float(getattr(item, "seed", 0.0))) * 0.8)
+
+            wisps = getattr(item, "cloud_mist_wisps", None)
+            if not wisps:
+                wisps = [(-0.65, 0.04, 0.60, 0.24, 0.65), (-0.15, -0.08, 0.78, 0.30, 0.82), (0.38, -0.02, 0.72, 0.26, 0.72), (0.82, 0.08, 0.42, 0.18, 0.42)]
+            # Limit the active wisps for performance; density controls how many are used.
+            active_count = max(3, min(len(wisps), 3 + int(density * 5)))
+            wisps = wisps[:active_count]
+
+            # Very soft base haze, stretched horizontally.
+            base_alpha = int(opacity * (0.10 + density * 0.08))
+            haze = QLinearGradient(QPointF(-base * 0.95 * stretch, -base * 0.10), QPointF(base * 1.05 * stretch, base * 0.25))
+            haze.setColorAt(0.0, QColor(main.red(), main.green(), main.blue(), 0))
+            haze.setColorAt(0.34, QColor(main.red(), main.green(), main.blue(), base_alpha))
+            haze.setColorAt(0.70, QColor(shadow.red(), shadow.green(), shadow.blue(), int(base_alpha * 0.72)))
+            haze.setColorAt(1.0, QColor(main.red(), main.green(), main.blue(), 0))
+            p.setBrush(QBrush(haze))
+            p.drawEllipse(QRectF(-base * 0.92 * stretch, -base * 0.22, base * 1.95 * stretch, base * 0.62))
+
+            # Wispy puffs.  Large radius + low alpha creates a mist/fog look.
+            for idx, (ox, oy, sx, sy, weight) in enumerate(wisps):
+                cx = ox * base * stretch + math.sin(float(getattr(item, "seed", 0.0)) + idx * 1.7) * base * 0.018
+                cy = oy * base + math.cos(float(getattr(item, "seed", 0.0)) * 0.7 + idx) * base * 0.012
+                rx = max(3.0, sx * base * stretch)
+                ry = max(3.0, sy * base * (0.92 + softness * 0.22))
+                local_alpha = int(opacity * (0.16 + 0.20 * weight))
+                grad = QRadialGradient(QPointF(cx - rx * 0.28, cy - ry * 0.34), max(rx, ry) * (1.15 + softness * 0.55))
+                grad.setColorAt(0.00, QColor(highlight.red(), highlight.green(), highlight.blue(), int(local_alpha * 0.86)))
+                grad.setColorAt(0.42, QColor(main.red(), main.green(), main.blue(), int(local_alpha * 0.62)))
+                grad.setColorAt(0.78, QColor(shadow.red(), shadow.green(), shadow.blue(), int(local_alpha * 0.24)))
+                grad.setColorAt(1.00, QColor(main.red(), main.green(), main.blue(), 0))
+                p.setBrush(QBrush(grad))
+                p.drawEllipse(QRectF(cx - rx, cy - ry, rx * 2.0, ry * 2.0))
+        finally:
+            p.restore()
+
+
+    def _cloud_cache_signature(self, item, settings: EffectOverlaySettings):
+        """Return a stable cache key for a rendered cloud image."""
+        size = max(12.0, float(getattr(item, "size", 80.0)))
+        quality = max(0.25, min(1.0, float(getattr(settings, "cloud_cache_quality_scale", 0.62))))
+        size_bucket = max(12, int(round(size * quality / 4.0) * 4))
+        return (
+            "cloud-cache-v3-top-safe",
+            size_bucket,
+            round(float(getattr(item, "seed", 0.0)), 3),
+            str(getattr(settings, "cloud_color", "#F4FAFF")),
+            str(getattr(settings, "cloud_shadow_color", "#B8C7D8")),
+            str(getattr(settings, "cloud_highlight_color", "#FFFFFF")),
+            round(float(getattr(settings, "cloud_softness", 0.72)), 2),
+            round(float(getattr(settings, "cloud_volume_strength", 0.90)), 2),
+            round(float(getattr(settings, "cloud_cumulus_fluffiness", 0.88)), 2),
+            round(float(getattr(settings, "cloud_cumulus_tower_strength", 0.72)), 2),
+            bool(getattr(settings, "cloud_cumulus_enabled", True)),
+            bool(getattr(settings, "cloud_mist_enabled", True)),
+            round(float(getattr(settings, "cloud_mist_density", 0.52)), 2),
+            round(float(getattr(settings, "cloud_mist_stretch", 1.55)), 2),
+            round(float(getattr(settings, "cloud_mist_translucency", 0.86)), 2),
+        )
+
+    def _remember_cloud_cache_image(self, key, image, settings: EffectOverlaySettings):
+        if not hasattr(self, "_cloud_render_cache"):
+            self._cloud_render_cache = {}
+        if not hasattr(self, "_cloud_render_cache_order"):
+            self._cloud_render_cache_order = []
+        self._cloud_render_cache[key] = image
+        try:
+            self._cloud_render_cache_order.remove(key)
+        except ValueError:
+            pass
+        self._cloud_render_cache_order.append(key)
+        max_items = max(8, min(512, int(getattr(settings, "cloud_cache_max_items", 96))))
+        while len(self._cloud_render_cache_order) > max_items:
+            old = self._cloud_render_cache_order.pop(0)
+            try:
+                self._cloud_render_cache.pop(old, None)
+            except:
+                pass
+
+    def _draw_cumulus_fluff_overlay(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        """Add cotton-candy / summer cumulus highlights on top of the base cloud."""
+        if not bool(getattr(settings, "cloud_cumulus_enabled", True)):
+            return
+        base = max(12.0, float(getattr(item, "size", 80.0)))
+        opacity = max(0, min(255, int(alpha)))
+        fluff = max(0.0, min(1.0, float(getattr(settings, "cloud_cumulus_fluffiness", 0.88))))
+        tower = max(0.0, min(1.0, float(getattr(settings, "cloud_cumulus_tower_strength", 0.72))))
+        if opacity <= 0 or fluff <= 0.01:
+            return
+        highlight = QColor(str(getattr(settings, "cloud_highlight_color", "#FFFFFF") or "#FFFFFF"))
+        main = QColor(str(getattr(settings, "cloud_color", "#F4FAFF") or "#F4FAFF"))
+        shadow = QColor(str(getattr(settings, "cloud_shadow_color", "#B8C7D8") or "#B8C7D8"))
+        puffs = getattr(item, "cloud_cumulus_puffs", None)
+        if not puffs:
+            puffs = [(-0.42, -0.34, 0.42, 0.36, 0.72), (-0.12, -0.58, 0.48, 0.50, 0.95), (0.22, -0.46, 0.45, 0.42, 0.86), (0.52, -0.22, 0.35, 0.30, 0.62)]
+        p.save()
+        try:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.translate(QPointF(float(getattr(item, "x", 0.0)), float(getattr(item, "y", 0.0))))
+            p.rotate(math.sin(time.time() * 0.035 + float(getattr(item, "seed", 0.0))) * 0.45)
+            for idx, (ox, oy, sx, sy, weight) in enumerate(puffs):
+                rx = max(4.0, sx * base * (1.0 + fluff * 0.18))
+                ry = max(4.0, sy * base * (1.0 + tower * 0.22))
+                cx = ox * base + math.sin(float(getattr(item, "seed", 0.0)) + idx * 1.37) * base * 0.014
+                cy = oy * base + math.cos(float(getattr(item, "seed", 0.0)) * 0.61 + idx) * base * 0.012
+                grad = QRadialGradient(QPointF(cx - rx * 0.30, cy - ry * 0.42), max(rx, ry) * (1.12 + fluff * 0.30))
+                a0 = int(opacity * (0.36 + 0.40 * fluff) * weight)
+                a1 = int(opacity * (0.18 + 0.22 * fluff) * weight)
+                a2 = int(opacity * (0.08 + 0.12 * tower) * weight)
+                grad.setColorAt(0.0, QColor(highlight.red(), highlight.green(), highlight.blue(), max(0, min(255, a0))))
+                grad.setColorAt(0.33, QColor(main.red(), main.green(), main.blue(), max(0, min(255, a1))))
+                grad.setColorAt(0.72, QColor(shadow.red(), shadow.green(), shadow.blue(), max(0, min(255, a2))))
+                grad.setColorAt(1.0, QColor(main.red(), main.green(), main.blue(), 0))
+                p.setBrush(QBrush(grad))
+                p.drawEllipse(QRectF(cx - rx, cy - ry, rx * 2.0, ry * 2.0))
+        finally:
+            p.restore()
+
+    def _render_cloud_cache_image(self, item, settings: EffectOverlaySettings, key):
+        """Render a cloud once into a padded transparent QImage for reuse."""
+        quality_size = max(12, int(key[1]))
+        img_w = max(80, int(quality_size * 6.20))
+        img_h = max(64, int(quality_size * 7.00))
+        image = QImage(img_w, img_h, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        ip = QPainter(image)
+        try:
+            ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            tmp = ExtraEffectParticle(
+                getattr(item, "kind", "cloud"),
+                img_w * 0.50,
+                img_h * 0.76,
+                0.0,
+                0.0,
+                float(quality_size),
+                float(getattr(item, "alpha", 1.0)),
+                float(getattr(item, "seed", 0.0)),
+                float(getattr(item, "rotation", 0.0)),
+                0.0,
+                float(getattr(item, "life", 90.0)),
+                float(getattr(item, "created_at", 0.0)),
+            )
+            for attr in ("cloud_lobes", "cloud_body_width", "cloud_body_height", "cloud_volume_seed", "cloud_mist_wisps", "cloud_cumulus_puffs"):
+                if hasattr(item, attr):
+                    setattr(tmp, attr, getattr(item, attr))
+            self._draw_cloud_particle_raw(ip, tmp, 255, settings)
+            self._draw_cumulus_fluff_overlay(ip, tmp, 255, settings)
+        finally:
+            ip.end()
+        return image
+
+    def _draw_cloud_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        """Draw cloud using a padded cached image when enabled; fallback to raw drawing."""
+        if not bool(getattr(settings, "cloud_cache_enabled", True)):
+            self._draw_cloud_particle_raw(p, item, alpha, settings)
+            self._draw_cumulus_fluff_overlay(p, item, alpha, settings)
+            return
+        key = self._cloud_cache_signature(item, settings)
+        cache = getattr(self, "_cloud_render_cache", None)
+        image = cache.get(key) if isinstance(cache, dict) else None
+        if image is None or image.isNull():
+            image = self._render_cloud_cache_image(item, settings, key)
+            self._remember_cloud_cache_image(key, image, settings)
+        if image is None or image.isNull():
+            self._draw_cloud_particle_raw(p, item, alpha, settings)
+            self._draw_cumulus_fluff_overlay(p, item, alpha, settings)
+            return
+        quality_size = max(12.0, float(key[1]))
+        target_size = max(12.0, float(getattr(item, "size", quality_size)))
+        scale = target_size / quality_size
+        p.save()
+        try:
+            p.setOpacity(max(0.0, min(1.0, alpha / 255.0)))
+            target = QRectF(
+                float(getattr(item, "x", 0.0)) - image.width() * scale * 0.50,
+                float(getattr(item, "y", 0.0)) - image.height() * scale * 0.76,
+                image.width() * scale,
+                image.height() * scale,
+            )
+            p.drawImage(target, image)
+        finally:
+            p.restore()
+
+    def _draw_cloud_particle_raw(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        """Draw a randomized, volumetric cloud using Qt gradients only."""
+        if bool(getattr(settings, "cloud_mist_enabled", True)) and not bool(getattr(settings, "cloud_cumulus_enabled", True)):
+            self._draw_mist_cloud_particle(p, item, alpha, settings)
+            return
+        p.save()
+        try:
+            softness = max(0.0, min(1.0, float(getattr(settings, "cloud_softness", 0.72))))
+            volume = max(0.0, min(1.0, float(getattr(settings, "cloud_volume_strength", 0.90))))
+            base = max(12.0, float(item.size))
+            opacity = max(0, min(255, int(alpha)))
+            main = QColor(str(getattr(settings, "cloud_color", "#F4FAFF") or "#F4FAFF"))
+            shadow = QColor(str(getattr(settings, "cloud_shadow_color", "#B8C7D8") or "#B8C7D8"))
+            highlight = QColor(str(getattr(settings, "cloud_highlight_color", "#FFFFFF") or "#FFFFFF"))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.translate(QPointF(item.x, item.y))
+            p.rotate(math.sin(time.time() * 0.07 + item.seed) * 1.5)
+            lobes = getattr(item, "cloud_lobes", None)
+            if not lobes:
+                lobes = [(-0.56, 0.08, 0.50, 0.34), (-0.24, -0.08, 0.60, 0.48), (0.14, -0.18, 0.68, 0.56), (0.50, -0.02, 0.54, 0.42), (0.78, 0.12, 0.40, 0.30)]
+            shadow_alpha = int(opacity * (0.16 + volume * 0.30))
+            p.setBrush(QBrush(QColor(shadow.red(), shadow.green(), shadow.blue(), shadow_alpha)))
+            p.drawEllipse(QRectF(-base * 0.72, base * (0.08 + volume * 0.04), base * 1.70, base * (0.35 + volume * 0.18)))
+            for idx, (ox, oy, sx, sy) in enumerate(lobes):
+                cx = ox * base + base * 0.055 * volume
+                cy = oy * base + base * (0.095 + volume * 0.070)
+                rx = max(3.0, sx * base * (1.02 + volume * 0.10))
+                ry = max(3.0, sy * base * (1.00 + volume * 0.12))
+                p.setBrush(QBrush(QColor(shadow.red(), shadow.green(), shadow.blue(), int(opacity * (0.12 + volume * 0.22)))))
+                p.drawEllipse(QRectF(cx - rx, cy - ry, rx * 2.0, ry * 2.0))
+            edge_alpha = int(opacity * max(0.04, 0.30 - softness * 0.20))
+            for idx, (ox, oy, sx, sy) in enumerate(lobes):
+                phase = getattr(item, "cloud_volume_seed", 0.0) + idx * 0.83
+                cx = ox * base + math.sin(phase) * base * 0.018
+                cy = oy * base + math.cos(phase) * base * 0.014
+                rx = max(3.0, sx * base)
+                ry = max(3.0, sy * base)
+                grad = QRadialGradient(QPointF(cx - rx * (0.30 + volume * 0.10), cy - ry * (0.36 + volume * 0.12)), max(rx, ry) * (1.10 + softness * 0.46))
+                grad.setColorAt(0.0, QColor(highlight.red(), highlight.green(), highlight.blue(), int(opacity * (0.90 + volume * 0.08))))
+                grad.setColorAt(0.36, QColor(main.red(), main.green(), main.blue(), int(opacity * 0.84)))
+                grad.setColorAt(0.72, QColor(shadow.red(), shadow.green(), shadow.blue(), int(opacity * (0.18 + volume * 0.16))))
+                grad.setColorAt(1.0, QColor(shadow.red(), shadow.green(), shadow.blue(), edge_alpha))
+                p.setBrush(QBrush(grad))
+                p.drawEllipse(QRectF(cx - rx, cy - ry, rx * 2.0, ry * 2.0))
+                if volume > 0.08:
+                    p.setBrush(QBrush(QColor(highlight.red(), highlight.green(), highlight.blue(), int(opacity * volume * 0.28))))
+                    p.drawEllipse(QRectF(cx - rx * 0.48, cy - ry * 0.62, rx * 0.62, ry * 0.38))
+            body_width = float(getattr(item, "cloud_body_width", 1.62))
+            body_height = float(getattr(item, "cloud_body_height", 0.46))
+            body = QLinearGradient(QPointF(0, -base * 0.22), QPointF(0, base * (0.36 + volume * 0.15)))
+            body.setColorAt(0.0, QColor(highlight.red(), highlight.green(), highlight.blue(), int(opacity * (0.34 + volume * 0.18))))
+            body.setColorAt(0.50, QColor(main.red(), main.green(), main.blue(), int(opacity * 0.62)))
+            body.setColorAt(1.0, QColor(shadow.red(), shadow.green(), shadow.blue(), int(opacity * (0.25 + volume * 0.22))))
+            p.setBrush(QBrush(body))
+            p.drawRoundedRect(QRectF(-base * 0.70, -base * 0.03, base * body_width, base * body_height), base * 0.24, base * 0.24)
+            self._draw_cumulus_fluff_overlay(p, item, alpha, settings)
+        finally:
+            p.restore()
 
     def _ensure_sakura_petals(self, r: QRectF, settings: EffectOverlaySettings):
         if not hasattr(self, "_sakura_petals"):
