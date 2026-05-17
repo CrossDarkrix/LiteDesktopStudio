@@ -137,6 +137,13 @@ LDS_BUILTIN_TRANSLATIONS = {
         "雲の立体感": "Cloud volume",
         "軽量ミスト雲": "Lightweight mist clouds",
         "軽量キャッシュ雲": "Lightweight cached clouds",
+        "Shader風雲": "Shader-like clouds",
+        "立体コントラスト": "Volumetric contrast",
+        "ブルーム": "Bloom",
+        "雲底影": "Cloud underside shadow",
+        "輪郭光": "Rim light",
+        "暖色ハイライト": "Warm highlight",
+        "Shaders風ライティング": "Shaders-like lighting",
         "入道雲の盛り上がり": "Cumulus tower strength",
         "入道雲ふわふわ感": "Cumulus fluffiness",
         "入道雲モード": "Cumulus cloud mode",
@@ -535,7 +542,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_color": "#F5FCFF",
     "snow_edge_color": "#CFEFFF",
     "snow_ripple_color": "#DFFBFF",
-    "snow_ripple_enabled": True,
+    "snow_ripple_enabled": False,
     "snow_ripple_chance": 0.38,
     "snow_surface_y": 0.86,
     "snow_accumulation_enabled": False,
@@ -544,7 +551,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_accumulation_build_rate": 7.0,
     "snow_accumulation_column_width": 7.0,
     "snow_accumulation_alpha": 230,
-    "snow_accumulation_mouse_remove_enabled": True,
+    "snow_accumulation_mouse_remove_enabled": False,
     "snow_accumulation_remove_radius": 58.0,
     "snow_accumulation_remove_strength": 72.0,
     "snow_crystal_enabled": False,
@@ -555,7 +562,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "snow_crystal_color": "#EBFAFF",
     "snow_crystal_edge_color": "#D8F4FF",
     "snow_crystal_ripple_color": "#E8FBFF",
-    "snow_crystal_ripple_enabled": True,
+    "snow_crystal_ripple_enabled": False,
     "snow_crystal_ripple_chance": 0.55,
     "snow_crystal_surface_y": 0.86,
     "bubble_enabled": False,
@@ -605,10 +612,10 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "balloon_size": 34.0,
     "balloon_alpha": 220,
     "cloud_enabled": False,
-    "cloud_count": 9,
-    "cloud_speed": 0.075,
-    "cloud_size": 92.0,
-    "cloud_alpha": 185,
+    "cloud_count": 13,
+    "cloud_speed": 1.050,
+    "cloud_size": 120.0,
+    "cloud_alpha": 200,
     "cloud_color": "#F4FAFF",
     "cloud_shadow_color": "#B8C7D8",
     "cloud_highlight_color": "#FFFFFF",
@@ -624,9 +631,16 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "cloud_cache_enabled": True,
     "cloud_cache_quality_scale": 0.62,
     "cloud_cache_max_items": 96,
-    "cloud_cumulus_enabled": True,
+    "cloud_cumulus_enabled": False,
     "cloud_cumulus_fluffiness": 0.88,
     "cloud_cumulus_tower_strength": 0.72,
+    "cloud_shader_lighting_enabled": True,
+    "cloud_shader_sun_angle": -55.0,
+    "cloud_shader_warmth": 0.42,
+    "cloud_shader_rim_strength": 0.78,
+    "cloud_shader_shadow_strength": 0.52,
+    "cloud_shader_bloom_strength": 0.36,
+    "cloud_shader_contrast": 0.58,
     "star_sky_enabled": False,
     "star_sky_count": 360,
     "star_sky_speed": 0.35,
@@ -650,18 +664,18 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_surface_wave_height": 12.0,
     "water_surface_y": 0.58,
     "water_surface_depth": 0.42,
-    "water_depth_enabled": True,
+    "water_depth_enabled": False,
     "water_depth_strength": 0.75,
     "water_depth_haze_alpha": 48,
     "water_depth_color": "#1A5B70",
-    "water_morning_fog_enabled": True,
-    "water_morning_fog_follow_sunrise": True,
+    "water_morning_fog_enabled": False,
+    "water_morning_fog_follow_sunrise": False,
     "water_morning_fog_strength": 0.65,
     "water_morning_fog_alpha": 95,
     "water_morning_fog_height": 0.22,
     "water_morning_fog_drift": 0.35,
     "water_morning_fog_color": "#E9F6FF",
-    "water_fish_enabled": True,
+    "water_fish_enabled": False,
     "water_fish_count": 4,
     "water_fish_speed": 0.28,
     "water_fish_size": 24.0,
@@ -674,16 +688,16 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_mirror_depth": 0.65,
     "water_mirror_wave": 7.0,
     "water_mirror_tint_alpha": 58,
-    "water_mirror_reflect_effects_enabled": True,
-    "water_mirror_reflect_widgets_enabled": True,
-    "water_mirror_reflect_snow": True,
-    "water_mirror_reflect_snow_crystal": True,
-    "water_mirror_reflect_petals": True,
-    "water_mirror_reflect_bamboo": True,
-    "water_mirror_reflect_shooting_star": True,
-    "water_mirror_reflect_meteor_shower": True,
-    "water_mirror_reflect_rain": True,
-    "water_mirror_reflect_cloud": True,
+    "water_mirror_reflect_effects_enabled": False,
+    "water_mirror_reflect_widgets_enabled": False,
+    "water_mirror_reflect_snow": False,
+    "water_mirror_reflect_snow_crystal": False,
+    "water_mirror_reflect_petals": False,
+    "water_mirror_reflect_bamboo": False,
+    "water_mirror_reflect_shooting_star": False,
+    "water_mirror_reflect_meteor_shower": False,
+    "water_mirror_reflect_rain": False,
+    "water_mirror_reflect_cloud": False,
     "puddle_enabled": False,
     "puddle_x": 0.50,
     "puddle_y": 0.84,
@@ -694,8 +708,8 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "puddle_spread": 0.72,
     "puddles_json": "",
     "ice_enabled": False,
-    "ice_lightweight_enabled": True,
-    "ice_static_cache_enabled": True,
+    "ice_lightweight_enabled": False,
+    "ice_static_cache_enabled": False,
     "ice_quality_scale": 0.58,
     "ice_max_facets": 72,
     "ice_max_cracks": 16,
@@ -704,15 +718,15 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "ice_mirror_skip_frames": 2,
     "ice_x": 0.50,
     "ice_width": 1.00,
-    "ice_reflect_widgets_enabled": True,
-    "ice_reflect_snow": True,
-    "ice_reflect_snow_crystal": True,
-    "ice_reflect_petals": True,
-    "ice_reflect_bamboo": True,
-    "ice_reflect_shooting_star": True,
-    "ice_reflect_meteor_shower": True,
-    "ice_reflect_rain": True,
-    "ice_reflect_cloud": True,
+    "ice_reflect_widgets_enabled": False,
+    "ice_reflect_snow": False,
+    "ice_reflect_snow_crystal": False,
+    "ice_reflect_petals": False,
+    "ice_reflect_bamboo": False,
+    "ice_reflect_shooting_star": False,
+    "ice_reflect_meteor_shower": False,
+    "ice_reflect_rain": False,
+    "ice_reflect_cloud": False,
     "ice_alpha": 178,
     "ice_color": "#9BDDF2",
     "ice_edge_color": "#E8FBFF",
@@ -726,14 +740,14 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "ice_crack_intensity": 0.46,
     "ice_internal_bubble_intensity": 0.36,
     "ice_glacier_roughness": 0.55,
-    "ice_mirror_enabled": True,
+    "ice_mirror_enabled": False,
     "ice_mirror_alpha": 118,
     "ice_mirror_blur": 3.5,
     "ice_mirror_depth": 0.68,
     "ice_mirror_wave": 2.2,
     "ice_mirror_tint_alpha": 70,
-    "ice_reflect_effects_enabled": True,
-    "ice_fog_enabled": True,
+    "ice_reflect_effects_enabled": False,
+    "ice_fog_enabled": False,
     "ice_fog_alpha": 72,
     "ice_fog_height": 0.24,
     "ice_fog_drift": 0.30,
@@ -748,8 +762,8 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "bamboo_depth_strength": 0.85,
     "bamboo_layer_spread": 0.42,
     "bamboo_highlight_alpha": 96,
-    "bamboo_ground_shadow_enabled": True,
-    "bamboo_atmosphere_enabled": True,
+    "bamboo_ground_shadow_enabled": False,
+    "bamboo_atmosphere_enabled": False,
     "bamboo_stalk_color": "#3EA65A",
     "bamboo_shadow_color": "#1F6F3B",
     "bamboo_node_color": "#B7E37A",
@@ -759,7 +773,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "water_drop_speed": 0.48,
     "water_drop_size": 8.0,
     "water_drop_alpha": 210,
-    "water_drop_ripple_enabled": True,
+    "water_drop_ripple_enabled": False,
     "water_drop_ripple_chance": 0.75,
     "water_drop_surface_y": 0.86,
     "sunrise_enabled": False,
@@ -807,7 +821,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "moonlight_alpha": 82,
     "moonlight_color": "#CFE8FF",
     "moonlight_angle": 0.0,
-    "moonlight_beam_enabled": True,
+    "moonlight_beam_enabled": False,
     "moonlight_beam_alpha": 44,
     "moonlight_beam_width": 0.34,
     "moon_shadow_alpha": 70,
@@ -1585,6 +1599,21 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow(lds_tr("入道雲モード"), self.cloud_cumulus_enabled)
         f.addRow(lds_tr("入道雲ふわふわ感"), self.cloud_cumulus_fluffiness)
         f.addRow(lds_tr("入道雲の盛り上がり"), self.cloud_cumulus_tower_strength)
+        self.cloud_shader_lighting_enabled = QCheckBox(lds_tr("Shaders風ライティング"))
+        self.cloud_shader_lighting_enabled.setChecked(bool(getattr(self.settings, "cloud_shader_lighting_enabled", True)))
+        self.cloud_shader_sun_angle = self._double_spin(-180.0, 180.0, getattr(self.settings, "cloud_shader_sun_angle", -55.0), 1.0)
+        self.cloud_shader_warmth = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_shader_warmth", 0.42), 0.01)
+        self.cloud_shader_rim_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_shader_rim_strength", 0.78), 0.01)
+        self.cloud_shader_shadow_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_shader_shadow_strength", 0.52), 0.01)
+        self.cloud_shader_bloom_strength = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_shader_bloom_strength", 0.36), 0.01)
+        self.cloud_shader_contrast = self._double_spin(0.0, 1.0, getattr(self.settings, "cloud_shader_contrast", 0.58), 0.01)
+        f.addRow(lds_tr("Shader風雲"), self.cloud_shader_lighting_enabled)
+        f.addRow(lds_tr("太陽角度"), self.cloud_shader_sun_angle)
+        f.addRow(lds_tr("暖色ハイライト"), self.cloud_shader_warmth)
+        f.addRow(lds_tr("輪郭光"), self.cloud_shader_rim_strength)
+        f.addRow(lds_tr("雲底影"), self.cloud_shader_shadow_strength)
+        f.addRow(lds_tr("ブルーム"), self.cloud_shader_bloom_strength)
+        f.addRow(lds_tr("立体コントラスト"), self.cloud_shader_contrast)
         self._add_effect_block(f, lds_tr("満天の星空"), "star_sky", lds_tr("遠くで小さくキラキラ光る星"), 360, 0.35, 1.6, 220, ripple=False)
         self._section(f, lds_tr("天の川"))
         self.milky_way_enabled = QCheckBox(lds_tr("天の川を描画"))
@@ -2164,6 +2193,13 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_checked("cloud_cumulus_enabled", True)
             self._theme_set_value("cloud_cumulus_fluffiness", 0.90)
             self._theme_set_value("cloud_cumulus_tower_strength", 0.76)
+            self._theme_set_checked("cloud_shader_lighting_enabled", True)
+            self._theme_set_value("cloud_shader_sun_angle", -55.0)
+            self._theme_set_value("cloud_shader_warmth", 0.44)
+            self._theme_set_value("cloud_shader_rim_strength", 0.82)
+            self._theme_set_value("cloud_shader_shadow_strength", 0.54)
+            self._theme_set_value("cloud_shader_bloom_strength", 0.38)
+            self._theme_set_value("cloud_shader_contrast", 0.60)
             self._theme_set_checked("cloud_mist_enabled", False)
 
         elif theme_id == "fire_and_water":
@@ -2600,6 +2636,13 @@ class EffectsOverlayEditorDialog(QDialog):
             cloud_cumulus_enabled=self.cloud_cumulus_enabled.isChecked(),
             cloud_cumulus_fluffiness=self.cloud_cumulus_fluffiness.value(),
             cloud_cumulus_tower_strength=self.cloud_cumulus_tower_strength.value(),
+            cloud_shader_lighting_enabled=self.cloud_shader_lighting_enabled.isChecked(),
+            cloud_shader_sun_angle=self.cloud_shader_sun_angle.value(),
+            cloud_shader_warmth=self.cloud_shader_warmth.value(),
+            cloud_shader_rim_strength=self.cloud_shader_rim_strength.value(),
+            cloud_shader_shadow_strength=self.cloud_shader_shadow_strength.value(),
+            cloud_shader_bloom_strength=self.cloud_shader_bloom_strength.value(),
+            cloud_shader_contrast=self.cloud_shader_contrast.value(),
             star_sky_enabled=self.star_sky_enabled.isChecked(),
             star_sky_count=self.star_sky_count.value(),
             star_sky_speed=self.star_sky_speed.value(),
@@ -3145,6 +3188,13 @@ class EffectOverlaySettings:
     cloud_cumulus_enabled: bool = True
     cloud_cumulus_fluffiness: float = 0.88
     cloud_cumulus_tower_strength: float = 0.72
+    cloud_shader_lighting_enabled: bool = True
+    cloud_shader_sun_angle: float = -55.0
+    cloud_shader_warmth: float = 0.42
+    cloud_shader_rim_strength: float = 0.78
+    cloud_shader_shadow_strength: float = 0.52
+    cloud_shader_bloom_strength: float = 0.36
+    cloud_shader_contrast: float = 0.58
     star_sky_enabled: bool = False
     star_sky_count: int = 360
     star_sky_speed: float = 0.35
@@ -3668,6 +3718,13 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         cloud_cumulus_enabled=bool(defaults.get("cloud_cumulus_enabled", True)),
         cloud_cumulus_fluffiness=max(0.0, min(1.0, float(defaults.get("cloud_cumulus_fluffiness", 0.88)))),
         cloud_cumulus_tower_strength=max(0.0, min(1.0, float(defaults.get("cloud_cumulus_tower_strength", 0.72)))),
+        cloud_shader_lighting_enabled=bool(defaults.get("cloud_shader_lighting_enabled", True)),
+        cloud_shader_sun_angle=max(-180.0, min(180.0, float(defaults.get("cloud_shader_sun_angle", -55.0)))),
+        cloud_shader_warmth=max(0.0, min(1.0, float(defaults.get("cloud_shader_warmth", 0.42)))),
+        cloud_shader_rim_strength=max(0.0, min(1.0, float(defaults.get("cloud_shader_rim_strength", 0.78)))),
+        cloud_shader_shadow_strength=max(0.0, min(1.0, float(defaults.get("cloud_shader_shadow_strength", 0.52)))),
+        cloud_shader_bloom_strength=max(0.0, min(1.0, float(defaults.get("cloud_shader_bloom_strength", 0.36)))),
+        cloud_shader_contrast=max(0.0, min(1.0, float(defaults.get("cloud_shader_contrast", 0.58)))),
         star_sky_enabled=bool(defaults.get("star_sky_enabled", False)),
         star_sky_count=max(0, int(defaults.get("star_sky_count", 360))),
         star_sky_speed=float(defaults.get("star_sky_speed", 0.35)),
@@ -8452,7 +8509,7 @@ class EffectsOverlayWidget(BaseWidget):
         quality = max(0.25, min(1.0, float(getattr(settings, "cloud_cache_quality_scale", 0.62))))
         size_bucket = max(12, int(round(size * quality / 4.0) * 4))
         return (
-            "cloud-cache-v3-top-safe",
+            "cloud-cache-v4-sildur-inspired",
             size_bucket,
             round(float(getattr(item, "seed", 0.0)), 3),
             str(getattr(settings, "cloud_color", "#F4FAFF")),
@@ -8527,6 +8584,93 @@ class EffectsOverlayWidget(BaseWidget):
         finally:
             p.restore()
 
+
+    def _draw_shader_cloud_lighting_overlay(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
+        """Shader-inspired cached cloud lighting: warm rim, underside shadow and soft bloom.
+
+        This is not shader code; it is a QPainter approximation designed for a desktop
+        overlay.  The effect is cached with the cloud image, so it remains lightweight.
+        """
+        if not bool(getattr(settings, "cloud_shader_lighting_enabled", True)):
+            return
+        base = max(12.0, float(getattr(item, "size", 80.0)))
+        opacity = max(0, min(255, int(alpha)))
+        if opacity <= 0:
+            return
+        angle = math.radians(float(getattr(settings, "cloud_shader_sun_angle", -55.0)))
+        dx = math.cos(angle)
+        dy = math.sin(angle)
+        warm = max(0.0, min(1.0, float(getattr(settings, "cloud_shader_warmth", 0.42))))
+        rim = max(0.0, min(1.0, float(getattr(settings, "cloud_shader_rim_strength", 0.78))))
+        shadow_strength = max(0.0, min(1.0, float(getattr(settings, "cloud_shader_shadow_strength", 0.52))))
+        bloom = max(0.0, min(1.0, float(getattr(settings, "cloud_shader_bloom_strength", 0.36))))
+        contrast = max(0.0, min(1.0, float(getattr(settings, "cloud_shader_contrast", 0.58))))
+        main = QColor(str(getattr(settings, "cloud_color", "#F4FAFF") or "#F4FAFF"))
+        shadow = QColor(str(getattr(settings, "cloud_shadow_color", "#B8C7D8") or "#B8C7D8"))
+        highlight = QColor(str(getattr(settings, "cloud_highlight_color", "#FFFFFF") or "#FFFFFF"))
+        warm_light = QColor(
+            min(255, int(highlight.red() * (1.0 - warm) + 255 * warm)),
+            min(255, int(highlight.green() * (1.0 - warm) + 226 * warm)),
+            min(255, int(highlight.blue() * (1.0 - warm) + 178 * warm)),
+            255,
+        )
+        puffs = getattr(item, "cloud_cumulus_puffs", None) or getattr(item, "cloud_lobes", None)
+        if not puffs:
+            puffs = [(-0.50, -0.18, 0.46, 0.34, 0.72), (-0.10, -0.46, 0.54, 0.48, 0.95), (0.30, -0.34, 0.48, 0.40, 0.82), (0.62, -0.12, 0.34, 0.28, 0.60)]
+        p.save()
+        try:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.translate(QPointF(float(getattr(item, "x", 0.0)), float(getattr(item, "y", 0.0))))
+            p.rotate(math.sin(time.time() * 0.025 + float(getattr(item, "seed", 0.0))) * 0.25)
+
+            # Broad underside/occlusion shadow, similar to AO under volumetric clouds.
+            p.setBrush(QBrush(QColor(shadow.red(), shadow.green(), shadow.blue(), int(opacity * (0.16 + 0.34 * shadow_strength)))))
+            p.drawEllipse(QRectF(-base * 0.92, base * (0.12 + 0.08 * contrast), base * 1.96, base * (0.42 + 0.18 * contrast)))
+
+            # Bloom/rim halo on the sun-facing side.
+            if bloom > 0.01:
+                halo_radius = base * (1.15 + 0.55 * bloom)
+                halo_center = QPointF(dx * base * 0.42, dy * base * 0.42)
+                halo = QRadialGradient(halo_center, halo_radius)
+                halo.setColorAt(0.0, QColor(warm_light.red(), warm_light.green(), warm_light.blue(), int(opacity * 0.18 * bloom)))
+                halo.setColorAt(0.55, QColor(warm_light.red(), warm_light.green(), warm_light.blue(), int(opacity * 0.08 * bloom)))
+                halo.setColorAt(1.0, QColor(warm_light.red(), warm_light.green(), warm_light.blue(), 0))
+                p.setBrush(QBrush(halo))
+                p.drawEllipse(QRectF(halo_center.x() - halo_radius, halo_center.y() - halo_radius, halo_radius * 2.0, halo_radius * 2.0))
+
+            # Per-puff directional lighting and shadow.  This creates the shader-like depth.
+            for idx, puff in enumerate(puffs):
+                if len(puff) >= 5:
+                    ox, oy, sx, sy, weight = puff[:5]
+                else:
+                    ox, oy, sx, sy = puff[:4]
+                    weight = 0.75
+                cx = ox * base
+                cy = oy * base
+                rx = max(4.0, sx * base)
+                ry = max(4.0, sy * base)
+
+                # Dark lower/back volume.
+                shadow_alpha = int(opacity * shadow_strength * (0.10 + 0.20 * weight))
+                sg = QRadialGradient(QPointF(cx - dx * rx * 0.24, cy - dy * ry * 0.18 + ry * 0.28), max(rx, ry) * (0.92 + 0.28 * contrast))
+                sg.setColorAt(0.0, QColor(shadow.red(), shadow.green(), shadow.blue(), shadow_alpha))
+                sg.setColorAt(0.68, QColor(shadow.red(), shadow.green(), shadow.blue(), int(shadow_alpha * 0.38)))
+                sg.setColorAt(1.0, QColor(shadow.red(), shadow.green(), shadow.blue(), 0))
+                p.setBrush(QBrush(sg))
+                p.drawEllipse(QRectF(cx - rx, cy - ry * 0.70, rx * 2.0, ry * 1.65))
+
+                # Warm sun-facing highlight / silver lining.
+                high_alpha = int(opacity * rim * (0.18 + 0.30 * weight))
+                hg = QRadialGradient(QPointF(cx + dx * rx * 0.34, cy + dy * ry * 0.42), max(rx, ry) * (0.70 + 0.25 * (1.0 - contrast)))
+                hg.setColorAt(0.0, QColor(warm_light.red(), warm_light.green(), warm_light.blue(), max(0, min(255, high_alpha))))
+                hg.setColorAt(0.38, QColor(highlight.red(), highlight.green(), highlight.blue(), int(high_alpha * 0.55)))
+                hg.setColorAt(0.82, QColor(main.red(), main.green(), main.blue(), int(high_alpha * 0.14)))
+                hg.setColorAt(1.0, QColor(main.red(), main.green(), main.blue(), 0))
+                p.setBrush(QBrush(hg))
+                p.drawEllipse(QRectF(cx - rx * 0.72, cy - ry * 0.82, rx * 1.44, ry * 1.42))
+        finally:
+            p.restore()
+
     def _render_cloud_cache_image(self, item, settings: EffectOverlaySettings, key):
         """Render a cloud once into a padded transparent QImage for reuse."""
         quality_size = max(12, int(key[1]))
@@ -8556,6 +8700,7 @@ class EffectsOverlayWidget(BaseWidget):
                     setattr(tmp, attr, getattr(item, attr))
             self._draw_cloud_particle_raw(ip, tmp, 255, settings)
             self._draw_cumulus_fluff_overlay(ip, tmp, 255, settings)
+            self._draw_shader_cloud_lighting_overlay(ip, tmp, 255, settings)
         finally:
             ip.end()
         return image
@@ -8565,6 +8710,7 @@ class EffectsOverlayWidget(BaseWidget):
         if not bool(getattr(settings, "cloud_cache_enabled", True)):
             self._draw_cloud_particle_raw(p, item, alpha, settings)
             self._draw_cumulus_fluff_overlay(p, item, alpha, settings)
+            self._draw_shader_cloud_lighting_overlay(p, item, alpha, settings)
             return
         key = self._cloud_cache_signature(item, settings)
         cache = getattr(self, "_cloud_render_cache", None)
@@ -8575,6 +8721,7 @@ class EffectsOverlayWidget(BaseWidget):
         if image is None or image.isNull():
             self._draw_cloud_particle_raw(p, item, alpha, settings)
             self._draw_cumulus_fluff_overlay(p, item, alpha, settings)
+            self._draw_shader_cloud_lighting_overlay(p, item, alpha, settings)
             return
         quality_size = max(12.0, float(key[1]))
         target_size = max(12.0, float(getattr(item, "size", quality_size)))
