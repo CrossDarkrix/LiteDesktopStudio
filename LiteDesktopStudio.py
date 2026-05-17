@@ -805,6 +805,13 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "lens_flare_size": 1.0,
     "lens_flare_count": 6,
     "lens_flare_color": "#FFE2A6",
+    "sun_shader_realistic_enabled": True,
+    "sun_effect_cache_enabled": True,
+    "sun_effect_cache_quality_scale": 0.58,
+    "sun_effect_cache_max_items": 32,
+    "sun_halo_outer_scale": 3.35,
+    "sun_corona_ray_count": 18,
+    "sun_lens_ghost_strength": 0.78,
     "moon_body_enabled": False,
     "moonlight_enabled": False,
     "moon_shadow_enabled": False,
@@ -2838,6 +2845,12 @@ class EffectsOverlayEditorDialog(QDialog):
         except:
             pass
         try:
+            if hasattr(self.widget, "_sun_effect_render_cache"):
+                self.widget._sun_effect_render_cache.clear()
+                self.widget._sun_effect_render_cache_order.clear()
+        except:
+            pass
+        try:
             if hasattr(self.widget, "_ice_surface_cache_signature"):
                 self.widget._ice_surface_cache_signature = None
                 self.widget._ice_surface_cache_image = None
@@ -3023,6 +3036,15 @@ class EffectOverlaySettings:
     lens_flare_size: float = 1.0
     lens_flare_count: int = 6
     lens_flare_color: str = "#FFE2A6"
+    # Sildur's Vibrant shaders inspired cached sun rendering.
+    # These defaults keep the existing UI compatible while enabling a richer, lighter path.
+    sun_shader_realistic_enabled: bool = True
+    sun_effect_cache_enabled: bool = True
+    sun_effect_cache_quality_scale: float = 0.58
+    sun_effect_cache_max_items: int = 32
+    sun_halo_outer_scale: float = 3.35
+    sun_corona_ray_count: int = 18
+    sun_lens_ghost_strength: float = 0.78
     moon_body_enabled: bool = False
     moonlight_enabled: bool = False
     moon_shadow_enabled: bool = False
@@ -5976,6 +5998,292 @@ class EffectsOverlayWidget(BaseWidget):
         span = math.hypot(max(1.0, r.width()), max(1.0, r.height())) * 0.72
         return QPointF(center.x() - dx * span, center.y() - dy * span), QPointF(center.x() + dx * span, center.y() + dy * span)
 
+    def _sun_effect_cache_enabled(self, settings: EffectOverlaySettings) -> bool:
+        return bool(getattr(settings, "sun_effect_cache_enabled", True))
+
+    def _sun_effect_cache_scale(self, settings: EffectOverlaySettings) -> float:
+        return max(0.25, min(1.0, float(getattr(settings, "sun_effect_cache_quality_scale", 0.58))))
+
+    def _sun_effect_cache_limit(self, settings: EffectOverlaySettings) -> int:
+        return max(4, min(128, int(getattr(settings, "sun_effect_cache_max_items", 32))))
+
+    def _sun_effect_time_bucket(self, now: float, moving: bool = True) -> int:
+        """Small quantization keeps shimmer alive without repainting every frame."""
+        if not moving:
+            return 0
+        try:
+            return int(float(now) * 4.0)
+        except:
+            return 0
+
+    def _sun_effect_cache_key(self, kind: str, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float, moving: bool = True):
+        scale = self._sun_effect_cache_scale(settings)
+        return (
+            str(kind),
+            int(max(1, round(r.width() * scale))),
+            int(max(1, round(r.height() * scale))),
+            round(float(center.x() - r.left()) * scale, 1),
+            round(float(center.y() - r.top()) * scale, 1),
+            round(float(radius) * scale, 1),
+            self._sun_effect_time_bucket(now, moving=moving),
+            bool(getattr(settings, "sun_shader_realistic_enabled", True)),
+            str(getattr(settings, "sun_color", "#FFD36E")),
+            str(getattr(settings, "sun_edge_color", "#FF7A3D")),
+            str(getattr(settings, "sunlight_color", "#FFD08A")),
+            str(getattr(settings, "lens_flare_color", "#FFE2A6")),
+            int(getattr(settings, "sun_alpha", 235)),
+            int(getattr(settings, "sunlight_alpha", 92)),
+            int(getattr(settings, "lens_flare_alpha", 128)),
+            round(float(getattr(settings, "sunlight_radius", 420.0)), 1),
+            round(float(getattr(settings, "sunlight_beam_width", 0.38)), 3),
+            round(float(getattr(settings, "sunlight_angle", 18.0)), 2),
+            round(float(getattr(settings, "lens_flare_angle", 18.0)), 2),
+            round(float(getattr(settings, "lens_flare_size", 1.0)), 3),
+            int(getattr(settings, "lens_flare_count", 6)),
+            round(float(getattr(settings, "sun_halo_outer_scale", 3.35)), 3),
+            int(getattr(settings, "sun_corona_ray_count", 18)),
+            round(float(getattr(settings, "sun_lens_ghost_strength", 0.78)), 3),
+            round(float(getattr(settings, "intensity", 1.0)), 3),
+        )
+
+    def _get_sun_effect_cache_image(self, key):
+        cache = getattr(self, "_sun_effect_render_cache", None)
+        if not cache:
+            return None
+        return cache.get(key)
+
+    def _remember_sun_effect_cache_image(self, key, image: QImage, settings: EffectOverlaySettings):
+        if image is None or image.isNull():
+            return
+        if not hasattr(self, "_sun_effect_render_cache"):
+            self._sun_effect_render_cache = {}
+            self._sun_effect_render_cache_order = []
+        cache = self._sun_effect_render_cache
+        order = self._sun_effect_render_cache_order
+        cache[key] = image
+        try:
+            order.remove(key)
+        except ValueError:
+            pass
+        order.append(key)
+        limit = self._sun_effect_cache_limit(settings)
+        while len(order) > limit:
+            old_key = order.pop(0)
+            cache.pop(old_key, None)
+
+    def _render_sun_effect_layer(self, kind: str, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        scale = self._sun_effect_cache_scale(settings)
+        width = int(max(1, round(r.width() * scale)))
+        height = int(max(1, round(r.height() * scale)))
+        image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        ip = QPainter(image)
+        try:
+            ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            rr = QRectF(0.0, 0.0, float(width), float(height))
+            cc = QPointF((center.x() - r.left()) * scale, (center.y() - r.top()) * scale)
+            scaled_radius = max(1.0, radius * scale)
+            if kind == "sunlight":
+                self._draw_sunlight(ip, rr, cc, scaled_radius, settings, now)
+                if getattr(settings, "sun_shader_realistic_enabled", True):
+                    self._draw_sildur_sunlight_shafts(ip, rr, cc, scaled_radius, settings, now)
+            elif kind == "sun_body":
+                self._draw_sildur_sun_body(ip, cc, scaled_radius, settings, now)
+            elif kind == "lens_flare":
+                self._draw_lens_flare(ip, rr, cc, scaled_radius, settings, now)
+                if getattr(settings, "sun_shader_realistic_enabled", True):
+                    self._draw_sildur_lens_ghosts(ip, rr, cc, scaled_radius, settings, now)
+        finally:
+            ip.end()
+        return image
+
+    def _draw_cached_sun_effect_layer(self, p: QPainter, kind: str, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float, fallback):
+        if not self._sun_effect_cache_enabled(settings):
+            fallback(p, r, center, radius, settings, now)
+            return
+        moving = kind in ("sunlight", "lens_flare")
+        key = self._sun_effect_cache_key(kind, r, center, radius, settings, now, moving=moving)
+        image = self._get_sun_effect_cache_image(key)
+        if image is None or image.isNull():
+            image = self._render_sun_effect_layer(kind, r, center, radius, settings, now)
+            self._remember_sun_effect_cache_image(key, image, settings)
+        if image is None or image.isNull():
+            fallback(p, r, center, radius, settings, now)
+            return
+        p.save()
+        try:
+            p.drawImage(r, image)
+        finally:
+            p.restore()
+
+    def _draw_sunlight_cached(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        self._draw_cached_sun_effect_layer(p, "sunlight", r, center, radius, settings, now, self._draw_sunlight)
+
+    def _draw_lens_flare_cached(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        self._draw_cached_sun_effect_layer(p, "lens_flare", r, center, radius, settings, now, self._draw_lens_flare)
+
+    def _draw_sun_body_cached(self, p: QPainter, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        r = self.rect
+        if not self._sun_effect_cache_enabled(settings):
+            if getattr(settings, "sun_shader_realistic_enabled", True):
+                self._draw_sildur_sun_body(p, center, radius, settings, now)
+            else:
+                self._draw_sun_body(p, center, radius, settings, now)
+            return
+        key = self._sun_effect_cache_key("sun_body", r, center, radius, settings, now, moving=False)
+        image = self._get_sun_effect_cache_image(key)
+        if image is None or image.isNull():
+            image = self._render_sun_effect_layer("sun_body", r, center, radius, settings, now)
+            self._remember_sun_effect_cache_image(key, image, settings)
+        if image is not None and not image.isNull():
+            p.drawImage(r, image)
+        else:
+            self._draw_sun_body(p, center, radius, settings, now)
+
+    def _draw_sildur_sun_body(self, p: QPainter, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        """High-detail, deterministic sun disk/corona inspired by vibrant shader packs."""
+        sun_color = QColor(getattr(settings, "sun_color", "#FFD36E"))
+        edge_color = QColor(getattr(settings, "sun_edge_color", "#FF7A3D"))
+        alpha = max(0, min(255, int(getattr(settings, "sun_alpha", 235) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0:
+            return
+        halo_scale = max(2.0, min(6.0, float(getattr(settings, "sun_halo_outer_scale", 3.35))))
+        ray_count = max(0, min(64, int(getattr(settings, "sun_corona_ray_count", 18))))
+        angle = self._angle_degrees(settings, "sun_angle", 0.0)
+        p.save()
+        try:
+            p.translate(center)
+            p.rotate(angle)
+            # Wide warm halo with a faint cool outer fringe, giving a shader-like sky scatter.
+            halo_radius = radius * halo_scale
+            halo = QRadialGradient(QPointF(0.0, 0.0), halo_radius)
+            h0 = QColor(255, 250, 215, int(alpha * 0.34))
+            h1 = QColor(sun_color); h1.setAlpha(int(alpha * 0.20))
+            h2 = QColor(edge_color); h2.setAlpha(int(alpha * 0.10))
+            h3 = QColor(145, 205, 255, int(alpha * 0.035))
+            h4 = QColor(145, 205, 255, 0)
+            halo.setColorAt(0.0, h0)
+            halo.setColorAt(0.22, h1)
+            halo.setColorAt(0.50, h2)
+            halo.setColorAt(0.76, h3)
+            halo.setColorAt(1.0, h4)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(halo))
+            p.drawEllipse(QPointF(0.0, 0.0), halo_radius, halo_radius)
+
+            # Main body: bright core, saturated edge and slight off-center hotspot.
+            body = QRadialGradient(QPointF(-radius * 0.24, -radius * 0.28), radius * 1.18)
+            body.setColorAt(0.0, QColor(255, 255, 255, alpha))
+            c1 = QColor(255, 255, 255, alpha)
+            c2 = QColor(sun_color); c2.setAlpha(alpha)
+            c3 = QColor(edge_color); c3.setAlpha(int(alpha * 0.96))
+            body.setColorAt(0.35, c1)
+            body.setColorAt(0.68, c2)
+            body.setColorAt(1.0, c3)
+            p.setPen(QPen(QColor(edge_color.red(), edge_color.green(), edge_color.blue(), int(alpha * 0.72)), max(1.0, radius * 0.028)))
+            p.setBrush(QBrush(body))
+            p.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+
+            # Granulation/noisy plasma blobs. These are static inside the cache, so detail is almost free while drawing.
+            for i in range(24):
+                a = i * 2.399963229728653  # golden angle
+                rr = radius * (0.14 + 0.72 * ((i * 37) % 97) / 97.0)
+                x = math.cos(a) * rr * 0.82
+                y = math.sin(a) * rr * 0.82
+                blob_r = radius * (0.045 + 0.060 * (((i * 19) % 31) / 31.0))
+                blob = QRadialGradient(QPointF(x, y), blob_r)
+                b0 = QColor(255, 255, 230, int(alpha * 0.13))
+                b1 = QColor(255, 138, 70, 0)
+                blob.setColorAt(0.0, b0)
+                blob.setColorAt(1.0, b1)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(blob))
+                p.drawEllipse(QPointF(x, y), blob_r, blob_r)
+
+            # Thin inner rim and specular hot spot.
+            p.setPen(QPen(QColor(255, 255, 236, int(alpha * 0.55)), max(1.0, radius * 0.012)))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(0.0, 0.0), radius * 0.93, radius * 0.93)
+            hot = QRadialGradient(QPointF(-radius * 0.34, -radius * 0.38), radius * 0.38)
+            hot.setColorAt(0.0, QColor(255, 255, 250, int(alpha * 0.58)))
+            hot.setColorAt(1.0, QColor(255, 255, 250, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(hot))
+            p.drawEllipse(QPointF(-radius * 0.34, -radius * 0.38), radius * 0.38, radius * 0.38)
+        finally:
+            p.restore()
+
+    def _draw_sildur_sunlight_shafts(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        color = QColor(getattr(settings, "sunlight_color", "#FFD08A"))
+        alpha = max(0, min(255, int(getattr(settings, "sunlight_alpha", 92) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
+        if alpha <= 0:
+            return
+        angle = self._angle_degrees(settings, "sunlight_angle", 18.0)
+        reach = math.hypot(max(1.0, r.width()), max(1.0, r.height()))
+        beam_width = max(0.05, min(1.0, float(getattr(settings, "sunlight_beam_width", 0.38))))
+        p.save()
+        try:
+            p.translate(center)
+            p.rotate(angle)
+            for i, offset in enumerate((-0.46, -0.24, 0.0, 0.27, 0.52)):
+                width = reach * beam_width * (0.10 + 0.035 * i)
+                start = radius * (0.42 + 0.05 * i)
+                end = reach * (0.58 + 0.07 * i)
+                path = QPainterPath()
+                path.moveTo(offset * radius, start)
+                path.cubicTo(offset * width, end * 0.28, offset * width * 1.24, end * 0.62, offset * width * 1.54, end)
+                path.cubicTo(offset * width * 0.92, end * 0.82, offset * width * 0.42, end * 0.36, offset * radius * 0.35, start)
+                shade = QColor(color)
+                shade.setAlpha(max(0, min(255, int(alpha * (0.065 - i * 0.006)))))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(shade))
+                p.drawPath(path)
+        finally:
+            p.restore()
+
+    def _draw_sildur_lens_ghosts(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
+        strength = max(0.0, min(1.0, float(getattr(settings, "sun_lens_ghost_strength", 0.78))))
+        if strength <= 0.0:
+            return
+        alpha_base = max(0, min(255, int(getattr(settings, "lens_flare_alpha", 128) * max(0.0, float(getattr(settings, "intensity", 1.0))) * strength)))
+        if alpha_base <= 0:
+            return
+        size_scale = max(0.1, min(4.0, float(getattr(settings, "lens_flare_size", 1.0))))
+        angle = self._angle_degrees(settings, "lens_flare_angle", 18.0)
+        rad = math.radians(angle)
+        axis = QPointF(math.cos(rad), math.sin(rad))
+        viewport_center = r.center()
+        vector_to_center = QPointF(viewport_center.x() - center.x(), viewport_center.y() - center.y())
+        base_dist = math.hypot(vector_to_center.x(), vector_to_center.y())
+        if base_dist <= 1.0:
+            base_dist = max(r.width(), r.height()) * 0.25
+        palette = [QColor("#FFF2B8"), QColor("#FFE092"), QColor("#CFF6FF"), QColor("#B8D6FF"), QColor("#FFB1D0")]
+        ghost_specs = [(-0.38, 0.34), (-0.12, 0.18), (0.22, 0.30), (0.48, 0.13), (0.76, 0.23), (1.05, 0.10)]
+        p.save()
+        try:
+            for i, (pos, scale) in enumerate(ghost_specs):
+                gx = center.x() + axis.x() * base_dist * pos + vector_to_center.x() * pos * 0.55
+                gy = center.y() + axis.y() * base_dist * pos + vector_to_center.y() * pos * 0.55
+                gr = radius * size_scale * scale * (1.0 + 0.08 * math.sin(now * 0.7 + i))
+                col = QColor(palette[i % len(palette)])
+                grad = QRadialGradient(QPointF(gx, gy), max(1.0, gr))
+                c0 = QColor(col); c0.setAlpha(int(alpha_base * (0.18 + 0.03 * (i % 2))))
+                c1 = QColor(col); c1.setAlpha(int(alpha_base * 0.06))
+                c2 = QColor(col); c2.setAlpha(0)
+                grad.setColorAt(0.0, c0)
+                grad.setColorAt(0.42, c1)
+                grad.setColorAt(1.0, c2)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(grad))
+                p.drawEllipse(QPointF(gx, gy), gr, gr)
+                # Ring edge, common in shader lens flare ghosting.
+                ring = QColor(col); ring.setAlpha(int(alpha_base * 0.12))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(ring, max(1.0, gr * 0.035)))
+                p.drawEllipse(QPointF(gx, gy), gr * 0.82, gr * 0.82)
+        finally:
+            p.restore()
+
     def _draw_sunrise_sun_integrated_effect(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         center = self._sun_center(r, settings)
         radius = max(2.0, float(getattr(settings, "sun_radius", 82.0)))
@@ -5984,11 +6292,11 @@ class EffectsOverlayWidget(BaseWidget):
         if getattr(settings, "sunrise_enabled", False):
             self._draw_sunrise_background(p, r, center, radius, settings, now)
         if getattr(settings, "sunlight_enabled", False):
-            self._draw_sunlight(p, r, center, radius, settings, now)
+            self._draw_sunlight_cached(p, r, center, radius, settings, now)
         if getattr(settings, "sun_enabled", False):
-            self._draw_sun_body(p, center, radius, settings, now)
+            self._draw_sun_body_cached(p, center, radius, settings, now)
         if getattr(settings, "lens_flare_enabled", False):
-            self._draw_lens_flare(p, r, center, radius, settings, now)
+            self._draw_lens_flare_cached(p, r, center, radius, settings, now)
         p.restore()
 
     def _draw_sunrise_background(self, p: QPainter, r: QRectF, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
