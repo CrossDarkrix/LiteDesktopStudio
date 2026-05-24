@@ -15183,5 +15183,85 @@ def main():
     sys.exit(app.exec())
 
 
+
+
+# --- ALT+R default layout restore patch (monkey patch) ---
+def _lds_alt_r_make_default_widget_configs(self):
+    return [
+        WidgetConfig(type="visualizer", x=120, y=120, w=560, h=190, title=lds_tr("音楽Spectrum"), color="#5BE7FF", bg="#10141C"),
+        WidgetConfig(type="clock", x=820, y=120, w=240, h=240, title=lds_tr("時計"), color="#FFCC66", bg="#10141C"),
+        WidgetConfig(type="network", x=820, y=390, w=320, h=150, title=lds_tr("通信"), color="#5BE7FF", bg="#10141C"),
+        WidgetConfig(type="system", x=120, y=340, w=340, h=150, title=lds_tr("システム"), color="#80FF9F", bg="#10141C"),
+        WidgetConfig(type="volume", x=500, y=340, w=250, h=150, title=lds_tr("音量"), color="#B388FF", bg="#10141C"),
+        WidgetConfig(type="media", x=1180, y=450, w=320, h=160, title=lds_tr("メディアコントローラー"), color="#5BE7FF", bg="#10141C"),
+        WidgetConfig(
+            type="html", x=120, y=520, w=460, h=180, title="HTML/CSS",
+            color="#5BE7FF", bg="#10141C",
+            text="""
+                    <h2 style="color:#5BE7FF;">LiteDeskEngine</h2>
+                    <p style="color:white;">{}</p>
+                    <p style="color:#80FF9F;">{}</p>
+                    """.format(lds_tr("右クリックでパネルを開けます。"), lds_tr("E キーで編集モード切替 / Delete で削除。")),
+        ),
+    ]
+
+
+def _lds_alt_r_refresh_control_panel_after_layout_change(self):
+    panel = getattr(self, "control_panel", None)
+    if panel is None:
+        return
+    for method_name in ("refresh_layer_list", "load_selected_to_editor", "update"):
+        try:
+            method = getattr(panel, method_name, None)
+            if callable(method):
+                method()
+        except Exception:
+            pass
+
+
+def _lds_alt_r_restore_default_layout(self, show_message=True):
+    try:
+        self.widgets = [create_widget(cfg) for cfg in self.make_default_widget_configs()]
+        self.selected = None
+        for widget in self.widgets:
+            try:
+                widget.selected = False
+            except Exception:
+                pass
+        self.dragging = False
+        self.drag_offset = QPoint(0, 0)
+        self.edit_mode = False
+        self.studio_theme = DEFAULT_STUDIO_THEME
+        self.language = _lds_normalize_lang(get_litedesktopstudio_language())
+        self.save_config()
+        self.update_platform_hit_mask()
+        self.update()
+        self.refresh_control_panel_after_layout_change()
+        if show_message:
+            QMessageBox.information(self, lds_tr("初期化"), lds_tr("ウィジェットを初期レイアウトに復元しました。"))
+        return True
+    except Exception as exc:
+        if show_message:
+            QMessageBox.warning(self, lds_tr("初期化に失敗"), "{}\n{}".format(lds_tr("ウィジェットの初期レイアウト復元に失敗しました。"), exc))
+        return False
+
+
+_lds_original_desktop_canvas_keyPressEvent = DesktopCanvas.keyPressEvent
+
+
+def _lds_alt_r_keyPressEvent(self, event):
+    if event.key() == Qt.Key.Key_R and (event.modifiers() & Qt.KeyboardModifier.AltModifier):
+        self.restore_default_layout(show_message=True)
+        event.accept()
+        return
+    return _lds_original_desktop_canvas_keyPressEvent(self, event)
+
+
+DesktopCanvas.make_default_widget_configs = _lds_alt_r_make_default_widget_configs
+DesktopCanvas.refresh_control_panel_after_layout_change = _lds_alt_r_refresh_control_panel_after_layout_change
+DesktopCanvas.restore_default_layout = _lds_alt_r_restore_default_layout
+DesktopCanvas.keyPressEvent = _lds_alt_r_keyPressEvent
+# --- END ALT+R default layout restore patch ---
+
 if __name__ == "__main__":
     main()
