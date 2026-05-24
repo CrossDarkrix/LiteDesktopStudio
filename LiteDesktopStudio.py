@@ -156,6 +156,14 @@ LDS_BUILTIN_TRANSLATIONS = {
         "ミスト雲を使う": "Use mist clouds",
         "雲を反射": "Reflect clouds",
         "反射: 雲": "Reflection: Clouds",
+        "ウユニ塩湖の静かな反射": "Uyuni salt-flat quiet reflection",
+        "アンテロープキャニオンの岩肌": "Antelope Canyon warm rock walls",
+        "ウユニ塩湖のような反射感": "Uyuni-like reflection",
+        "アンテロープキャニオンのような迫りくる岩肌感": "Antelope Canyon-like enclosing rock walls",
+                "拙政園のゆったり水庭": "Humble Administrator's Garden - slow water garden",
+                "留園の静かな庭": "Lingering Garden - quiet garden",
+                "拙政園のようなゆったり感": "Slow spacious feeling like the Humble Administrator's Garden",
+                "留園のような落ち着く感じ": "Calm feeling like the Lingering Garden",
     },
     "ja": {},
 }
@@ -478,6 +486,12 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "gpu_acceleration_smooth_pixmaps": True,
     "effect_frame_rate_enabled": True,
     "effect_frame_rate": 60,
+    "vector_image_cache_enabled": True,
+    "vector_image_cache_fps": 24,
+    "vector_image_cache_fps_extra": 12,
+    "vector_image_cache_fps_rain": 24,
+    "vector_image_cache_fps_ripples": 18,
+    "vector_image_cache_fps_particles": 18,
 
     "mouse_ripple_enabled": False,
     "mouse_flee_enabled": False,
@@ -910,11 +924,15 @@ class EffectsOverlayEditorDialog(QDialog):
             ('🌌 ' + lds_tr("月夜の水面"), "moonlit_water"),
             ('🌸 ' + lds_tr("春の花びら"), "spring_petals"),
             ('🎋 ' + lds_tr("竹林の小径"), "bamboo_path"),
+            ('🪷 ' + lds_tr("拙政園のゆったり水庭"), "suzhou_humble_garden"),
+            ('🎋 ' + lds_tr("留園の静かな庭"), "suzhou_lingering_garden"),
             ('🌧 ' + lds_tr("雨と波紋"), "rain_ripples"),
             ('❄ ' + lds_tr("雪景色"), "snow_scene"),
             ('🧊 ' + lds_tr("氷河の鏡面"), "glacier_mirror"),
             ('☄ ' + lds_tr("流星群"), "meteor_sky"),
             ('🔥 ' + lds_tr("炎と水"), "fire_and_water"),
+            ('🪞 ' + lds_tr("ウユニ塩湖の静かな反射"), "uyuni_salt_flat_reflection"),
+            ('🏜️ ' + lds_tr("アンテロープキャニオンの岩肌"), "antelope_canyon_depth"),
             ('☁️ ' + lds_tr("雲の流れ"), "cloud_drift"),
         ]
         for i, (label, theme_id) in enumerate(theme_presets):
@@ -1432,6 +1450,14 @@ class EffectsOverlayEditorDialog(QDialog):
         self.effect_frame_rate_enabled.setChecked(bool(getattr(self.settings, "effect_frame_rate_enabled", True)))
         set_beginner_tooltip(self.effect_frame_rate_enabled, lds_tr("動きの上限を決めて、パソコンへの負荷を抑えます。"))
         self.effect_frame_rate = self._int_spin(1, 240, getattr(self.settings, "effect_frame_rate", 60))
+        self.vector_image_cache_enabled = QCheckBox(lds_tr("ベクター描画を画像キャッシュ化"))
+        self.vector_image_cache_enabled.setChecked(bool(getattr(self.settings, "vector_image_cache_enabled", True)))
+        set_beginner_tooltip(self.vector_image_cache_enabled, lds_tr("水面・花びら・雨などのベクター描画を一度QImageに描いてからdrawImageで表示します。FPS優先ならON推奨です。"))
+        self.vector_image_cache_fps = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps", 24))
+        self.vector_image_cache_fps_extra = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_extra", 12))
+        self.vector_image_cache_fps_rain = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_rain", 24))
+        self.vector_image_cache_fps_ripples = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_ripples", 18))
+        self.vector_image_cache_fps_particles = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_particles", 18))
         self.gpu_status_label = QLabel(effect_gpu_status_text())
         self.gpu_status_label.setWordWrap(True)
         f.addRow(lds_tr("波紋速度"), self.ripple_speed)
@@ -1445,6 +1471,13 @@ class EffectsOverlayEditorDialog(QDialog):
         f.addRow(lds_tr("画像補間"), self.gpu_acceleration_smooth_pixmaps)
         f.addRow(lds_tr("エフェクトFPS制限"), self.effect_frame_rate_enabled)
         f.addRow(lds_tr("エフェクトFPS"), self.effect_frame_rate)
+        self._section(f, lds_tr("drawImage高速化"))
+        f.addRow(lds_tr("ベクター画像キャッシュ"), self.vector_image_cache_enabled)
+        f.addRow(lds_tr("全体キャッシュ更新FPS"), self.vector_image_cache_fps)
+        f.addRow(lds_tr("水面・氷・雲などFPS"), self.vector_image_cache_fps_extra)
+        f.addRow(lds_tr("雨FPS"), self.vector_image_cache_fps_rain)
+        f.addRow(lds_tr("波紋FPS"), self.vector_image_cache_fps_ripples)
+        f.addRow(lds_tr("粒子・花びらFPS"), self.vector_image_cache_fps_particles)
         f.addRow(lds_tr("GPU状態"), self.gpu_status_label)
 
     def _build_color_tab(self):
@@ -1909,6 +1942,21 @@ class EffectsOverlayEditorDialog(QDialog):
         self.mouse_flee_enabled.setChecked(bool(mouse_flee))
         self.mouse_glow_enabled.setChecked(bool(mouse_glow))
 
+    def _set_surface_effect_toggles(self, value: bool):
+        """Toggle large surface effects together for quick OFF/theme reset."""
+        for name in [
+            "water_surface_enabled", "water_depth_enabled", "water_mirror_enabled",
+            "water_fish_enabled", "water_morning_fog_enabled", "puddle_enabled",
+            "ice_enabled", "ice_mirror_enabled", "ice_fog_enabled", "bamboo_grove_enabled",
+            "milky_way_enabled",
+        ]:
+            try:
+                widget = getattr(self, name, None)
+                if widget is not None and hasattr(widget, "setChecked"):
+                    widget.setChecked(bool(value))
+            except:
+                pass
+
     def set_all_on(self):
         self._set_toggle_values(True, True, True, True, True, True, True, True)
         self.rain_ripple_enabled.setChecked(True)
@@ -1939,7 +1987,10 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moon_body_enabled.setChecked(False)
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
+        self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
+        self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
         self._set_extra_effect_toggles(False)
+        self._set_surface_effect_toggles(False)
 
     def set_mouse_only(self):
         self._set_toggle_values(False, False, False, False, False, True, True, True)
@@ -1956,6 +2007,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
+        self._set_surface_effect_toggles(False)
 
     def set_ambient_only(self):
         self._set_toggle_values(True, True, True, True, True, False, False, False)
@@ -1972,6 +2024,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
+        self._set_surface_effect_toggles(False)
 
     def _theme_set_checked(self, name: str, value: bool):
         widget = getattr(self, name, None)
@@ -1997,10 +2050,16 @@ class EffectsOverlayEditorDialog(QDialog):
             "rain_ripple_enabled", "rose_petals_enabled", "rose_flowers_enabled", "blooming_roses_enabled",
             "sakura_petals_enabled", "sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled",
             "moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled", "milky_way_enabled",
-            "water_surface_enabled", "ice_enabled", "bamboo_grove_enabled",
+            "water_surface_enabled", "water_depth_enabled", "water_mirror_enabled", "water_fish_enabled",
+            "water_morning_fog_enabled", "puddle_enabled", "ice_enabled", "ice_mirror_enabled",
+            "ice_fog_enabled", "bamboo_grove_enabled",
         ]:
             self._theme_set_checked(name, False)
         self._set_extra_effect_toggles(False)
+        try:
+            self._set_surface_effect_toggles(False)
+        except:
+            pass
 
     def _theme_set_extra(self, prefix: str, enabled: bool = True, count=None, speed=None, size=None, alpha=None):
         self._theme_set_checked(f"{prefix}_enabled", enabled)
@@ -2024,6 +2083,38 @@ class EffectsOverlayEditorDialog(QDialog):
         self._theme_set_value("software_max_extra_particles", 360)
         self._theme_set_value("software_max_petals", 120)
         self._theme_set_value("software_max_ripples", 36)
+
+    def _theme_set_raw_extra(self, name: str, value):
+        """Store theme-only flags into effects_json without changing the dataclass schema."""
+        try:
+            if not hasattr(self, "_theme_extra_settings") or self._theme_extra_settings is None:
+                self._theme_extra_settings = {}
+            self._theme_extra_settings[str(name)] = value
+        except:
+            pass
+
+    def _theme_apply_60fps_scenic_foundation(self, fps: int = 60, cache_fps: int = 8):
+        """60fps-first baseline for large cached scenic engines."""
+        self._theme_disable_all_visual_effects()
+        self._theme_apply_common_lightweight(fps=fps, quality=0.50)
+        self._theme_set_checked("effect_frame_rate_enabled", True)
+        self._theme_set_value("effect_frame_rate", fps)
+        self._theme_set_checked("vector_image_cache_enabled", True)
+        self._theme_set_value("vector_image_cache_fps", max(1, min(60, int(cache_fps))))
+        self._theme_set_value("vector_image_cache_fps_extra", max(1, min(60, int(cache_fps))))
+        self._theme_set_value("vector_image_cache_fps_rain", max(1, min(60, int(cache_fps))))
+        self._theme_set_value("vector_image_cache_fps_ripples", max(1, min(60, int(cache_fps))))
+        self._theme_set_value("vector_image_cache_fps_particles", max(1, min(60, int(cache_fps))))
+        self._theme_set_value("background_alpha", 0)
+        for name in [
+            "noise_enabled", "rain_enabled", "particles_enabled", "glow_enabled",
+            "ripple_enabled", "mouse_ripple_enabled", "mouse_flee_enabled", "mouse_glow_enabled",
+            "rose_petals_enabled", "sakura_petals_enabled", "rose_flowers_enabled", "blooming_roses_enabled",
+            "sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled",
+            "moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled",
+        ]:
+            self._theme_set_checked(name, False)
+        self._theme_set_extra("cloud", enabled=False, count=0)
 
     def apply_effect_theme(self, theme_id: str):
         """Enable a curated group of effects as a theme preset."""
@@ -2209,6 +2300,246 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("cloud_shader_contrast", 0.60)
             self._theme_set_checked("cloud_mist_enabled", False)
 
+        elif theme_id in ("suzhou_humble_garden", "suzhou_zhumyoen", "setsuseien", "humble_administrator_garden"):
+            # 拙政園のようなゆったり感: 開けた水辺、淡い雲、薄い朝もや、少数の花びら。
+            self._theme_disable_all_visual_effects()
+            self._theme_apply_common_lightweight(fps=36, quality=0.82)
+            self._theme_set_extra("cloud", enabled=True, count=10, speed=0.045, size=124.0, alpha=118)
+            self._theme_set_text("cloud_color", "#EEF7F4")
+            self._theme_set_text("cloud_shadow_color", "#C8D9D4")
+            self._theme_set_text("cloud_highlight_color", "#FFFFFF")
+            self._theme_set_value("cloud_altitude", 0.24)
+            self._theme_set_value("cloud_depth", 0.43)
+            self._theme_set_value("cloud_softness", 0.88)
+            self._theme_set_value("cloud_shape_randomness", 0.58)
+            self._theme_set_value("cloud_volume_strength", 0.66)
+            self._theme_set_checked("cloud_mist_enabled", True)
+            self._theme_set_value("cloud_mist_density", 0.64)
+            self._theme_set_value("cloud_mist_stretch", 1.92)
+            self._theme_set_value("cloud_mist_translucency", 0.90)
+            self._theme_set_checked("cloud_cache_enabled", True)
+            self._theme_set_value("cloud_cache_quality_scale", 0.62)
+            self._theme_set_checked("cloud_cumulus_enabled", False)
+            self._theme_set_checked("cloud_shader_lighting_enabled", True)
+            self._theme_set_value("cloud_shader_warmth", 0.28)
+            self._theme_set_value("cloud_shader_rim_strength", 0.42)
+            self._theme_set_value("cloud_shader_shadow_strength", 0.26)
+            self._theme_set_value("cloud_shader_bloom_strength", 0.20)
+            self._theme_set_value("cloud_shader_contrast", 0.26)
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_checked("puddle_enabled", True)
+            self._theme_set_value("puddle_x", 0.50)
+            self._theme_set_value("puddle_y", 0.82)
+            self._theme_set_value("puddle_width", 0.82)
+            self._theme_set_value("puddle_height", 0.24)
+            self._theme_set_value("puddle_edge_softness", 0.36)
+            self._theme_set_value("puddle_count", 2)
+            self._theme_set_value("puddle_spread", 0.46)
+            self._theme_set_value("water_surface_alpha", 58)
+            self._theme_set_text("water_surface_color", "#D9F2EC")
+            self._theme_set_text("water_surface_highlight_color", "#F2FFFA")
+            self._theme_set_value("water_surface_flow_angle", 2.0)
+            self._theme_set_value("water_surface_flow_speed", 0.16)
+            self._theme_set_value("water_surface_wave_count", 5)
+            self._theme_set_value("water_surface_wave_height", 5.5)
+            self._theme_set_value("water_surface_y", 0.60)
+            self._theme_set_value("water_surface_depth", 0.33)
+            self._theme_set_checked("water_depth_enabled", True)
+            self._theme_set_value("water_depth_strength", 0.46)
+            self._theme_set_value("water_depth_haze_alpha", 36)
+            self._theme_set_text("water_depth_color", "#678F86")
+            self._theme_set_checked("water_morning_fog_enabled", True)
+            self._theme_set_checked("water_morning_fog_follow_sunrise", False)
+            self._theme_set_value("water_morning_fog_strength", 0.54)
+            self._theme_set_value("water_morning_fog_alpha", 62)
+            self._theme_set_value("water_morning_fog_height", 0.18)
+            self._theme_set_value("water_morning_fog_drift", 0.18)
+            self._theme_set_text("water_morning_fog_color", "#EEF8F3")
+            self._theme_set_checked("water_fish_enabled", True)
+            self._theme_set_value("water_fish_count", 2)
+            self._theme_set_value("water_fish_speed", 0.16)
+            self._theme_set_value("water_fish_size", 20.0)
+            self._theme_set_value("water_fish_alpha", 92)
+            self._theme_set_checked("water_mirror_enabled", True)
+            self._theme_set_value("water_mirror_alpha", 36)
+            self._theme_set_value("water_mirror_blur", 8.0)
+            self._theme_set_value("water_mirror_wave", 3.0)
+            self._theme_set_value("water_mirror_tint_alpha", 28)
+            self._theme_set_checked("water_mirror_reflect_widgets_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_effects_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_cloud", True)
+            self._theme_set_checked("water_mirror_reflect_bamboo", False)
+            self._theme_set_checked("water_mirror_reflect_rain", False)
+            self._theme_set_checked("rose_petals_enabled", True)
+            self._theme_set_value("rose_petal_count", 8)
+            self._theme_set_text("rose_petal_color", "#F3C9C2")
+            self._theme_set_text("rose_petal_edge_color", "#FFF1EA")
+            self._theme_set_value("rose_petal_speed", 0.10)
+            self._theme_set_value("rose_petal_sway", 0.72)
+            self._theme_set_value("rose_petal_size", 13.5)
+            self._theme_set_value("rose_petal_alpha", 82)
+            self._theme_set_checked("rose_petal_ripple_enabled", True)
+            self._theme_set_value("rose_petal_ripple_chance", 0.24)
+            self._theme_set_value("rose_petal_ripple_min_radius", 28.0)
+            self._theme_set_value("rose_petal_ripple_max_radius", 105.0)
+            self._theme_set_value("rose_petal_ripple_cooldown", 0.12)
+            self._theme_set_checked("rose_petal_fade_on_surface", True)
+            self._theme_set_value("rose_petal_fade_duration", 1.65)
+            self._theme_set_value("rose_petal_fade_sink_distance", 4.0)
+            self._theme_set_checked("ripple_enabled", True)
+            self._theme_set_value("ripple_speed", 0.36)
+            self._theme_set_value("ripple_max_radius", 155.0)
+            self._theme_set_value("intensity", 0.72)
+            self._theme_set_value("background_alpha", 0)
+
+        elif theme_id in ("suzhou_lingering_garden", "suzhou_ryuen", "liuyuan", "lingering_garden"):
+            # 留園のような落ち着く感じ: 竹・深い緑・静かな水鏡を中心にする。
+            self._theme_disable_all_visual_effects()
+            self._theme_apply_common_lightweight(fps=32, quality=0.78)
+            self._theme_set_checked("bamboo_grove_enabled", True)
+            self._theme_set_value("bamboo_count", 18)
+            self._theme_set_value("bamboo_thickness", 13.2)
+            self._theme_set_value("bamboo_angle", -1.2)
+            self._theme_set_value("bamboo_bend", 0.22)
+            self._theme_set_value("bamboo_height", 1.05)
+            self._theme_set_value("bamboo_alpha", 208)
+            self._theme_set_value("bamboo_leaf_density", 4)
+            self._theme_set_value("bamboo_depth_strength", 1.10)
+            self._theme_set_value("bamboo_layer_spread", 0.56)
+            self._theme_set_value("bamboo_highlight_alpha", 58)
+            self._theme_set_checked("bamboo_ground_shadow_enabled", True)
+            self._theme_set_checked("bamboo_atmosphere_enabled", True)
+            self._theme_set_text("bamboo_stalk_color", "#2E7450")
+            self._theme_set_text("bamboo_shadow_color", "#183D2C")
+            self._theme_set_text("bamboo_node_color", "#9ABF75")
+            self._theme_set_text("bamboo_leaf_color", "#5E9F69")
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_checked("puddle_enabled", True)
+            self._theme_set_value("puddle_x", 0.50)
+            self._theme_set_value("puddle_y", 0.84)
+            self._theme_set_value("puddle_width", 0.74)
+            self._theme_set_value("puddle_height", 0.22)
+            self._theme_set_value("puddle_edge_softness", 0.38)
+            self._theme_set_value("puddle_count", 2)
+            self._theme_set_value("puddle_spread", 0.42)
+            self._theme_set_value("water_surface_alpha", 54)
+            self._theme_set_text("water_surface_color", "#CFEADF")
+            self._theme_set_text("water_surface_highlight_color", "#EFFFF8")
+            self._theme_set_value("water_surface_flow_angle", -4.0)
+            self._theme_set_value("water_surface_flow_speed", 0.11)
+            self._theme_set_value("water_surface_wave_count", 4)
+            self._theme_set_value("water_surface_wave_height", 4.2)
+            self._theme_set_value("water_surface_y", 0.62)
+            self._theme_set_value("water_surface_depth", 0.40)
+            self._theme_set_checked("water_depth_enabled", True)
+            self._theme_set_value("water_depth_strength", 0.72)
+            self._theme_set_value("water_depth_haze_alpha", 44)
+            self._theme_set_text("water_depth_color", "#244D42")
+            self._theme_set_checked("water_morning_fog_enabled", True)
+            self._theme_set_checked("water_morning_fog_follow_sunrise", False)
+            self._theme_set_value("water_morning_fog_strength", 0.46)
+            self._theme_set_value("water_morning_fog_alpha", 48)
+            self._theme_set_value("water_morning_fog_height", 0.16)
+            self._theme_set_value("water_morning_fog_drift", 0.10)
+            self._theme_set_text("water_morning_fog_color", "#E6F4EC")
+            self._theme_set_checked("water_fish_enabled", True)
+            self._theme_set_value("water_fish_count", 1)
+            self._theme_set_value("water_fish_speed", 0.11)
+            self._theme_set_value("water_fish_size", 18.0)
+            self._theme_set_value("water_fish_alpha", 74)
+            self._theme_set_checked("water_mirror_enabled", True)
+            self._theme_set_value("water_mirror_alpha", 72)
+            self._theme_set_value("water_mirror_blur", 11.0)
+            self._theme_set_value("water_mirror_depth", 0.70)
+            self._theme_set_value("water_mirror_wave", 2.4)
+            self._theme_set_value("water_mirror_tint_alpha", 42)
+            self._theme_set_checked("water_mirror_reflect_widgets_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_effects_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_bamboo", True)
+            self._theme_set_checked("water_mirror_reflect_cloud", False)
+            self._theme_set_checked("water_mirror_reflect_rain", False)
+            self._theme_set_checked("rose_petals_enabled", True)
+            self._theme_set_value("rose_petal_count", 4)
+            self._theme_set_text("rose_petal_color", "#D8B4A2")
+            self._theme_set_text("rose_petal_edge_color", "#F4DED1")
+            self._theme_set_value("rose_petal_speed", 0.075)
+            self._theme_set_value("rose_petal_sway", 0.38)
+            self._theme_set_value("rose_petal_size", 11.5)
+            self._theme_set_value("rose_petal_alpha", 46)
+            self._theme_set_checked("rose_petal_ripple_enabled", True)
+            self._theme_set_value("rose_petal_ripple_chance", 0.16)
+            self._theme_set_value("rose_petal_ripple_min_radius", 22.0)
+            self._theme_set_value("rose_petal_ripple_max_radius", 82.0)
+            self._theme_set_value("rose_petal_ripple_cooldown", 0.18)
+            self._theme_set_checked("rose_petal_fade_on_surface", True)
+            self._theme_set_value("rose_petal_fade_duration", 2.0)
+            self._theme_set_value("rose_petal_fade_sink_distance", 3.0)
+            self._theme_set_checked("ripple_enabled", True)
+            self._theme_set_value("ripple_speed", 0.28)
+            self._theme_set_value("ripple_max_radius", 118.0)
+            self._theme_set_value("intensity", 0.60)
+            self._theme_set_value("background_alpha", 0)
+
+        elif theme_id in ("uyuni_salt_flat_reflection", "uyuni_salt_flat", "salar_de_uyuni"):
+            # ウユニ塩湖: 静的反射背景 + 既存の浅い水面/薄い氷膜をON。
+            self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=6)
+            self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", True)
+            self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
+            self._theme_set_value("intensity", 0.82)
+            self._theme_set_value("vector_image_cache_fps", 6)
+            self._theme_set_value("vector_image_cache_fps_extra", 6)
+            self._theme_set_checked("water_surface_enabled", True)
+            self._theme_set_checked("puddle_enabled", False)
+            self._theme_set_value("water_surface_alpha", 52)
+            self._theme_set_text("water_surface_color", "#EAFBFF")
+            self._theme_set_text("water_surface_highlight_color", "#FFFFFF")
+            self._theme_set_value("water_surface_flow_angle", 0.0)
+            self._theme_set_value("water_surface_flow_speed", 0.035)
+            self._theme_set_value("water_surface_wave_count", 4)
+            self._theme_set_value("water_surface_wave_height", 1.8)
+            self._theme_set_value("water_surface_y", 0.50)
+            self._theme_set_value("water_surface_depth", 0.50)
+            self._theme_set_checked("water_depth_enabled", True)
+            self._theme_set_value("water_depth_strength", 0.28)
+            self._theme_set_value("water_depth_haze_alpha", 22)
+            self._theme_set_text("water_depth_color", "#D6F4FF")
+            self._theme_set_checked("water_mirror_enabled", True)
+            self._theme_set_value("water_mirror_alpha", 46)
+            self._theme_set_value("water_mirror_blur", 7.5)
+            self._theme_set_value("water_mirror_depth", 0.72)
+            self._theme_set_value("water_mirror_wave", 1.2)
+            self._theme_set_value("water_mirror_tint_alpha", 18)
+            self._theme_set_checked("water_mirror_reflect_widgets_enabled", True)
+            self._theme_set_checked("water_mirror_reflect_effects_enabled", True)
+            self._theme_set_checked("ice_enabled", True)
+            self._theme_set_checked("ice_lightweight_enabled", True)
+            self._theme_set_checked("ice_static_cache_enabled", True)
+            self._theme_set_value("ice_quality_scale", 0.42)
+            self._theme_set_value("ice_max_facets", 20)
+            self._theme_set_value("ice_max_cracks", 4)
+            self._theme_set_value("ice_max_bubbles", 0)
+            self._theme_set_value("ice_alpha", 36)
+            self._theme_set_text("ice_color", "#F7FFFF")
+            self._theme_set_text("ice_edge_color", "#FFFFFF")
+            self._theme_set_text("ice_highlight_color", "#FFFFFF")
+            self._theme_set_text("ice_shadow_color", "#CFEFFF")
+            self._theme_set_value("ice_x", 0.50)
+            self._theme_set_value("ice_width", 1.00)
+            self._theme_set_value("ice_y", 0.50)
+            self._theme_set_value("ice_depth", 0.50)
+            self._theme_set_value("ice_crack_intensity", 0.08)
+            self._theme_set_value("ice_internal_bubble_intensity", 0.0)
+            self._theme_set_value("ice_glacier_roughness", 0.12)
+            self._theme_set_checked("ice_mirror_enabled", False)
+            self._theme_set_checked("ice_fog_enabled", False)
+        elif theme_id in ("antelope_canyon_depth", "antelope_canyon", "warm_canyon_depth"):
+            # アンテロープキャニオン: 静的QImageで奥行き・岩壁の重なり・粉塵を描く。
+            self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=8)
+            self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
+            self._theme_set_raw_extra("antelope_canyon_engine_enabled", True)
+            self._theme_set_value("intensity", 0.94)
+            self._theme_set_value("vector_image_cache_fps", 8)
+            self._theme_set_value("vector_image_cache_fps_extra", 8)
         elif theme_id == "fire_and_water":
             self._theme_set_extra("flame", True, count=54, speed=0.55, size=21.0, alpha=205)
             self._theme_set_extra("fireball", True, count=8, speed=0.32, size=18.0, alpha=220)
@@ -2387,6 +2718,12 @@ class EffectsOverlayEditorDialog(QDialog):
             gpu_acceleration_smooth_pixmaps=self.gpu_acceleration_smooth_pixmaps.isChecked(),
             effect_frame_rate_enabled=self.effect_frame_rate_enabled.isChecked(),
             effect_frame_rate=self.effect_frame_rate.value(),
+            vector_image_cache_enabled=self.vector_image_cache_enabled.isChecked(),
+            vector_image_cache_fps=self.vector_image_cache_fps.value(),
+            vector_image_cache_fps_extra=self.vector_image_cache_fps_extra.value(),
+            vector_image_cache_fps_rain=self.vector_image_cache_fps_rain.value(),
+            vector_image_cache_fps_ripples=self.vector_image_cache_fps_ripples.value(),
+            vector_image_cache_fps_particles=self.vector_image_cache_fps_particles.value(),
             mouse_ripple_enabled=self.mouse_ripple_enabled.isChecked(),
             mouse_flee_enabled=self.mouse_flee_enabled.isChecked(),
             mouse_glow_enabled=self.mouse_glow_enabled.isChecked(),
@@ -2789,7 +3126,35 @@ class EffectsOverlayEditorDialog(QDialog):
 
     def apply_to_config(self):
         settings = self.build_settings()
-        set_effect_overlay_settings(self.cfg, settings)
+        try:
+            extra = dict(getattr(self, "_theme_extra_settings", {}) or {})
+        except:
+            extra = {}
+        if extra:
+            ensure_effect_overlay_fields(self.cfg)
+            data = settings.to_dict()
+            data.update(extra)
+            self.cfg.effects_json = json.dumps(data, ensure_ascii=False)
+        else:
+            set_effect_overlay_settings(self.cfg, settings)
+
+        try:
+            if hasattr(self.widget, "clear_vector_image_cache"):
+                self.widget.clear_vector_image_cache()
+        except:
+            pass
+
+        try:
+            if hasattr(self.widget, "clear_scenic_engine_cache"):
+                self.widget.clear_scenic_engine_cache()
+        except:
+            pass
+
+        try:
+            if hasattr(self.widget, "clear_puddle_runtime_state") and not bool(getattr(settings, "puddle_enabled", False)):
+                self.widget.clear_puddle_runtime_state()
+        except:
+            pass
 
         try:
             self.widget._particles.clear()
@@ -2890,6 +3255,12 @@ class EffectOverlaySettings:
     gpu_acceleration_smooth_pixmaps: bool = True
     effect_frame_rate_enabled: bool = True
     effect_frame_rate: int = 60
+    vector_image_cache_enabled: bool = True
+    vector_image_cache_fps: int = 24
+    vector_image_cache_fps_extra: int = 12
+    vector_image_cache_fps_rain: int = 24
+    vector_image_cache_fps_ripples: int = 18
+    vector_image_cache_fps_particles: int = 18
 
     mouse_ripple_enabled: bool = True
     mouse_flee_enabled: bool = True
@@ -3451,6 +3822,12 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         gpu_acceleration_smooth_pixmaps=bool(defaults.get("gpu_acceleration_smooth_pixmaps", True)),
         effect_frame_rate_enabled=bool(defaults.get("effect_frame_rate_enabled", True)),
         effect_frame_rate=max(1, min(240, int(defaults.get("effect_frame_rate", 60)))),
+        vector_image_cache_enabled=bool(defaults.get("vector_image_cache_enabled", True)),
+        vector_image_cache_fps=max(1, min(60, int(defaults.get("vector_image_cache_fps", 24)))),
+        vector_image_cache_fps_extra=max(1, min(60, int(defaults.get("vector_image_cache_fps_extra", 12)))),
+        vector_image_cache_fps_rain=max(1, min(60, int(defaults.get("vector_image_cache_fps_rain", 24)))),
+        vector_image_cache_fps_ripples=max(1, min(60, int(defaults.get("vector_image_cache_fps_ripples", 18)))),
+        vector_image_cache_fps_particles=max(1, min(60, int(defaults.get("vector_image_cache_fps_particles", 18)))),
         mouse_ripple_enabled=bool(defaults.get("mouse_ripple_enabled", True)),
         mouse_flee_enabled=bool(defaults.get("mouse_flee_enabled", True)),
         mouse_glow_enabled=bool(defaults.get("mouse_glow_enabled", True)),
@@ -5598,6 +5975,273 @@ class EffectsOverlayWidget(BaseWidget):
         self._petal_gust_started_at = 0.0
         self._petal_gust_direction = 1.0
         self._last_petal_gust_rollup_at = 0.0
+        self._scenic_engine_cache = {}
+        self._scenic_engine_cache_order = []
+        self._scenic_engine_cache_limit = 8
+        self._vector_image_cache = {}
+        self._vector_image_cache_order = []
+        self._vector_image_cache_limit = 96
+
+    def _vector_image_cache_enabled(self) -> bool:
+        try:
+            return bool(get_effect_overlay_settings(self.cfg).vector_image_cache_enabled)
+        except:
+            return True
+
+    def _vector_image_cache_fps(self, layer_name: str, default_fps: int = 24) -> int:
+        try:
+            s = get_effect_overlay_settings(self.cfg)
+            if layer_name == "extra":
+                value = getattr(s, "vector_image_cache_fps_extra", default_fps)
+            elif layer_name == "rain":
+                value = getattr(s, "vector_image_cache_fps_rain", default_fps)
+            elif layer_name == "ripples":
+                value = getattr(s, "vector_image_cache_fps_ripples", default_fps)
+            elif layer_name in ("particles", "rose_petals", "sakura_petals"):
+                value = getattr(s, "vector_image_cache_fps_particles", default_fps)
+            else:
+                value = getattr(s, "vector_image_cache_fps", default_fps)
+            return max(1, min(60, int(value)))
+        except:
+            return max(1, min(60, int(default_fps)))
+
+    def _vector_settings_signature(self) -> int:
+        try:
+            return hash(getattr(self.cfg, "effects_json", ""))
+        except:
+            return 0
+
+    def _vector_cache_store(self, key, image: QImage):
+        try:
+            cache = getattr(self, "_vector_image_cache", None)
+            order = getattr(self, "_vector_image_cache_order", None)
+            if cache is None:
+                self._vector_image_cache = {}
+                cache = self._vector_image_cache
+            if order is None:
+                self._vector_image_cache_order = []
+                order = self._vector_image_cache_order
+            if key not in cache:
+                order.append(key)
+            cache[key] = image
+            limit = max(8, int(getattr(self, "_vector_image_cache_limit", 96)))
+            while len(order) > limit:
+                old = order.pop(0)
+                cache.pop(old, None)
+        except:
+            pass
+        return image
+
+    def clear_vector_image_cache(self):
+        try:
+            self._vector_image_cache.clear()
+            self._vector_image_cache_order.clear()
+        except:
+            self._vector_image_cache = {}
+            self._vector_image_cache_order = []
+
+    def _draw_cached_vector_layer(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float, layer_name: str, draw_func, fps: int = 24, static: bool = False):
+        """Render vector effects to QImage, then drawImage on normal frames."""
+        if not self._vector_image_cache_enabled():
+            try:
+                draw_func(p, r, settings, now)
+            except TypeError:
+                draw_func(p, r, settings)
+            return
+        try:
+            w = max(1, int(math.ceil(float(r.width()))))
+            h = max(1, int(math.ceil(float(r.height()))))
+            fps = self._vector_image_cache_fps(layer_name, fps)
+            bucket = 0 if static else int(now * fps)
+            key = (str(layer_name), w, h, self._vector_settings_signature(), bucket)
+            cache = getattr(self, "_vector_image_cache", {})
+            image = cache.get(key)
+            if image is None or image.isNull():
+                image = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+                image.fill(Qt.GlobalColor.transparent)
+                qp = QPainter(image)
+                try:
+                    qp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    try:
+                        qp.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                    except:
+                        pass
+                    qp.translate(-float(r.left()), -float(r.top()))
+                    try:
+                        draw_func(qp, r, settings, now)
+                    except TypeError:
+                        draw_func(qp, r, settings)
+                finally:
+                    qp.end()
+                self._vector_cache_store(key, image)
+            p.drawImage(QRectF(r.left(), r.top(), w, h), image)
+        except:
+            try:
+                draw_func(p, r, settings, now)
+            except TypeError:
+                draw_func(p, r, settings)
+
+    def _scenic_engine_flag(self, key: str, default: bool = False) -> bool:
+        try:
+            ensure_effect_overlay_fields(self.cfg)
+            data = json.loads(getattr(self.cfg, "effects_json", "{}") or "{}")
+            if isinstance(data, dict):
+                return bool(data.get(key, default))
+        except:
+            pass
+        return bool(default)
+
+    def clear_scenic_engine_cache(self):
+        try:
+            self._scenic_engine_cache.clear()
+            self._scenic_engine_cache_order.clear()
+        except:
+            self._scenic_engine_cache = {}
+            self._scenic_engine_cache_order = []
+
+    def _scenic_cache_put(self, key, image: QImage):
+        try:
+            cache = getattr(self, "_scenic_engine_cache", None)
+            order = getattr(self, "_scenic_engine_cache_order", None)
+            if cache is None:
+                self._scenic_engine_cache = {}; cache = self._scenic_engine_cache
+            if order is None:
+                self._scenic_engine_cache_order = []; order = self._scenic_engine_cache_order
+            if key not in cache:
+                order.append(key)
+            cache[key] = image
+            while len(order) > max(2, int(getattr(self, "_scenic_engine_cache_limit", 8))):
+                cache.pop(order.pop(0), None)
+        except:
+            pass
+        return image
+
+    def _draw_uyuni_salt_flat_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        try:
+            w = int(max(1, r.width())); h = int(max(1, r.height()))
+            sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
+            key = ("uyuni_static_v4", w, h, sig)
+            cache = getattr(self, "_scenic_engine_cache", {})
+            img = cache.get(key)
+            if img is None or img.isNull():
+                img = self._render_uyuni_salt_flat_static(w, h)
+                self._scenic_cache_put(key, img)
+            p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+        except:
+            pass
+
+    def _render_uyuni_salt_flat_static(self, w: int, h: int) -> QImage:
+        img = QImage(max(1, w), max(1, h), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            horizon = h * 0.50
+            sky = QLinearGradient(QPointF(0, 0), QPointF(0, horizon))
+            sky.setColorAt(0.0, QColor("#CDEBFF")); sky.setColorAt(0.55, QColor("#F4FCFF")); sky.setColorAt(1.0, QColor("#FFFFFF"))
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(sky)); q.drawRect(QRectF(0, 0, w, horizon + 1))
+            water = QLinearGradient(QPointF(0, horizon), QPointF(0, h))
+            c0 = QColor("#FFFFFF"); c0.setAlpha(238)
+            c1 = QColor("#C7EAF7"); c1.setAlpha(205)
+            c2 = QColor("#F9FEFF"); c2.setAlpha(242)
+            water.setColorAt(0.0, c0); water.setColorAt(0.45, c1); water.setColorAt(1.0, c2)
+            q.setBrush(QBrush(water)); q.drawRect(QRectF(0, horizon, w, h - horizon))
+            rnd = random.Random((w * 1009) ^ (h * 9176) ^ 0x5551)
+            for band in range(10):
+                y = horizon * rnd.uniform(0.10, 0.73); x = rnd.uniform(-w * 0.1, w * 0.88)
+                ww = rnd.uniform(w * 0.18, w * 0.45); hh = rnd.uniform(3.0, 10.0)
+                col = QColor("#FFFFFF"); col.setAlpha(rnd.randint(42, 78)); q.setBrush(QBrush(col)); q.setPen(Qt.PenStyle.NoPen)
+                q.drawRoundedRect(QRectF(x, y, ww, hh), hh, hh)
+                ref = QColor("#FFFFFF"); ref.setAlpha(max(18, col.alpha() - 22)); q.setBrush(QBrush(ref))
+                q.drawRoundedRect(QRectF(x, horizon + (horizon - y) * 0.84, ww, max(1.0, hh * 0.55)), hh, hh)
+            hc = QColor("#E6F8FF"); hc.setAlpha(190); q.setPen(QPen(hc, 1.0)); q.drawLine(QPointF(0, horizon), QPointF(w, horizon))
+            for i in range(38):
+                y = horizon + (i / 38.0) ** 1.65 * (h - horizon) * 0.92
+                col = QColor("#FFFFFF"); col.setAlpha(max(8, int(38 * (1.0 - i / 46.0))))
+                q.setPen(QPen(col, 1.0)); margin = w * (0.04 + 0.08 * math.sin(i * 1.73))
+                q.drawLine(QPointF(margin, y), QPointF(w - margin, y + math.sin(i) * 0.8))
+            salt = QColor("#FFFFFF"); salt.setAlpha(48); q.setPen(QPen(salt, 1.0)); q.setBrush(Qt.BrushStyle.NoBrush)
+            cell = max(24, int(w / 32)); y0 = int(h * 0.76)
+            for yy in range(y0, h + cell, cell):
+                for xx in range(-cell, w + cell, cell):
+                    if (xx // cell + yy // cell) % 3 == 0:
+                        q.drawEllipse(QRectF(xx, yy, cell * 1.5, cell * 0.42))
+            axis = QLinearGradient(QPointF(w * 0.5, 0), QPointF(w * 0.5, h))
+            a = QColor("#FFFFFF"); a.setAlpha(0); b = QColor("#FFFFFF"); b.setAlpha(38)
+            axis.setColorAt(0.0, a); axis.setColorAt(0.5, b); axis.setColorAt(1.0, a)
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(axis)); q.drawRect(QRectF(w * 0.47, 0, w * 0.06, h))
+        finally:
+            q.end()
+        return img
+
+    def _draw_antelope_canyon_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        try:
+            w = int(max(1, r.width())); h = int(max(1, r.height()))
+            sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
+            key = ("antelope_static_v4", w, h, sig)
+            cache = getattr(self, "_scenic_engine_cache", {})
+            img = cache.get(key)
+            if img is None or img.isNull():
+                img = self._render_antelope_canyon_static(w, h)
+                self._scenic_cache_put(key, img)
+            p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+        except:
+            pass
+
+    def _render_antelope_canyon_static(self, w: int, h: int) -> QImage:
+        img = QImage(max(1, w), max(1, h), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            bg = QLinearGradient(QPointF(0, 0), QPointF(0, h))
+            bg.setColorAt(0.0, QColor("#2B1025")); bg.setColorAt(0.34, QColor("#8F3E28")); bg.setColorAt(0.70, QColor("#D98240")); bg.setColorAt(1.0, QColor("#2F130F"))
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(bg)); q.drawRect(QRectF(0, 0, w, h))
+            palettes = [QColor("#5B241D"), QColor("#8F3927"), QColor("#BD5E2E"), QColor("#E08B48"), QColor("#6E2C4C"), QColor("#F2B36B")]
+            slot = QPainterPath(); slot.moveTo(w * 0.43, 0); slot.cubicTo(w * 0.52, h * 0.22, w * 0.45, h * 0.62, w * 0.55, h); slot.lineTo(w * 0.45, h); slot.cubicTo(w * 0.52, h * 0.62, w * 0.40, h * 0.22, w * 0.58, 0)
+            darkslot = QLinearGradient(QPointF(w * 0.5, 0), QPointF(w * 0.5, h)); darkslot.setColorAt(0.0, QColor(255, 221, 150, 115)); darkslot.setColorAt(0.32, QColor(190, 91, 44, 70)); darkslot.setColorAt(1.0, QColor(24, 7, 10, 150))
+            q.setBrush(QBrush(darkslot)); q.setPen(Qt.PenStyle.NoPen); q.drawPath(slot)
+            for side in (0, 1):
+                for layer in range(10):
+                    depth = layer / 9.0; wall_w = w * (0.18 + depth * 0.36); inset = layer * w * 0.014
+                    if side == 0:
+                        x0 = -w * 0.10 + inset; x1 = wall_w; ctrl1 = w * (0.10 + 0.11 * depth); ctrl2 = w * (0.20 + 0.09 * math.sin(layer * 0.8))
+                    else:
+                        x0 = w + w * 0.10 - inset; x1 = w - wall_w; ctrl1 = w * (0.90 - 0.11 * depth); ctrl2 = w * (0.80 + 0.09 * math.sin(layer * 0.8 + 1.7))
+                    path = QPainterPath(); path.moveTo(x0, 0)
+                    if side == 0:
+                        path.cubicTo(ctrl1, h * 0.18, ctrl2, h * 0.54, x1, h); path.lineTo(-w * 0.16, h); path.lineTo(-w * 0.16, 0)
+                    else:
+                        path.cubicTo(ctrl1, h * 0.18, ctrl2, h * 0.54, x1, h); path.lineTo(w * 1.16, h); path.lineTo(w * 1.16, 0)
+                    col = QColor(palettes[(layer + side * 3) % len(palettes)]); col.setAlpha(105 + layer * 12)
+                    grad = QLinearGradient(QPointF(0 if side == 0 else w, h * 0.18), QPointF(w * 0.50, h * 0.72)); rim = QColor("#FFD08A"); rim.setAlpha(42 + layer * 3); sh = QColor(col).darker(160); sh.setAlpha(col.alpha()); mid = QColor(col); mid.setAlpha(col.alpha())
+                    grad.setColorAt(0.0, sh); grad.setColorAt(0.46, mid); grad.setColorAt(1.0, rim)
+                    q.setBrush(QBrush(grad)); q.setPen(Qt.PenStyle.NoPen); q.drawPath(path)
+                    edge = QPainterPath(); edge.moveTo(x1, 0)
+                    if side == 0: edge.cubicTo(ctrl2, h * 0.32, x1 * 0.96, h * 0.70, x1, h)
+                    else: edge.cubicTo(ctrl2, h * 0.32, x1 + wall_w * 0.04, h * 0.70, x1, h)
+                    q.setPen(QPen(QColor(35, 9, 10, 42 + layer * 4), max(1.0, 2.6 - depth))); q.drawPath(edge)
+            shaft = QLinearGradient(QPointF(w * 0.52, 0), QPointF(w * 0.45, h)); shaft.setColorAt(0.0, QColor(255, 233, 170, 140)); shaft.setColorAt(0.22, QColor(255, 186, 92, 70)); shaft.setColorAt(0.72, QColor(150, 55, 30, 14)); shaft.setColorAt(1.0, QColor(0, 0, 0, 0))
+            q.setBrush(QBrush(shaft)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(w * 0.36, 0, w * 0.32, h))
+            rnd = random.Random((w * 6113) ^ (h * 1297) ^ 0xCA77)
+            for i in range(150):
+                y = h * rnd.uniform(0.04, 0.98); amp = rnd.uniform(5.0, 24.0); left_side = i % 2 == 0; x_start = -w * 0.02 if left_side else w * 0.50; x_end = w * 0.52 if left_side else w * 1.02
+                c = QColor("#FFD08A" if i % 4 else "#5B1D18"); c.setAlpha(rnd.randint(22, 68)); q.setPen(QPen(c, rnd.uniform(0.55, 1.9)))
+                path = QPainterPath(); path.moveTo(x_start, y); path.cubicTo(w * 0.22, y + amp, w * 0.74, y - amp * 0.8, x_end, y + math.sin(i * 0.37) * amp); q.drawPath(path)
+            for side in (0, 1):
+                occ = QPainterPath()
+                if side == 0: occ.moveTo(0, 0); occ.cubicTo(w * 0.12, h * 0.20, w * 0.06, h * 0.62, w * 0.20, h); occ.lineTo(0, h); occ.closeSubpath()
+                else: occ.moveTo(w, 0); occ.cubicTo(w * 0.88, h * 0.20, w * 0.94, h * 0.62, w * 0.80, h); occ.lineTo(w, h); occ.closeSubpath()
+                q.setBrush(QBrush(QColor(29, 8, 9, 96))); q.setPen(Qt.PenStyle.NoPen); q.drawPath(occ)
+            for i in range(max(120, int(w * h / 8500))):
+                x = rnd.gauss(w * 0.52, w * 0.12); y = rnd.uniform(h * 0.03, h * 0.84)
+                if 0 <= x <= w and 0 <= y <= h:
+                    c = QColor("#FFE7B8"); c.setAlpha(rnd.randint(20, 82)); q.setPen(QPen(c, 1.0)); q.drawPoint(QPointF(x, y))
+            vignette = QRadialGradient(QPointF(w * 0.52, h * 0.52), max(w, h) * 0.62); vignette.setColorAt(0.0, QColor(0, 0, 0, 0)); vignette.setColorAt(0.62, QColor(35, 8, 10, 22)); vignette.setColorAt(1.0, QColor(20, 4, 7, 155))
+            q.setBrush(QBrush(vignette)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(0, 0, w, h))
+        finally:
+            q.end()
+        return img
 
     def _has_visible_moon_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
         """Return True when any moon-related visual is enabled."""
@@ -5904,7 +6548,13 @@ class EffectsOverlayWidget(BaseWidget):
             p.drawRect(r)
 
         if settings.noise_enabled:
-            self._draw_noise(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "noise", self._draw_noise, fps=12)
+
+        if self._scenic_engine_flag("uyuni_salt_flat_engine_enabled"):
+            self._draw_uyuni_salt_flat_engine(p, r, settings, now)
+
+        if self._scenic_engine_flag("antelope_canyon_engine_enabled"):
+            self._draw_antelope_canyon_engine(p, r, settings, now)
 
         if (
             getattr(settings, "sunrise_enabled", False)
@@ -5912,13 +6562,13 @@ class EffectsOverlayWidget(BaseWidget):
             or getattr(settings, "sunlight_enabled", False)
             or getattr(settings, "lens_flare_enabled", False)
         ):
-            self._draw_sunrise_sun_integrated_effect(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "sun", self._draw_sunrise_sun_integrated_effect, fps=12)
         if getattr(settings, "moonlight_enabled", False) or getattr(settings, "moon_shadow_enabled", False) or getattr(settings, "moon_body_enabled", False):
-            self._draw_moon_integrated_effect(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "moon", self._draw_moon_integrated_effect, fps=12)
 
         self._ensure_extra_effects(r, settings, now)
         self._update_extra_effects(r, settings, dt, now)
-        self._draw_extra_effects(p, r, settings, now)
+        self._draw_cached_vector_layer(p, r, settings, now, "extra", self._draw_extra_effects, fps=12)
 
         has_existing_rose_petals = len(getattr(self, "_rose_petals", [])) > 0
         rose_petals_enabled = bool(getattr(settings, "rose_petals_enabled", False))
@@ -5928,38 +6578,38 @@ class EffectsOverlayWidget(BaseWidget):
 
         if rose_petals_enabled or has_existing_rose_petals:
             self._update_rose_petals(r, settings, dt, now)
-            self._draw_rose_petals(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "rose_petals", self._draw_rose_petals, fps=18)
 
         if settings.glow_enabled:
-            self._draw_glow_orbs(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "glow_orbs", self._draw_glow_orbs, fps=18)
 
         if getattr(settings, "sakura_petals_enabled", False) or len(getattr(self, "_sakura_petals", [])) > 0:
             if getattr(settings, "sakura_petals_enabled", False):
                 self._ensure_sakura_petals(r, settings)
             self._update_sakura_petals(r, settings, dt, now)
-            self._draw_sakura_petals(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "sakura_petals", self._draw_sakura_petals, fps=18)
 
         if settings.mouse_glow_enabled and self._mouse_pos is not None and now <= self._mouse_active_until:
-            self._draw_mouse_glow(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "mouse_glow", self._draw_mouse_glow, fps=30)
 
         if settings.particles_enabled:
-            self._draw_particles(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "particles", self._draw_particles, fps=18)
 
         if settings.rain_enabled:
-            self._draw_rain(p, r, settings)
+            self._draw_cached_vector_layer(p, r, settings, now, "rain", lambda qp, rr, ss, nn: self._draw_rain(qp, rr, ss), fps=24)
 
         if settings.ripple_enabled or settings.mouse_ripple_enabled or len(getattr(self, "_ripples", [])) > 0:
-            self._draw_ripples(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "ripples", self._draw_ripples, fps=18)
 
         if getattr(settings, "rose_flowers_enabled", False):
             self._ensure_rose_flowers(r, settings)
             self._update_rose_flowers(r, settings, dt, now)
-            self._draw_rose_flowers(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "rose_flowers", self._draw_rose_flowers, fps=18)
 
         if getattr(settings, "blooming_roses_enabled", False):
             self._ensure_blooming_roses(r, settings, now)
             self._update_blooming_roses(r, settings, dt, now)
-            self._draw_blooming_roses(p, r, settings, now)
+            self._draw_cached_vector_layer(p, r, settings, now, "blooming_roses", self._draw_blooming_roses, fps=12)
 
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
@@ -7186,6 +7836,24 @@ class EffectsOverlayWidget(BaseWidget):
             if self._point_in_puddle(x, y, rect):
                 return True
         return False
+
+    def clear_puddle_runtime_state(self):
+        """Clear cached water/puddle render state after puddles are turned off."""
+        for attr in [
+            "_water_reflection_cache_signature", "_water_reflection_cache_image",
+            "_ice_reflection_cache_signature", "_ice_reflection_cache_image",
+            "_ice_reflected_effects_cache_signature", "_ice_reflected_effects_cache_image",
+            "_ice_surface_cache_signature", "_ice_surface_cache_image",
+        ]:
+            try:
+                setattr(self, attr, None)
+            except:
+                pass
+        try:
+            if hasattr(self, "clear_vector_image_cache"):
+                self.clear_vector_image_cache()
+        except:
+            pass
 
     def _has_visible_puddle_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
         if settings is None:
