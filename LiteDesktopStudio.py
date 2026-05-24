@@ -106,7 +106,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "Lite Desktop Studio v1.5.6"
+APP_NAME = "Lite Desktop Studio v2.0.0"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 
@@ -160,6 +160,7 @@ LDS_BUILTIN_TRANSLATIONS = {
         "アンテロープキャニオンの岩肌": "Antelope Canyon warm rock walls",
         "ウユニ塩湖のような反射感": "Uyuni-like reflection",
         "アンテロープキャニオンのような迫りくる岩肌感": "Antelope Canyon-like enclosing rock walls",
+        "拙政園の小さな花畑": "Humble Garden small flower meadow",
                 "拙政園のゆったり水庭": "Humble Administrator's Garden - slow water garden",
                 "留園の静かな庭": "Lingering Garden - quiet garden",
                 "拙政園のようなゆったり感": "Slow spacious feeling like the Humble Administrator's Garden",
@@ -873,7 +874,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - エフェクト設定"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -1987,6 +1988,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moon_body_enabled.setChecked(False)
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
+        self._theme_set_raw_extra("suzhou_flower_meadow_enabled", False)
         self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
         self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
         self._set_extra_effect_toggles(False)
@@ -2304,6 +2306,8 @@ class EffectsOverlayEditorDialog(QDialog):
             # 拙政園のようなゆったり感: 開けた水辺、淡い雲、薄い朝もや、少数の花びら。
             self._theme_disable_all_visual_effects()
             self._theme_apply_common_lightweight(fps=36, quality=0.82)
+            self._theme_set_raw_extra("suzhou_flower_meadow_enabled", True)
+            self._theme_set_value("vector_image_cache_fps_extra", 10)
             self._theme_set_extra("cloud", enabled=True, count=10, speed=0.045, size=124.0, alpha=118)
             self._theme_set_text("cloud_color", "#EEF7F4")
             self._theme_set_text("cloud_shadow_color", "#C8D9D4")
@@ -3147,6 +3151,12 @@ class EffectsOverlayEditorDialog(QDialog):
         try:
             if hasattr(self.widget, "clear_scenic_engine_cache"):
                 self.widget.clear_scenic_engine_cache()
+        except:
+            pass
+
+        try:
+            if hasattr(self.widget, "clear_suzhou_flower_meadow_cache"):
+                self.widget.clear_suzhou_flower_meadow_cache()
         except:
             pass
 
@@ -5978,6 +5988,9 @@ class EffectsOverlayWidget(BaseWidget):
         self._scenic_engine_cache = {}
         self._scenic_engine_cache_order = []
         self._scenic_engine_cache_limit = 8
+        self._suzhou_flower_meadow_cache = {}
+        self._suzhou_flower_meadow_cache_order = []
+        self._suzhou_flower_meadow_cache_limit = 4
         self._vector_image_cache = {}
         self._vector_image_cache_order = []
         self._vector_image_cache_limit = 96
@@ -6239,6 +6252,111 @@ class EffectsOverlayWidget(BaseWidget):
                     c = QColor("#FFE7B8"); c.setAlpha(rnd.randint(20, 82)); q.setPen(QPen(c, 1.0)); q.drawPoint(QPointF(x, y))
             vignette = QRadialGradient(QPointF(w * 0.52, h * 0.52), max(w, h) * 0.62); vignette.setColorAt(0.0, QColor(0, 0, 0, 0)); vignette.setColorAt(0.62, QColor(35, 8, 10, 22)); vignette.setColorAt(1.0, QColor(20, 4, 7, 155))
             q.setBrush(QBrush(vignette)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(0, 0, w, h))
+        finally:
+            q.end()
+        return img
+
+    def clear_suzhou_flower_meadow_cache(self):
+        try:
+            self._suzhou_flower_meadow_cache.clear()
+            self._suzhou_flower_meadow_cache_order.clear()
+        except:
+            self._suzhou_flower_meadow_cache = {}
+            self._suzhou_flower_meadow_cache_order = []
+
+    def _suzhou_meadow_cache_put(self, key, image: QImage):
+        try:
+            cache = getattr(self, "_suzhou_flower_meadow_cache", None)
+            order = getattr(self, "_suzhou_flower_meadow_cache_order", None)
+            if cache is None:
+                self._suzhou_flower_meadow_cache = {}
+                cache = self._suzhou_flower_meadow_cache
+            if order is None:
+                self._suzhou_flower_meadow_cache_order = []
+                order = self._suzhou_flower_meadow_cache_order
+            if key not in cache:
+                order.append(key)
+            cache[key] = image
+            limit = max(1, int(getattr(self, "_suzhou_flower_meadow_cache_limit", 4)))
+            while len(order) > limit:
+                cache.pop(order.pop(0), None)
+        except:
+            pass
+        return image
+
+    def _draw_suzhou_flower_meadow_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        """Draw a small cached flower-meadow layer for the Humble Administrator's Garden preset.
+
+        This intentionally avoids per-frame vector work. The static meadow is rendered
+        into QImage once per size/settings signature, then pasted with drawImage().
+        """
+        try:
+            if not self._scenic_engine_flag("suzhou_flower_meadow_enabled", False):
+                return
+            w = int(max(1, r.width()))
+            h = int(max(1, r.height()))
+            sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
+            key = ("suzhou_meadow_v1", w, h, sig)
+            cache = getattr(self, "_suzhou_flower_meadow_cache", {})
+            img = cache.get(key)
+            if img is None or img.isNull():
+                img = self._render_suzhou_flower_meadow_static(w, h)
+                self._suzhou_meadow_cache_put(key, img)
+            p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+        except:
+            pass
+
+    def _render_suzhou_flower_meadow_static(self, w: int, h: int) -> QImage:
+        img = QImage(max(1, w), max(1, h), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            rnd = random.Random((w * 4129) ^ (h * 7919) ^ 0x535A48)
+            # Low, quiet garden bank above the water. Kept subtle to avoid fighting the water garden.
+            bank_top = h * 0.64
+            bank_h = h * 0.22
+            grad = QLinearGradient(QPointF(0, bank_top), QPointF(0, bank_top + bank_h))
+            g0 = QColor("#A9CFA8"); g0.setAlpha(42)
+            g1 = QColor("#4F8A63"); g1.setAlpha(74)
+            grad.setColorAt(0.0, g0); grad.setColorAt(1.0, g1)
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(grad))
+            q.drawRect(QRectF(0, bank_top, w, bank_h))
+            petals = ["#F3C9C2", "#F7D6B7", "#EED3EA", "#FFF1EA", "#DDEDC6"]
+            leaves = ["#6D9D68", "#83AD73", "#4F8A63", "#A3BF78"]
+            # LOD0: distant flower dots.
+            for row in range(4):
+                depth = row / 3.0
+                y_base = bank_top + bank_h * (0.16 + depth * 0.66)
+                count = max(20, int(w / 26))
+                for i in range(count):
+                    x = (i + rnd.random()) / count * w
+                    y = y_base + rnd.uniform(-bank_h * 0.05, bank_h * 0.05)
+                    c = QColor(petals[(i + row) % len(petals)]); c.setAlpha(45 + row * 13)
+                    q.setPen(QPen(c, 1.0)); q.drawPoint(QPointF(x, y))
+            # LOD1: foreground small blossoms and leaves, still simple ellipses only.
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            for i in range(max(18, int(w / 42))):
+                x = (i + rnd.random() * 0.85) / max(1, int(max(18, w / 42))) * w
+                y = bank_top + bank_h * rnd.uniform(0.56, 0.98)
+                size = rnd.uniform(2.2, 5.0)
+                stem = size * rnd.uniform(2.0, 3.2)
+                leaf = QColor(leaves[i % len(leaves)]); leaf.setAlpha(70)
+                q.setPen(QPen(leaf, 0.8)); q.drawLine(QPointF(x, y + stem * 0.35), QPointF(x, y - stem))
+                pc = QColor(petals[(i * 3) % len(petals)]); pc.setAlpha(92)
+                q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(pc))
+                q.drawEllipse(QRectF(x - size, y - stem - size * 0.65, size * 2.0, size * 1.3))
+                hi = QColor("#FFFFFF"); hi.setAlpha(44)
+                q.setBrush(QBrush(hi)); q.drawEllipse(QRectF(x - size * 0.35, y - stem - size * 0.55, size * 0.7, size * 0.35))
+            # A few lotus-like pads near the water edge, also static.
+            for i in range(max(5, int(w / 180))):
+                x = rnd.uniform(w * 0.04, w * 0.96)
+                y = h * rnd.uniform(0.73, 0.86)
+                rw = rnd.uniform(18.0, 46.0)
+                rh = rw * rnd.uniform(0.26, 0.42)
+                pad = QColor("#6FA27A"); pad.setAlpha(38)
+                q.setBrush(QBrush(pad)); q.setPen(Qt.PenStyle.NoPen)
+                q.drawEllipse(QRectF(x - rw * 0.5, y - rh * 0.5, rw, rh))
         finally:
             q.end()
         return img
@@ -6555,6 +6673,9 @@ class EffectsOverlayWidget(BaseWidget):
 
         if self._scenic_engine_flag("antelope_canyon_engine_enabled"):
             self._draw_antelope_canyon_engine(p, r, settings, now)
+
+        if self._scenic_engine_flag("suzhou_flower_meadow_enabled"):
+            self._draw_suzhou_flower_meadow_engine(p, r, settings, now)
 
         if (
             getattr(settings, "sunrise_enabled", False)
@@ -13072,7 +13193,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -13241,7 +13362,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -13637,7 +13758,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -14777,7 +14898,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v1.5.6 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v2.0.0 を使用しています。"
         )
 
         self.performance_text.setPlainText(
