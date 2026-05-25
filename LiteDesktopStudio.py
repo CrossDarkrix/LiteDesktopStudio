@@ -14,11 +14,12 @@ import urllib.request
 import warnings
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional
+from pathlib import Path
 
 import numpy as np
 import psutil
 import soundcard as sc
-from PySide6.QtCore import (
+from PySide6.QtCore import (QFileInfo,
     Qt,
     QRectF,
     QPoint,
@@ -49,8 +50,9 @@ from PySide6.QtGui import (
     QSurfaceFormat,
     QOpenGLContext,
     QOffscreenSurface,
+    QFontMetrics,
 )
-from PySide6.QtWidgets import (
+from PySide6.QtWidgets import (QStyle, QFileIconProvider,
     QApplication,
     QWidget,
     QMainWindow,
@@ -106,7 +108,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "Lite Desktop Studio v2.0.0"
+APP_NAME = "Lite Desktop Studio v1.5.6"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 
@@ -160,7 +162,8 @@ LDS_BUILTIN_TRANSLATIONS = {
         "アンテロープキャニオンの岩肌": "Antelope Canyon warm rock walls",
         "ウユニ塩湖のような反射感": "Uyuni-like reflection",
         "アンテロープキャニオンのような迫りくる岩肌感": "Antelope Canyon-like enclosing rock walls",
-        "拙政園の小さな花畑": "Humble Garden small flower meadow",
+        "サハラ砂漠の灼熱日光": "Sahara-like blazing desert sun",
+        "風に流れる枯草の砂漠": "Wind-blown dry grass desert",
                 "拙政園のゆったり水庭": "Humble Administrator's Garden - slow water garden",
                 "留園の静かな庭": "Lingering Garden - quiet garden",
                 "拙政園のようなゆったり感": "Slow spacious feeling like the Humble Administrator's Garden",
@@ -874,7 +877,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0 - エフェクト設定"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -933,6 +936,7 @@ class EffectsOverlayEditorDialog(QDialog):
             ('☄ ' + lds_tr("流星群"), "meteor_sky"),
             ('🔥 ' + lds_tr("炎と水"), "fire_and_water"),
             ('🪞 ' + lds_tr("ウユニ塩湖の静かな反射"), "uyuni_salt_flat_reflection"),
+            ('🏜️ ' + lds_tr("サハラ砂漠の灼熱日光"), "sahara_desert_sun"),
             ('🏜️ ' + lds_tr("アンテロープキャニオンの岩肌"), "antelope_canyon_depth"),
             ('☁️ ' + lds_tr("雲の流れ"), "cloud_drift"),
         ]
@@ -1943,21 +1947,6 @@ class EffectsOverlayEditorDialog(QDialog):
         self.mouse_flee_enabled.setChecked(bool(mouse_flee))
         self.mouse_glow_enabled.setChecked(bool(mouse_glow))
 
-    def _set_surface_effect_toggles(self, value: bool):
-        """Toggle large surface effects together for quick OFF/theme reset."""
-        for name in [
-            "water_surface_enabled", "water_depth_enabled", "water_mirror_enabled",
-            "water_fish_enabled", "water_morning_fog_enabled", "puddle_enabled",
-            "ice_enabled", "ice_mirror_enabled", "ice_fog_enabled", "bamboo_grove_enabled",
-            "milky_way_enabled",
-        ]:
-            try:
-                widget = getattr(self, name, None)
-                if widget is not None and hasattr(widget, "setChecked"):
-                    widget.setChecked(bool(value))
-            except:
-                pass
-
     def set_all_on(self):
         self._set_toggle_values(True, True, True, True, True, True, True, True)
         self.rain_ripple_enabled.setChecked(True)
@@ -1988,11 +1977,34 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moon_body_enabled.setChecked(False)
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
-        self._theme_set_raw_extra("suzhou_flower_meadow_enabled", False)
+        self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
+        self._theme_set_raw_extra("sahara_desert_engine_enabled", False)
         self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
         self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
         self._set_extra_effect_toggles(False)
-        self._set_surface_effect_toggles(False)
+        # Disable LiteDesktopStudio's foreground icon redraw to avoid double icons.
+        try:
+            os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+        except:
+            pass
+
+        try:
+            globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                "key": None,
+                "image": None,
+            }
+        except:
+            pass
+
+        try:
+            globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+        except:
+            pass
+        try:
+            if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                self.cfg["icon_scene_render_icons"] = "off"
+        except:
+            pass
 
     def set_mouse_only(self):
         self._set_toggle_values(False, False, False, False, False, True, True, True)
@@ -2009,7 +2021,6 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
-        self._set_surface_effect_toggles(False)
 
     def set_ambient_only(self):
         self._set_toggle_values(True, True, True, True, True, False, False, False)
@@ -2026,7 +2037,6 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
         self._set_extra_effect_toggles(False)
-        self._set_surface_effect_toggles(False)
 
     def _theme_set_checked(self, name: str, value: bool):
         widget = getattr(self, name, None)
@@ -2052,16 +2062,10 @@ class EffectsOverlayEditorDialog(QDialog):
             "rain_ripple_enabled", "rose_petals_enabled", "rose_flowers_enabled", "blooming_roses_enabled",
             "sakura_petals_enabled", "sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled",
             "moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled", "milky_way_enabled",
-            "water_surface_enabled", "water_depth_enabled", "water_mirror_enabled", "water_fish_enabled",
-            "water_morning_fog_enabled", "puddle_enabled", "ice_enabled", "ice_mirror_enabled",
-            "ice_fog_enabled", "bamboo_grove_enabled",
+            "water_surface_enabled", "ice_enabled", "bamboo_grove_enabled",
         ]:
             self._theme_set_checked(name, False)
         self._set_extra_effect_toggles(False)
-        try:
-            self._set_surface_effect_toggles(False)
-        except:
-            pass
 
     def _theme_set_extra(self, prefix: str, enabled: bool = True, count=None, speed=None, size=None, alpha=None):
         self._theme_set_checked(f"{prefix}_enabled", enabled)
@@ -2087,7 +2091,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self._theme_set_value("software_max_ripples", 36)
 
     def _theme_set_raw_extra(self, name: str, value):
-        """Store theme-only flags into effects_json without changing the dataclass schema."""
+        """Store theme-only settings that are saved into effects_json."""
         try:
             if not hasattr(self, "_theme_extra_settings") or self._theme_extra_settings is None:
                 self._theme_extra_settings = {}
@@ -2096,7 +2100,7 @@ class EffectsOverlayEditorDialog(QDialog):
             pass
 
     def _theme_apply_60fps_scenic_foundation(self, fps: int = 60, cache_fps: int = 8):
-        """60fps-first baseline for large cached scenic engines."""
+        """Common 60fps-first baseline for large static scenic engines."""
         self._theme_disable_all_visual_effects()
         self._theme_apply_common_lightweight(fps=fps, quality=0.50)
         self._theme_set_checked("effect_frame_rate_enabled", True)
@@ -2108,14 +2112,25 @@ class EffectsOverlayEditorDialog(QDialog):
         self._theme_set_value("vector_image_cache_fps_ripples", max(1, min(60, int(cache_fps))))
         self._theme_set_value("vector_image_cache_fps_particles", max(1, min(60, int(cache_fps))))
         self._theme_set_value("background_alpha", 0)
-        for name in [
-            "noise_enabled", "rain_enabled", "particles_enabled", "glow_enabled",
-            "ripple_enabled", "mouse_ripple_enabled", "mouse_flee_enabled", "mouse_glow_enabled",
-            "rose_petals_enabled", "sakura_petals_enabled", "rose_flowers_enabled", "blooming_roses_enabled",
-            "sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled",
-            "moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled",
-        ]:
-            self._theme_set_checked(name, False)
+        self._theme_set_checked("noise_enabled", False)
+        self._theme_set_checked("rain_enabled", False)
+        self._theme_set_checked("particles_enabled", False)
+        self._theme_set_checked("glow_enabled", False)
+        self._theme_set_checked("ripple_enabled", False)
+        self._theme_set_checked("mouse_ripple_enabled", False)
+        self._theme_set_checked("mouse_flee_enabled", False)
+        self._theme_set_checked("mouse_glow_enabled", False)
+        self._theme_set_checked("rose_petals_enabled", False)
+        self._theme_set_checked("sakura_petals_enabled", False)
+        self._theme_set_checked("rose_flowers_enabled", False)
+        self._theme_set_checked("blooming_roses_enabled", False)
+        self._theme_set_checked("sunrise_enabled", False)
+        self._theme_set_checked("sun_enabled", False)
+        self._theme_set_checked("sunlight_enabled", False)
+        self._theme_set_checked("lens_flare_enabled", False)
+        self._theme_set_checked("moon_body_enabled", False)
+        self._theme_set_checked("moonlight_enabled", False)
+        self._theme_set_checked("moon_shadow_enabled", False)
         self._theme_set_extra("cloud", enabled=False, count=0)
 
     def apply_effect_theme(self, theme_id: str):
@@ -2134,6 +2149,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("milky_way_star_count", 180)
             self._theme_set_value("milky_way_alpha", 92)
             self._theme_set_extra("shooting_star", True, count=2, speed=0.72, size=15.0, alpha=210)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
 
         elif theme_id == "moonlit_water":
             self._theme_set_checked("moon_body_enabled", True)
@@ -2154,7 +2191,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_checked("water_mirror_reflect_effects_enabled", True)
             self._theme_set_checked("water_mirror_reflect_snow", False)
             self._theme_set_checked("water_mirror_reflect_bamboo", False)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id == "spring_petals":
             self._theme_set_checked("rose_petals_enabled", True)
             self._theme_set_value("rose_petal_count", 42)
@@ -2168,7 +2226,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("sakura_petal_alpha", 210)
             self._theme_set_checked("ripple_enabled", True)
             self._theme_set_checked("rose_petal_ripple_enabled", True)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id == "bamboo_path":
             self._theme_set_checked("bamboo_grove_enabled", True)
             self._theme_set_value("bamboo_count", 16)
@@ -2187,7 +2266,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_checked("water_mirror_enabled", True)
             self._theme_set_value("water_mirror_alpha", 58)
             self._theme_set_checked("water_mirror_reflect_bamboo", True)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id == "rain_ripples":
             self._theme_set_toggle_values_for_rain = True
             self._theme_set_checked("rain_enabled", True)
@@ -2217,7 +2317,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("water_surface_alpha", 96)
             self._theme_set_value("water_surface_wave_count", 14)
             self._theme_set_extra("water_drop", True, count=36, speed=0.45, size=7.0, alpha=185)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id == "snow_scene":
             self._theme_set_extra("snow", True, count=120, speed=0.16, size=4.2, alpha=210)
             self._theme_set_extra("snow_crystal", True, count=28, speed=0.11, size=13.0, alpha=220)
@@ -2227,7 +2348,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_extra("star_sky", True, count=160, speed=0.18, size=1.1, alpha=150)
             self._theme_set_checked("water_surface_enabled", True)
             self._theme_set_value("water_surface_alpha", 62)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id == "glacier_mirror":
             self._theme_set_checked("ice_enabled", True)
             self._theme_set_checked("ice_lightweight_enabled", True)
@@ -2261,6 +2403,74 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_extra("snow", True, count=70, speed=0.13, size=3.8, alpha=185)
             self._theme_set_extra("snow_crystal", True, count=14, speed=0.09, size=12.0, alpha=200)
             self._theme_set_extra("star_sky", True, count=180, speed=0.18, size=1.1, alpha=150)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
+        elif theme_id in ("sahara_desert_sun", "sahara_desert", "dry_desert_sun"):
+            # サハラ砂漠風: 静的QImageで砂丘と灼熱太陽を描き、枯草だけを低数でゆっくり流す。
+            self._theme_disable_all_visual_effects()
+            self._theme_apply_common_lightweight(fps=60, quality=0.50)
+            self._theme_set_raw_extra("sahara_desert_engine_enabled", True)
+            self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
+            self._theme_set_raw_extra("desktop_ui_mask_padding", 24)
+            self._theme_set_raw_extra("desktop_ui_mask_blur", 37)
+            self._theme_set_raw_extra("desktop_ui_icon_remaining_alpha", 0.12)
+            self._theme_set_raw_extra("desktop_ui_mask_refresh_sec", 1.0)
+            self._theme_set_raw_extra("desktop_ui_fallback_strip_enabled", True)
+            self._theme_set_raw_extra("desktop_ui_fallback_width_ratio", 0.22)
+            self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
+            self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
+            self._theme_set_checked("vector_image_cache_enabled", True)
+            self._theme_set_value("vector_image_cache_fps", 8)
+            self._theme_set_value("vector_image_cache_fps_extra", 8)
+            self._theme_set_value("vector_image_cache_fps_particles", 8)
+            self._theme_set_value("effect_frame_rate", 60)
+            self._theme_set_value("background_alpha", 0)
+            self._theme_set_value("intensity", 0.96)
+            self._theme_set_checked("sun_enabled", False)
+            self._theme_set_checked("sunlight_enabled", False)
+            self._theme_set_checked("lens_flare_enabled", False)
+            self._theme_set_checked("noise_enabled", False)
+            self._theme_set_extra("cloud", enabled=False, count=0)
+            self._theme_set_extra("star_sky", False, count=0)
+            self._theme_set_extra("shooting_star", False, count=0)
+            self._theme_set_extra("meteor_shower", False, count=0)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "1"
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "on"
+            except:
+                pass
         elif theme_id == "meteor_sky":
             self._theme_set_extra("star_sky", True, count=340, speed=0.34, size=1.5, alpha=220)
             self._theme_set_checked("milky_way_enabled", True)
@@ -2270,7 +2480,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_extra("meteor_shower", True, count=18, speed=0.95, size=11.5, alpha=215)
             self._theme_set_checked("moon_body_enabled", True)
             self._theme_set_value("moon_alpha", 190)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id == "cloud_drift":
             self._theme_disable_all_visual_effects()
             self._theme_apply_common_lightweight()
@@ -2301,13 +2532,32 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("cloud_shader_bloom_strength", 0.38)
             self._theme_set_value("cloud_shader_contrast", 0.60)
             self._theme_set_checked("cloud_mist_enabled", False)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id in ("suzhou_humble_garden", "suzhou_zhumyoen", "setsuseien", "humble_administrator_garden"):
             # 拙政園のようなゆったり感: 開けた水辺、淡い雲、薄い朝もや、少数の花びら。
             self._theme_disable_all_visual_effects()
             self._theme_apply_common_lightweight(fps=36, quality=0.82)
-            self._theme_set_raw_extra("suzhou_flower_meadow_enabled", True)
-            self._theme_set_value("vector_image_cache_fps_extra", 10)
             self._theme_set_extra("cloud", enabled=True, count=10, speed=0.045, size=124.0, alpha=118)
             self._theme_set_text("cloud_color", "#EEF7F4")
             self._theme_set_text("cloud_shadow_color", "#C8D9D4")
@@ -2395,7 +2645,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("ripple_max_radius", 155.0)
             self._theme_set_value("intensity", 0.72)
             self._theme_set_value("background_alpha", 0)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id in ("suzhou_lingering_garden", "suzhou_ryuen", "liuyuan", "lingering_garden"):
             # 留園のような落ち着く感じ: 竹・深い緑・静かな水鏡を中心にする。
             self._theme_disable_all_visual_effects()
@@ -2483,11 +2754,39 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("ripple_max_radius", 118.0)
             self._theme_set_value("intensity", 0.60)
             self._theme_set_value("background_alpha", 0)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
 
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
         elif theme_id in ("uyuni_salt_flat_reflection", "uyuni_salt_flat", "salar_de_uyuni"):
-            # ウユニ塩湖: 静的反射背景 + 既存の浅い水面/薄い氷膜をON。
+            # ウユニ塩湖: 反射背景に加えて、既存の水面・薄い氷/塩結晶エフェクトもONにする。
             self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=6)
             self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", True)
+            self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
+            self._theme_set_raw_extra("desktop_ui_mask_padding", 24)
+            self._theme_set_raw_extra("desktop_ui_mask_blur", 37)
+            self._theme_set_raw_extra("desktop_ui_icon_remaining_alpha", 0.12)
+            self._theme_set_raw_extra("desktop_ui_mask_refresh_sec", 1.0)
+            self._theme_set_raw_extra("desktop_ui_fallback_strip_enabled", True)
+            self._theme_set_raw_extra("desktop_ui_fallback_width_ratio", 0.22)
             self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
             self._theme_set_value("intensity", 0.82)
             self._theme_set_value("vector_image_cache_fps", 6)
@@ -2536,14 +2835,55 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("ice_glacier_roughness", 0.12)
             self._theme_set_checked("ice_mirror_enabled", False)
             self._theme_set_checked("ice_fog_enabled", False)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "1"
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "on"
+            except:
+                pass
         elif theme_id in ("antelope_canyon_depth", "antelope_canyon", "warm_canyon_depth"):
-            # アンテロープキャニオン: 静的QImageで奥行き・岩壁の重なり・粉塵を描く。
+            # アンテロープキャニオン: 背景はQImage静的レンダリング。既存水面/氷はOFFのまま。
             self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=8)
             self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
             self._theme_set_raw_extra("antelope_canyon_engine_enabled", True)
+            self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
+            self._theme_set_raw_extra("desktop_ui_mask_padding", 24)
+            self._theme_set_raw_extra("desktop_ui_mask_blur", 37)
+            self._theme_set_raw_extra("desktop_ui_icon_remaining_alpha", 0.12)
+            self._theme_set_raw_extra("desktop_ui_mask_refresh_sec", 1.0)
+            self._theme_set_raw_extra("desktop_ui_fallback_strip_enabled", True)
+            self._theme_set_raw_extra("desktop_ui_fallback_width_ratio", 0.22)
             self._theme_set_value("intensity", 0.94)
             self._theme_set_value("vector_image_cache_fps", 8)
             self._theme_set_value("vector_image_cache_fps_extra", 8)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "1"
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "on"
+            except:
+                pass
         elif theme_id == "fire_and_water":
             self._theme_set_extra("flame", True, count=54, speed=0.55, size=21.0, alpha=205)
             self._theme_set_extra("fireball", True, count=8, speed=0.32, size=18.0, alpha=220)
@@ -2553,6 +2893,28 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("water_surface_alpha", 88)
             self._theme_set_value("water_surface_wave_count", 13)
             self._theme_set_value("water_surface_wave_height", 12.0)
+            try:
+                os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                    "key": None,
+                    "image": None,
+                }
+            except:
+                pass
+
+            try:
+                globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = "default"
+            except:
+                pass
+            try:
+                if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                    self.cfg["icon_scene_render_icons"] = "off"
+            except:
+                pass
 
         try:
             self.apply_to_config()
@@ -3155,14 +3517,8 @@ class EffectsOverlayEditorDialog(QDialog):
             pass
 
         try:
-            if hasattr(self.widget, "clear_suzhou_flower_meadow_cache"):
-                self.widget.clear_suzhou_flower_meadow_cache()
-        except:
-            pass
-
-        try:
-            if hasattr(self.widget, "clear_puddle_runtime_state") and not bool(getattr(settings, "puddle_enabled", False)):
-                self.widget.clear_puddle_runtime_state()
+            if hasattr(self.widget, "clear_sahara_desert_cache"):
+                self.widget.clear_sahara_desert_cache()
         except:
             pass
 
@@ -4884,6 +5240,322 @@ def choose_canvas_window_flags(canvas):
             Qt.WindowType.Window
         )
 
+
+def _lds_get_class_name(hwnd) -> str:
+    if not is_windows() or not hwnd:
+        return ""
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetClassNameW(ctypes.c_void_p(hwnd), buf, 256)
+        return str(buf.value or "")
+    except:
+        return ""
+
+
+def _lds_workerw_candidates():
+    """Enumerate WorkerW HWNDs with metadata for manual selection."""
+    if not is_windows():
+        return []
+    try:
+        user32 = ctypes.windll.user32
+        FindWindowExW = user32.FindWindowExW
+        FindWindowExW.restype = ctypes.c_void_p
+        GetClassNameW = user32.GetClassNameW
+        GetWindowRect = user32.GetWindowRect
+        IsWindowVisible = user32.IsWindowVisible
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        _lds_prepare_workerw()
+
+        items = []
+        EnumWindowsProc = ctypes.WINFUNCTYPE(
+            ctypes.c_bool,
+            ctypes.c_void_p,
+            ctypes.c_void_p
+        )
+
+        def enum_proc(hwnd, lparam):
+            try:
+                buf = ctypes.create_unicode_buffer(256)
+                GetClassNameW(ctypes.c_void_p(hwnd), buf, 256)
+
+                if buf.value == "WorkerW":
+                    shell = FindWindowExW(hwnd, 0, "SHELLDLL_DefView", None)
+
+                    rc = RECT()
+                    try:
+                        GetWindowRect(ctypes.c_void_p(hwnd), ctypes.byref(rc))
+                    except:
+                        rc.left = rc.top = rc.right = rc.bottom = 0
+
+                    width = int(rc.right - rc.left)
+                    height = int(rc.bottom - rc.top)
+
+                    items.append({
+                        "hwnd": int(hwnd),
+                        "hex": hex(int(hwnd)),
+                        "has_defview": bool(shell),
+                        "visible": bool(IsWindowVisible(ctypes.c_void_p(hwnd))),
+                        "rect": (
+                            int(rc.left),
+                            int(rc.top),
+                            int(rc.right),
+                            int(rc.bottom),
+                        ),
+                        "area": max(0, width) * max(0, height),
+                    })
+            except:
+                pass
+
+            return True
+
+        try:
+            user32.EnumWindows(EnumWindowsProc(enum_proc), 0)
+        except:
+            pass
+
+        return items
+    except:
+        return []
+
+def _lds_select_workerw_candidate():
+    """Select WorkerW only from explicit environment variables.
+
+    Environment variables:
+      LITEDESKTOPSTUDIO_EFFECTS_WORKERW_INDEX=0
+      LITEDESKTOPSTUDIO_EFFECTS_WORKERW_HWND=0x730568
+
+    If neither is set, only print candidates and return 0.
+    This prevents accidentally covering desktop icons.
+    """
+    items = _lds_workerw_candidates()
+
+    try:
+        print(
+            "[LiteDesktopStudio] WorkerW candidates:",
+            [
+                (
+                    f"{i}:{it['hex']} "
+                    f"visible={it['visible']} "
+                    f"defview={it['has_defview']} "
+                    f"rect={it['rect']} "
+                    f"area={it['area']}"
+                )
+                for i, it in enumerate(items)
+            ]
+        )
+    except:
+        pass
+
+    if not items:
+        return 0
+
+    try:
+        forced_hwnd = str(
+            os.environ.get("LITEDESKTOPSTUDIO_EFFECTS_WORKERW_HWND", "")
+        ).strip()
+    except:
+        forced_hwnd = ""
+
+    if forced_hwnd:
+        try:
+            wanted = (
+                int(forced_hwnd, 16)
+                if forced_hwnd.lower().startswith("0x")
+                else int(forced_hwnd)
+            )
+
+            for it in items:
+                if int(it.get("hwnd", 0)) == wanted:
+                    return wanted
+
+            print("[LiteDesktopStudio] Requested WorkerW HWND not found:", forced_hwnd)
+            return 0
+        except Exception as e:
+            print(
+                "[LiteDesktopStudio] Invalid LITEDESKTOPSTUDIO_EFFECTS_WORKERW_HWND:",
+                repr(e)
+            )
+            return 0
+
+    try:
+        forced_index = str(
+            os.environ.get("LITEDESKTOPSTUDIO_EFFECTS_WORKERW_INDEX", "")
+        ).strip()
+    except:
+        forced_index = ""
+
+    if forced_index != "":
+        try:
+            idx = int(forced_index)
+
+            if 0 <= idx < len(items):
+                return int(items[idx]["hwnd"])
+
+            print(
+                "[LiteDesktopStudio] WorkerW index out of range:",
+                idx,
+                "count=",
+                len(items)
+            )
+            return 0
+        except Exception as e:
+            print(
+                "[LiteDesktopStudio] Invalid LITEDESKTOPSTUDIO_EFFECTS_WORKERW_INDEX:",
+                repr(e)
+            )
+            return 0
+
+    print(
+        "[LiteDesktopStudio] No WorkerW selected. "
+        "Set LITEDESKTOPSTUDIO_EFFECTS_WORKERW_INDEX "
+        "or LITEDESKTOPSTUDIO_EFFECTS_WORKERW_HWND."
+    )
+    return 0
+
+def attach_background_effects_to_desktop_host(widget, prefer: str = "workerw") -> bool:
+    """Attach EffectsOverlay background as a native child of a selected WorkerW."""
+    if not is_windows():
+        return False
+
+    try:
+        workerw = _lds_select_workerw_candidate()
+
+        if not workerw:
+            return False
+
+        user32 = ctypes.windll.user32
+        hwnd = int(widget.winId())
+
+        screen = QApplication.primaryScreen().geometry()
+        width = max(1, int(screen.width()))
+        height = max(1, int(screen.height()))
+
+        GWL_STYLE = -16
+        GWL_EXSTYLE = -20
+
+        WS_CHILD = 0x40000000
+        WS_POPUP = 0x80000000
+        WS_VISIBLE = 0x10000000
+        WS_CLIPSIBLINGS = 0x04000000
+        WS_CLIPCHILDREN = 0x02000000
+
+        WS_EX_TOOLWINDOW = 0x00000080
+        WS_EX_APPWINDOW = 0x00040000
+        WS_EX_NOACTIVATE = 0x08000000
+
+        SW_SHOW = 5
+
+        SWP_NOACTIVATE = 0x0010
+        SWP_FRAMECHANGED = 0x0020
+        SWP_SHOWWINDOW = 0x0040
+
+        HWND_TOP = 0
+
+        if hasattr(user32, "GetWindowLongPtrW"):
+            get_long = user32.GetWindowLongPtrW
+            set_long = user32.SetWindowLongPtrW
+        else:
+            get_long = user32.GetWindowLongW
+            set_long = user32.SetWindowLongW
+
+        get_long.restype = ctypes.c_longlong
+
+        user32.SetParent(
+            ctypes.c_void_p(hwnd),
+            ctypes.c_void_p(workerw)
+        )
+
+        try:
+            style = int(get_long(ctypes.c_void_p(hwnd), GWL_STYLE))
+            style = (
+                style
+                | WS_CHILD
+                | WS_VISIBLE
+                | WS_CLIPSIBLINGS
+                | WS_CLIPCHILDREN
+            ) & ~WS_POPUP
+
+            set_long(
+                ctypes.c_void_p(hwnd),
+                GWL_STYLE,
+                ctypes.c_void_p(style)
+            )
+        except:
+            pass
+
+        try:
+            ex = int(get_long(ctypes.c_void_p(hwnd), GWL_EXSTYLE))
+            ex = (
+                ex
+                | WS_EX_TOOLWINDOW
+                | WS_EX_NOACTIVATE
+            ) & ~WS_EX_APPWINDOW
+
+            set_long(
+                ctypes.c_void_p(hwnd),
+                GWL_EXSTYLE,
+                ctypes.c_void_p(ex)
+            )
+        except:
+            pass
+
+        try:
+            user32.ShowWindow(ctypes.c_void_p(hwnd), SW_SHOW)
+        except:
+            pass
+
+        user32.SetWindowPos(
+            ctypes.c_void_p(hwnd),
+            ctypes.c_void_p(HWND_TOP),
+            0,
+            0,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+        )
+
+        try:
+            widget.resize(width, height)
+            widget.move(0, 0)
+            widget.show()
+            widget.update()
+        except:
+            pass
+
+        try:
+            widget._lds_desktop_host = int(workerw)
+            widget._lds_desktop_host_kind = "workerw-selected"
+            widget._lds_desktop_host_attached = True
+
+            print(
+                "[LiteDesktopStudio] Native background effects hosted by selected WorkerW",
+                hex(int(workerw)),
+                "hwnd=",
+                hex(int(hwnd))
+            )
+        except:
+            pass
+
+        return True
+
+    except Exception as exc:
+        try:
+            print(
+                "[LiteDesktopStudio] attach_background_effects_to_desktop_host failed:",
+                repr(exc)
+            )
+        except:
+            pass
+        return False
+
 def is_windows_only_desktop_overlay_supported():
     return is_windows()
 
@@ -5988,9 +6660,17 @@ class EffectsOverlayWidget(BaseWidget):
         self._scenic_engine_cache = {}
         self._scenic_engine_cache_order = []
         self._scenic_engine_cache_limit = 8
-        self._suzhou_flower_meadow_cache = {}
-        self._suzhou_flower_meadow_cache_order = []
-        self._suzhou_flower_meadow_cache_limit = 4
+        self._desktop_icon_rect_cache = []
+        self._desktop_icon_rect_cache_at = 0.0
+        self._desktop_icon_rect_cache_key = None
+        self._desktop_listview_hwnd_cache = 0
+        self._desktop_listview_hwnd_cache_at = 0.0
+        self._sahara_desert_cache = {}
+        self._sahara_desert_cache_order = []
+        self._sahara_desert_cache_limit = 10
+        self._sahara_dry_grass = []
+        self._sahara_dry_grass_rect_key = None
+        self._last_sahara_dry_grass_update = 0.0
         self._vector_image_cache = {}
         self._vector_image_cache_order = []
         self._vector_image_cache_limit = 96
@@ -6094,6 +6774,448 @@ class EffectsOverlayWidget(BaseWidget):
             except TypeError:
                 draw_func(p, r, settings)
 
+    def clear_sahara_desert_cache(self):
+        try:
+            self._sahara_desert_cache.clear()
+            self._sahara_desert_cache_order.clear()
+        except:
+            self._sahara_desert_cache = {}
+            self._sahara_desert_cache_order = []
+        try:
+            self._sahara_dry_grass.clear()
+            self._sahara_dry_grass_rect_key = None
+            self._last_sahara_dry_grass_update = 0.0
+        except:
+            self._sahara_dry_grass = []
+
+    def _sahara_cache_put(self, key, image: QImage):
+        try:
+            cache = getattr(self, "_sahara_desert_cache", None)
+            order = getattr(self, "_sahara_desert_cache_order", None)
+            if cache is None:
+                self._sahara_desert_cache = {}
+                cache = self._sahara_desert_cache
+            if order is None:
+                self._sahara_desert_cache_order = []
+                order = self._sahara_desert_cache_order
+            if key not in cache:
+                order.append(key)
+            cache[key] = image
+            limit = max(2, int(getattr(self, "_sahara_desert_cache_limit", 10)))
+            while len(order) > limit:
+                cache.pop(order.pop(0), None)
+        except:
+            pass
+        return image
+
+    def _draw_sahara_desert_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        try:
+            if not self._scenic_engine_flag("sahara_desert_engine_enabled", False):
+                return
+            w = int(max(1, r.width()))
+            h = int(max(1, r.height()))
+            sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
+            key = ("sahara_desert_static_no_cactus_v3", w, h, sig)
+            cache = getattr(self, "_sahara_desert_cache", {})
+            img = cache.get(key)
+            if img is None or img.isNull():
+                img = self._render_sahara_desert_static(w, h)
+                self._sahara_cache_put(key, img)
+            p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+            self._ensure_sahara_dry_grass(r, now)
+            self._update_sahara_dry_grass(r, now)
+            self._draw_sahara_dry_grass(p, r, now)
+        except:
+            pass
+
+    def _render_sahara_desert_static(self, w: int, h: int) -> QImage:
+        img = QImage(max(1, w), max(1, h), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            rnd = random.Random((w * 104729) ^ (h * 13007) ^ 0x5A484152)
+            horizon = h * 0.44
+            sky = QLinearGradient(QPointF(0, 0), QPointF(0, horizon))
+            sky.setColorAt(0.0, QColor("#5EA7E8"))
+            sky.setColorAt(0.48, QColor("#BBDFFF"))
+            sky.setColorAt(0.82, QColor("#FFE2A6"))
+            sky.setColorAt(1.0, QColor("#F9C27B"))
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(sky)); q.drawRect(QRectF(0, 0, w, horizon + 2))
+
+            sun_x = w * 0.78; sun_y = h * 0.17; sun_r = max(42.0, min(w, h) * 0.105)
+            sun_grad = QRadialGradient(QPointF(sun_x, sun_y), sun_r * 3.0)
+            sun_grad.setColorAt(0.0, QColor(255, 255, 225, 238))
+            sun_grad.setColorAt(0.16, QColor(255, 235, 145, 170))
+            sun_grad.setColorAt(0.52, QColor(255, 192, 85, 54))
+            sun_grad.setColorAt(1.0, QColor(255, 180, 80, 0))
+            q.setBrush(QBrush(sun_grad)); q.setPen(Qt.PenStyle.NoPen)
+            q.drawEllipse(QRectF(sun_x - sun_r * 3.0, sun_y - sun_r * 3.0, sun_r * 6.0, sun_r * 6.0))
+            q.setBrush(QBrush(QColor(255, 246, 196, 235)))
+            q.drawEllipse(QRectF(sun_x - sun_r, sun_y - sun_r, sun_r * 2.0, sun_r * 2.0))
+            for i in range(14):
+                angle = -0.65 + i * 0.10
+                ray = QPainterPath(); ray.moveTo(sun_x, sun_y)
+                ray.lineTo(sun_x + math.cos(angle) * w * 1.2, sun_y + math.sin(angle) * h * 1.8)
+                ray.lineTo(sun_x + math.cos(angle + 0.045) * w * 1.2, sun_y + math.sin(angle + 0.045) * h * 1.8)
+                ray.closeSubpath(); q.setBrush(QBrush(QColor(255, 229, 150, 16))); q.setPen(Qt.PenStyle.NoPen); q.drawPath(ray)
+
+            for i in range(16):
+                y = horizon + i * h * 0.012
+                c = QColor("#FFF2C8"); c.setAlpha(24 - min(20, i))
+                q.setPen(QPen(c, 1.0))
+                q.drawLine(QPointF(w * rnd.uniform(-0.05, 0.12), y), QPointF(w * rnd.uniform(0.80, 1.08), y + rnd.uniform(-1.0, 1.0)))
+
+            sand = QLinearGradient(QPointF(0, horizon), QPointF(0, h))
+            sand.setColorAt(0.0, QColor("#E5A85D")); sand.setColorAt(0.45, QColor("#D58C3F")); sand.setColorAt(1.0, QColor("#8B4E25"))
+            q.setBrush(QBrush(sand)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(0, horizon, w, h - horizon))
+            dune_sets = [(0.50, "#F1BE76", "#C77B36", 0.14), (0.60, "#E6A65A", "#B96C31", 0.20), (0.73, "#D68A3F", "#8F4C25", 0.30), (0.88, "#B76632", "#5B2E18", 0.40)]
+            for idx, (base, hi_col, sh_col, amp) in enumerate(dune_sets):
+                path = QPainterPath(); path.moveTo(0, h); y0 = h * base; path.lineTo(0, y0)
+                for s in range(8):
+                    x = w * s / 7
+                    y = y0 + math.sin(s * 1.25 + idx * 0.8) * h * amp * 0.13 + math.cos(s * 0.53 + idx) * h * amp * 0.06
+                    path.lineTo(x, y)
+                path.lineTo(w, h); path.closeSubpath()
+                grad = QLinearGradient(QPointF(0, y0), QPointF(0, h)); grad.setColorAt(0.0, QColor(hi_col)); grad.setColorAt(1.0, QColor(sh_col))
+                q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(grad)); q.drawPath(path)
+                q.setPen(QPen(QColor(255, 219, 155, 45), 1.0))
+                for line in range(5):
+                    yy = y0 + h * (0.025 + line * 0.036 + idx * 0.01)
+                    q.drawLine(QPointF(w * 0.04, yy), QPointF(w * 0.96, yy + math.sin(line + idx) * 2.0))
+
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            for i in range(max(120, int(w * h / 9000))):
+                x = rnd.random() * w; y = rnd.uniform(h * 0.50, h * 0.98)
+                c = QColor("#FFE0A0"); c.setAlpha(rnd.randint(12, 45)); q.setPen(QPen(c, 1.0)); q.drawPoint(QPointF(x, y))
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            self._draw_sahara_dry_tufts_static(q, w, h, rnd)
+
+            vignette = QRadialGradient(QPointF(w * 0.50, h * 0.48), max(w, h) * 0.76)
+            vignette.setColorAt(0.0, QColor(255, 220, 130, 0)); vignette.setColorAt(0.68, QColor(255, 150, 55, 18)); vignette.setColorAt(1.0, QColor(54, 23, 5, 92))
+            q.setBrush(QBrush(vignette)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(0, 0, w, h))
+        finally:
+            q.end()
+        return img
+
+    def _draw_sahara_dry_tufts_static(self, q: QPainter, w: int, h: int, rnd):
+        # Grounded dry grass tufts only; no cactus. These are static low-cost accents.
+        for i in range(max(12, int(w / 95))):
+            x = rnd.uniform(w * 0.02, w * 0.98)
+            y = rnd.uniform(h * 0.70, h * 0.96)
+            size = rnd.uniform(8.0, 22.0) * (0.75 + 0.55 * (y / max(1.0, h)))
+            q.setPen(QPen(QColor(112, 74, 33, 130), max(0.8, size * 0.045)))
+            for k in range(7):
+                a = -math.pi * 0.92 + k * math.pi * 0.30 + rnd.uniform(-0.10, 0.10)
+                length = size * rnd.uniform(0.45, 1.05)
+                q.drawLine(QPointF(x, y), QPointF(x + math.cos(a) * length, y - abs(math.sin(a)) * length))
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(QColor(50, 28, 8, 38)))
+            q.drawEllipse(QRectF(x - size * 0.38, y - size * 0.03, size * 0.76, size * 0.12))
+
+    def _ensure_sahara_dry_grass(self, r: QRectF, now: float):
+        key = (int(r.width()), int(r.height()))
+        if getattr(self, "_sahara_dry_grass_rect_key", None) == key and getattr(self, "_sahara_dry_grass", None):
+            return
+        rnd = random.Random((key[0] * 911) ^ (key[1] * 3571) ^ 0xD647)
+        self._sahara_dry_grass_rect_key = key
+        self._last_sahara_dry_grass_update = now
+        self._sahara_dry_grass = []
+        count = max(4, min(9, int(max(1, r.width()) / 210)))
+        for i in range(count):
+            size = rnd.uniform(18.0, 42.0)
+            y = r.top() + r.height() * rnd.uniform(0.68, 0.93)
+            self._sahara_dry_grass.append({
+                "x": r.left() + rnd.uniform(-r.width() * 0.25, r.width() * 0.95),
+                "y": y,
+                "base_y": y,
+                "size": size,
+                "speed": rnd.uniform(7.0, 18.0),
+                "rot": rnd.uniform(0.0, 360.0),
+                "spin": rnd.uniform(8.0, 22.0),
+                "phase": rnd.uniform(0.0, math.tau),
+            })
+
+    def _update_sahara_dry_grass(self, r: QRectF, now: float):
+        last = float(getattr(self, "_last_sahara_dry_grass_update", now) or now)
+        dt = max(0.0, min(0.05, now - last))
+        self._last_sahara_dry_grass_update = now
+        if dt <= 0:
+            return
+        for item in getattr(self, "_sahara_dry_grass", []):
+            size = float(item.get("size", 24.0))
+            item["x"] = float(item.get("x", r.left())) + float(item.get("speed", 12.0)) * dt
+            item["rot"] = (float(item.get("rot", 0.0)) + float(item.get("spin", 12.0)) * dt) % 360.0
+            item["y"] = float(item.get("base_y", r.top() + r.height() * 0.8)) + math.sin(now * 0.55 + float(item.get("phase", 0.0))) * size * 0.12
+            if item["x"] > r.right() + size * 2.0:
+                item["x"] = r.left() - size * 2.0
+                item["base_y"] = r.top() + r.height() * (0.68 + 0.25 * ((float(item.get("phase", 0.0)) * 1.37) % 1.0))
+
+    def _sahara_dry_grass_sprite(self, size_bucket: int) -> QImage:
+        size_bucket = max(12, min(64, int(size_bucket)))
+        key = ("sahara_dry_grass_sprite_v1", size_bucket)
+        cache = getattr(self, "_sahara_desert_cache", {})
+        img = cache.get(key)
+        if img is not None and not img.isNull():
+            return img
+        side = int(size_bucket * 2.4 + 8)
+        img = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            q.translate(side * 0.5, side * 0.5)
+            rnd = random.Random(size_bucket * 733 + 19)
+            for ring in range(3):
+                alpha = 118 - ring * 24
+                pen = QPen(QColor(138, 91, 38, alpha), max(0.8, size_bucket * (0.026 + ring * 0.006)))
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                q.setPen(pen)
+                strands = 18 - ring * 3
+                for i in range(strands):
+                    a = math.tau * i / strands + rnd.uniform(-0.18, 0.18)
+                    r0 = size_bucket * rnd.uniform(0.08, 0.23)
+                    r1 = size_bucket * rnd.uniform(0.36, 0.72)
+                    x0 = math.cos(a) * r0; y0 = math.sin(a) * r0
+                    x1 = math.cos(a + rnd.uniform(-0.30, 0.30)) * r1; y1 = math.sin(a + rnd.uniform(-0.30, 0.30)) * r1
+                    q.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+            q.setPen(Qt.PenStyle.NoPen)
+            q.setBrush(QBrush(QColor(185, 132, 65, 34)))
+            q.drawEllipse(QRectF(-size_bucket * 0.36, -size_bucket * 0.22, size_bucket * 0.72, size_bucket * 0.44))
+        finally:
+            q.end()
+        self._sahara_cache_put(key, img)
+        return img
+
+    def _draw_sahara_dry_grass(self, p: QPainter, r: QRectF, now: float):
+        try:
+            for item in getattr(self, "_sahara_dry_grass", []):
+                size = float(item.get("size", 24.0))
+                sprite = self._sahara_dry_grass_sprite(int(size))
+                x = float(item.get("x", 0.0)); y = float(item.get("y", 0.0))
+                p.save()
+                p.translate(x, y)
+                p.rotate(float(item.get("rot", 0.0)))
+                scale_y = 0.78 + 0.08 * math.sin(now * 0.4 + float(item.get("phase", 0.0)))
+                p.scale(1.0, scale_y)
+                p.drawImage(QRectF(-sprite.width() * 0.5, -sprite.height() * 0.5, sprite.width(), sprite.height()), sprite)
+                p.restore()
+        except:
+            try:
+                p.restore()
+            except:
+                pass
+
+    def _desktop_ui_aware_config(self):
+        try:
+            ensure_effect_overlay_fields(self.cfg)
+            data = json.loads(getattr(self.cfg, "effects_json", "{}") or "{}")
+            if not isinstance(data, dict) or not bool(data.get("desktop_ui_aware_rendering_enabled", False)):
+                return None
+            return {
+                "padding": max(0, min(96, int(data.get("desktop_ui_mask_padding", 24)))),
+                "blur": max(0, min(128, int(data.get("desktop_ui_mask_blur", 37)))),
+                "remaining_alpha": max(0.02, min(0.35, float(data.get("desktop_ui_icon_remaining_alpha", 0.12)))),
+                "refresh_sec": max(0.2, min(10.0, float(data.get("desktop_ui_mask_refresh_sec", 1.0)))),
+                "fallback_strip": bool(data.get("desktop_ui_fallback_strip_enabled", True)),
+                "fallback_width_ratio": max(0.06, min(0.45, float(data.get("desktop_ui_fallback_width_ratio", 0.22)))),
+            }
+        except:
+            return None
+
+    def _find_desktop_listview_hwnd(self):
+        if sys.platform != "win32":
+            return 0
+        now = time.time()
+        try:
+            if getattr(self, "_desktop_listview_hwnd_cache", 0) and now - float(getattr(self, "_desktop_listview_hwnd_cache_at", 0.0)) < 5.0:
+                return int(self._desktop_listview_hwnd_cache)
+        except:
+            pass
+        try:
+            user32 = ctypes.windll.user32
+            FindWindowW = user32.FindWindowW
+            FindWindowExW = user32.FindWindowExW
+            FindWindowW.restype = ctypes.c_void_p
+            FindWindowExW.restype = ctypes.c_void_p
+            progman = FindWindowW("Progman", None)
+            defview = FindWindowExW(progman, 0, "SHELLDLL_DefView", None) if progman else 0
+            if not defview:
+                found = {"defview": 0}
+                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+                def enum_proc(hwnd, lparam):
+                    child = FindWindowExW(hwnd, 0, "SHELLDLL_DefView", None)
+                    if child:
+                        found["defview"] = child
+                        return False
+                    return True
+                try:
+                    user32.EnumWindows(EnumWindowsProc(enum_proc), 0)
+                except:
+                    pass
+                defview = found.get("defview", 0)
+            listview = FindWindowExW(defview, 0, "SysListView32", "FolderView") if defview else 0
+            if not listview and defview:
+                listview = FindWindowExW(defview, 0, "SysListView32", None)
+            self._desktop_listview_hwnd_cache = int(listview or 0)
+            self._desktop_listview_hwnd_cache_at = now
+            return int(listview or 0)
+        except:
+            return 0
+
+    def _query_desktop_icon_rects_win32(self, r: QRectF):
+        hwnd = self._find_desktop_listview_hwnd()
+        if not hwnd:
+            return []
+        try:
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            LVM_FIRST = 0x1000
+            LVM_GETITEMCOUNT = LVM_FIRST + 4
+            LVM_GETITEMRECT = LVM_FIRST + 14
+            LVIR_BOUNDS = 0
+            PROCESS_QUERY_INFORMATION = 0x0400
+            PROCESS_VM_OPERATION = 0x0008
+            PROCESS_VM_READ = 0x0010
+            PROCESS_VM_WRITE = 0x0020
+            MEM_COMMIT = 0x1000
+            MEM_RESERVE = 0x2000
+            MEM_RELEASE = 0x8000
+            PAGE_READWRITE = 0x04
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+            class POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+            user32.SendMessageW.restype = ctypes.c_void_p
+            user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+            count = int(user32.SendMessageW(ctypes.c_void_p(hwnd), LVM_GETITEMCOUNT, 0, 0) or 0)
+            if count <= 0 or count > 4096:
+                return []
+            pid = wintypes.DWORD(0)
+            user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+            if not pid.value:
+                return []
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            hproc = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, False, pid.value)
+            if not hproc:
+                return []
+            remote = None
+            rects = []
+            try:
+                kernel32.VirtualAllocEx.restype = ctypes.c_void_p
+                remote = kernel32.VirtualAllocEx(ctypes.c_void_p(hproc), None, ctypes.sizeof(RECT), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+                if not remote:
+                    return []
+                origin = self.mapToGlobal(QPoint(0, 0)) if hasattr(self, "mapToGlobal") else QPoint(0, 0)
+                for i in range(count):
+                    rc = RECT(LVIR_BOUNDS, 0, 0, 0)
+                    written = ctypes.c_size_t(0)
+                    if not kernel32.WriteProcessMemory(ctypes.c_void_p(hproc), ctypes.c_void_p(remote), ctypes.byref(rc), ctypes.sizeof(rc), ctypes.byref(written)):
+                        continue
+                    ok = user32.SendMessageW(ctypes.c_void_p(hwnd), LVM_GETITEMRECT, ctypes.c_void_p(i), ctypes.c_void_p(remote))
+                    if not ok:
+                        continue
+                    out_rc = RECT()
+                    read = ctypes.c_size_t(0)
+                    if not kernel32.ReadProcessMemory(ctypes.c_void_p(hproc), ctypes.c_void_p(remote), ctypes.byref(out_rc), ctypes.sizeof(out_rc), ctypes.byref(read)):
+                        continue
+                    p1 = POINT(out_rc.left, out_rc.top)
+                    p2 = POINT(out_rc.right, out_rc.bottom)
+                    user32.ClientToScreen(ctypes.c_void_p(hwnd), ctypes.byref(p1))
+                    user32.ClientToScreen(ctypes.c_void_p(hwnd), ctypes.byref(p2))
+                    lx1 = float(p1.x - origin.x())
+                    ly1 = float(p1.y - origin.y())
+                    lx2 = float(p2.x - origin.x())
+                    ly2 = float(p2.y - origin.y())
+                    rr = QRectF(min(lx1, lx2), min(ly1, ly2), abs(lx2 - lx1), abs(ly2 - ly1))
+                    if rr.width() > 4 and rr.height() > 4 and rr.intersects(r):
+                        rects.append(rr)
+            finally:
+                try:
+                    if remote:
+                        kernel32.VirtualFreeEx(ctypes.c_void_p(hproc), ctypes.c_void_p(remote), 0, MEM_RELEASE)
+                except:
+                    pass
+                try:
+                    kernel32.CloseHandle(ctypes.c_void_p(hproc))
+                except:
+                    pass
+            return rects
+        except:
+            return []
+
+    def _desktop_icon_rects_ui_aware(self, r: QRectF, cfg: dict, now: float):
+        try:
+            key = (int(r.width()), int(r.height()), int(r.left()), int(r.top()))
+            if getattr(self, "_desktop_icon_rect_cache_key", None) == key and now - float(getattr(self, "_desktop_icon_rect_cache_at", 0.0)) < float(cfg.get("refresh_sec", 1.0)):
+                return list(getattr(self, "_desktop_icon_rect_cache", []) or [])
+            rects = self._query_desktop_icon_rects_win32(r)
+            self._desktop_icon_rect_cache = rects
+            self._desktop_icon_rect_cache_key = key
+            self._desktop_icon_rect_cache_at = now
+            return list(rects or [])
+        except:
+            return []
+
+    def _soft_density_mask_path(self, p: QPainter, outer: QRectF, inner: QRectF, alpha: int, radius: float):
+        try:
+            if alpha <= 0:
+                return
+            op = QPainterPath()
+            ip = QPainterPath()
+            op.addRoundedRect(outer, radius, radius)
+            ip.addRoundedRect(inner, max(1.0, radius * 0.65), max(1.0, radius * 0.65))
+            ring = op.subtracted(ip)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(0, 0, 0, max(0, min(255, int(alpha))))))
+            p.drawPath(ring)
+        except:
+            pass
+
+    def _apply_desktop_ui_aware_icon_mask(self, p: QPainter, r: QRectF, now: float):
+        cfg = self._desktop_ui_aware_config()
+        if cfg is None:
+            return
+        try:
+            rects = self._desktop_icon_rects_ui_aware(r, cfg, now)
+            p.save()
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            pad = float(cfg.get("padding", 20))
+            blur = float(cfg.get("blur", 28))
+            remaining = max(0.02, min(0.35, float(cfg.get("remaining_alpha", 0.12))))
+            core_alpha = int(255 * (1.0 - remaining))
+            if rects:
+                steps = 8
+                for rr in rects:
+                    core = QRectF(rr.left() - pad, rr.top() - pad, rr.width() + 2 * pad, rr.height() + 2 * pad)
+                    prev = QRectF(core)
+                    for step in range(1, steps + 1):
+                        t = step / float(steps)
+                        grow = blur * t
+                        outer = QRectF(core.left() - grow, core.top() - grow, core.width() + 2 * grow, core.height() + 2 * grow)
+                        a = int(core_alpha * 0.16 * (t ** 1.8))
+                        self._soft_density_mask_path(p, outer, prev, a, max(6.0, blur * 0.55))
+                        prev = outer
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.setBrush(QBrush(QColor(0, 0, 0, core_alpha)))
+                    p.drawRoundedRect(core, max(6.0, blur * 0.45), max(6.0, blur * 0.45))
+            elif bool(cfg.get("fallback_strip", True)):
+                width = r.width() * float(cfg.get("fallback_width_ratio", 0.22))
+                soft_w = max(1.0, width * 0.20)
+                strip_alpha = core_alpha
+                p.fillRect(QRectF(r.left(), r.top(), width, r.height()), QColor(0, 0, 0, strip_alpha))
+                grad = QLinearGradient(QPointF(r.left() + width, 0), QPointF(r.left() + width + soft_w, 0))
+                grad.setColorAt(0.0, QColor(0, 0, 0, strip_alpha))
+                grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+                p.fillRect(QRectF(r.left() + width, r.top(), soft_w, r.height()), QBrush(grad))
+            p.restore()
+        except:
+            try:
+                p.restore()
+            except:
+                pass
+
     def _scenic_engine_flag(self, key: str, default: bool = False) -> bool:
         try:
             ensure_effect_overlay_fields(self.cfg)
@@ -6117,23 +7239,28 @@ class EffectsOverlayWidget(BaseWidget):
             cache = getattr(self, "_scenic_engine_cache", None)
             order = getattr(self, "_scenic_engine_cache_order", None)
             if cache is None:
-                self._scenic_engine_cache = {}; cache = self._scenic_engine_cache
+                self._scenic_engine_cache = {}
+                cache = self._scenic_engine_cache
             if order is None:
-                self._scenic_engine_cache_order = []; order = self._scenic_engine_cache_order
+                self._scenic_engine_cache_order = []
+                order = self._scenic_engine_cache_order
             if key not in cache:
                 order.append(key)
             cache[key] = image
-            while len(order) > max(2, int(getattr(self, "_scenic_engine_cache_limit", 8))):
-                cache.pop(order.pop(0), None)
+            limit = max(2, int(getattr(self, "_scenic_engine_cache_limit", 8)))
+            while len(order) > limit:
+                old = order.pop(0)
+                cache.pop(old, None)
         except:
             pass
         return image
 
     def _draw_uyuni_salt_flat_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         try:
-            w = int(max(1, r.width())); h = int(max(1, r.height()))
+            w = int(max(1, r.width()))
+            h = int(max(1, r.height()))
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("uyuni_static_v4", w, h, sig)
+            key = ("uyuni_static_v3", w, h, sig)
             cache = getattr(self, "_scenic_engine_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
@@ -6151,7 +7278,9 @@ class EffectsOverlayWidget(BaseWidget):
             q.setRenderHint(QPainter.RenderHint.Antialiasing, False)
             horizon = h * 0.50
             sky = QLinearGradient(QPointF(0, 0), QPointF(0, horizon))
-            sky.setColorAt(0.0, QColor("#CDEBFF")); sky.setColorAt(0.55, QColor("#F4FCFF")); sky.setColorAt(1.0, QColor("#FFFFFF"))
+            sky.setColorAt(0.0, QColor("#CDEBFF"))
+            sky.setColorAt(0.55, QColor("#F4FCFF"))
+            sky.setColorAt(1.0, QColor("#FFFFFF"))
             q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(sky)); q.drawRect(QRectF(0, 0, w, horizon + 1))
             water = QLinearGradient(QPointF(0, horizon), QPointF(0, h))
             c0 = QColor("#FFFFFF"); c0.setAlpha(238)
@@ -6161,26 +7290,37 @@ class EffectsOverlayWidget(BaseWidget):
             q.setBrush(QBrush(water)); q.drawRect(QRectF(0, horizon, w, h - horizon))
             rnd = random.Random((w * 1009) ^ (h * 9176) ^ 0x5551)
             for band in range(10):
-                y = horizon * rnd.uniform(0.10, 0.73); x = rnd.uniform(-w * 0.1, w * 0.88)
-                ww = rnd.uniform(w * 0.18, w * 0.45); hh = rnd.uniform(3.0, 10.0)
-                col = QColor("#FFFFFF"); col.setAlpha(rnd.randint(42, 78)); q.setBrush(QBrush(col)); q.setPen(Qt.PenStyle.NoPen)
+                y = horizon * rnd.uniform(0.10, 0.73)
+                x = rnd.uniform(-w * 0.1, w * 0.88)
+                ww = rnd.uniform(w * 0.18, w * 0.45)
+                hh = rnd.uniform(3.0, 10.0)
+                col = QColor("#FFFFFF"); col.setAlpha(rnd.randint(42, 78))
+                q.setBrush(QBrush(col)); q.setPen(Qt.PenStyle.NoPen)
                 q.drawRoundedRect(QRectF(x, y, ww, hh), hh, hh)
-                ref = QColor("#FFFFFF"); ref.setAlpha(max(18, col.alpha() - 22)); q.setBrush(QBrush(ref))
+                ref = QColor("#FFFFFF"); ref.setAlpha(max(18, col.alpha() - 22))
+                q.setBrush(QBrush(ref))
                 q.drawRoundedRect(QRectF(x, horizon + (horizon - y) * 0.84, ww, max(1.0, hh * 0.55)), hh, hh)
-            hc = QColor("#E6F8FF"); hc.setAlpha(190); q.setPen(QPen(hc, 1.0)); q.drawLine(QPointF(0, horizon), QPointF(w, horizon))
+            hc = QColor("#E6F8FF"); hc.setAlpha(190)
+            q.setPen(QPen(hc, 1.0)); q.drawLine(QPointF(0, horizon), QPointF(w, horizon))
             for i in range(38):
                 y = horizon + (i / 38.0) ** 1.65 * (h - horizon) * 0.92
-                col = QColor("#FFFFFF"); col.setAlpha(max(8, int(38 * (1.0 - i / 46.0))))
-                q.setPen(QPen(col, 1.0)); margin = w * (0.04 + 0.08 * math.sin(i * 1.73))
+                alpha = int(38 * (1.0 - i / 46.0))
+                col = QColor("#FFFFFF"); col.setAlpha(max(8, alpha))
+                q.setPen(QPen(col, 1.0))
+                margin = w * (0.04 + 0.08 * math.sin(i * 1.73))
                 q.drawLine(QPointF(margin, y), QPointF(w - margin, y + math.sin(i) * 0.8))
-            salt = QColor("#FFFFFF"); salt.setAlpha(48); q.setPen(QPen(salt, 1.0)); q.setBrush(Qt.BrushStyle.NoBrush)
-            cell = max(24, int(w / 32)); y0 = int(h * 0.76)
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            salt = QColor("#FFFFFF"); salt.setAlpha(48)
+            q.setPen(QPen(salt, 1.0)); q.setBrush(Qt.BrushStyle.NoBrush)
+            cell = max(24, int(w / 32))
+            y0 = int(h * 0.76)
             for yy in range(y0, h + cell, cell):
                 for xx in range(-cell, w + cell, cell):
                     if (xx // cell + yy // cell) % 3 == 0:
                         q.drawEllipse(QRectF(xx, yy, cell * 1.5, cell * 0.42))
             axis = QLinearGradient(QPointF(w * 0.5, 0), QPointF(w * 0.5, h))
-            a = QColor("#FFFFFF"); a.setAlpha(0); b = QColor("#FFFFFF"); b.setAlpha(38)
+            a = QColor("#FFFFFF"); a.setAlpha(0)
+            b = QColor("#FFFFFF"); b.setAlpha(38)
             axis.setColorAt(0.0, a); axis.setColorAt(0.5, b); axis.setColorAt(1.0, a)
             q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(axis)); q.drawRect(QRectF(w * 0.47, 0, w * 0.06, h))
         finally:
@@ -6189,9 +7329,10 @@ class EffectsOverlayWidget(BaseWidget):
 
     def _draw_antelope_canyon_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         try:
-            w = int(max(1, r.width())); h = int(max(1, r.height()))
+            w = int(max(1, r.width()))
+            h = int(max(1, r.height()))
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("antelope_static_v4", w, h, sig)
+            key = ("antelope_static_v3", w, h, sig)
             cache = getattr(self, "_scenic_engine_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
@@ -6208,155 +7349,103 @@ class EffectsOverlayWidget(BaseWidget):
         try:
             q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             bg = QLinearGradient(QPointF(0, 0), QPointF(0, h))
-            bg.setColorAt(0.0, QColor("#2B1025")); bg.setColorAt(0.34, QColor("#8F3E28")); bg.setColorAt(0.70, QColor("#D98240")); bg.setColorAt(1.0, QColor("#2F130F"))
+            bg.setColorAt(0.0, QColor("#2B1025"))
+            bg.setColorAt(0.34, QColor("#8F3E28"))
+            bg.setColorAt(0.70, QColor("#D98240"))
+            bg.setColorAt(1.0, QColor("#2F130F"))
             q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(bg)); q.drawRect(QRectF(0, 0, w, h))
             palettes = [QColor("#5B241D"), QColor("#8F3927"), QColor("#BD5E2E"), QColor("#E08B48"), QColor("#6E2C4C"), QColor("#F2B36B")]
-            slot = QPainterPath(); slot.moveTo(w * 0.43, 0); slot.cubicTo(w * 0.52, h * 0.22, w * 0.45, h * 0.62, w * 0.55, h); slot.lineTo(w * 0.45, h); slot.cubicTo(w * 0.52, h * 0.62, w * 0.40, h * 0.22, w * 0.58, 0)
-            darkslot = QLinearGradient(QPointF(w * 0.5, 0), QPointF(w * 0.5, h)); darkslot.setColorAt(0.0, QColor(255, 221, 150, 115)); darkslot.setColorAt(0.32, QColor(190, 91, 44, 70)); darkslot.setColorAt(1.0, QColor(24, 7, 10, 150))
+            # Deep central slot first, so side walls can overlap it.
+            slot = QPainterPath()
+            slot.moveTo(w * 0.43, 0)
+            slot.cubicTo(w * 0.52, h * 0.22, w * 0.45, h * 0.62, w * 0.55, h)
+            slot.lineTo(w * 0.45, h)
+            slot.cubicTo(w * 0.52, h * 0.62, w * 0.40, h * 0.22, w * 0.58, 0)
+            darkslot = QLinearGradient(QPointF(w * 0.5, 0), QPointF(w * 0.5, h))
+            darkslot.setColorAt(0.0, QColor(255, 221, 150, 115))
+            darkslot.setColorAt(0.32, QColor(190, 91, 44, 70))
+            darkslot.setColorAt(1.0, QColor(24, 7, 10, 150))
             q.setBrush(QBrush(darkslot)); q.setPen(Qt.PenStyle.NoPen); q.drawPath(slot)
+            # Side walls with alternating highlights and occlusion, stronger than before.
             for side in (0, 1):
                 for layer in range(10):
-                    depth = layer / 9.0; wall_w = w * (0.18 + depth * 0.36); inset = layer * w * 0.014
+                    depth = layer / 9.0
+                    wall_w = w * (0.18 + depth * 0.36)
+                    inset = layer * w * 0.014
                     if side == 0:
-                        x0 = -w * 0.10 + inset; x1 = wall_w; ctrl1 = w * (0.10 + 0.11 * depth); ctrl2 = w * (0.20 + 0.09 * math.sin(layer * 0.8))
+                        x0 = -w * 0.10 + inset
+                        x1 = wall_w
+                        ctrl1 = w * (0.10 + 0.11 * depth)
+                        ctrl2 = w * (0.20 + 0.09 * math.sin(layer * 0.8))
                     else:
-                        x0 = w + w * 0.10 - inset; x1 = w - wall_w; ctrl1 = w * (0.90 - 0.11 * depth); ctrl2 = w * (0.80 + 0.09 * math.sin(layer * 0.8 + 1.7))
+                        x0 = w + w * 0.10 - inset
+                        x1 = w - wall_w
+                        ctrl1 = w * (0.90 - 0.11 * depth)
+                        ctrl2 = w * (0.80 + 0.09 * math.sin(layer * 0.8 + 1.7))
                     path = QPainterPath(); path.moveTo(x0, 0)
                     if side == 0:
-                        path.cubicTo(ctrl1, h * 0.18, ctrl2, h * 0.54, x1, h); path.lineTo(-w * 0.16, h); path.lineTo(-w * 0.16, 0)
+                        path.cubicTo(ctrl1, h * 0.18, ctrl2, h * 0.54, x1, h)
+                        path.lineTo(-w * 0.16, h); path.lineTo(-w * 0.16, 0)
                     else:
-                        path.cubicTo(ctrl1, h * 0.18, ctrl2, h * 0.54, x1, h); path.lineTo(w * 1.16, h); path.lineTo(w * 1.16, 0)
+                        path.cubicTo(ctrl1, h * 0.18, ctrl2, h * 0.54, x1, h)
+                        path.lineTo(w * 1.16, h); path.lineTo(w * 1.16, 0)
                     col = QColor(palettes[(layer + side * 3) % len(palettes)]); col.setAlpha(105 + layer * 12)
-                    grad = QLinearGradient(QPointF(0 if side == 0 else w, h * 0.18), QPointF(w * 0.50, h * 0.72)); rim = QColor("#FFD08A"); rim.setAlpha(42 + layer * 3); sh = QColor(col).darker(160); sh.setAlpha(col.alpha()); mid = QColor(col); mid.setAlpha(col.alpha())
+                    grad = QLinearGradient(QPointF(0 if side == 0 else w, h * 0.18), QPointF(w * 0.50, h * 0.72))
+                    rim = QColor("#FFD08A"); rim.setAlpha(42 + layer * 3)
+                    sh = QColor(col).darker(160); sh.setAlpha(col.alpha())
+                    mid = QColor(col); mid.setAlpha(col.alpha())
                     grad.setColorAt(0.0, sh); grad.setColorAt(0.46, mid); grad.setColorAt(1.0, rim)
                     q.setBrush(QBrush(grad)); q.setPen(Qt.PenStyle.NoPen); q.drawPath(path)
+                    # dark contact shadow at each overlapping wall edge for depth.
                     edge = QPainterPath(); edge.moveTo(x1, 0)
-                    if side == 0: edge.cubicTo(ctrl2, h * 0.32, x1 * 0.96, h * 0.70, x1, h)
-                    else: edge.cubicTo(ctrl2, h * 0.32, x1 + wall_w * 0.04, h * 0.70, x1, h)
-                    q.setPen(QPen(QColor(35, 9, 10, 42 + layer * 4), max(1.0, 2.6 - depth))); q.drawPath(edge)
-            shaft = QLinearGradient(QPointF(w * 0.52, 0), QPointF(w * 0.45, h)); shaft.setColorAt(0.0, QColor(255, 233, 170, 140)); shaft.setColorAt(0.22, QColor(255, 186, 92, 70)); shaft.setColorAt(0.72, QColor(150, 55, 30, 14)); shaft.setColorAt(1.0, QColor(0, 0, 0, 0))
-            q.setBrush(QBrush(shaft)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(w * 0.36, 0, w * 0.32, h))
+                    if side == 0:
+                        edge.cubicTo(ctrl2, h * 0.32, x1 * 0.96, h * 0.70, x1, h)
+                    else:
+                        edge.cubicTo(ctrl2, h * 0.32, x1 + wall_w * 0.04, h * 0.70, x1, h)
+                    q.setPen(QPen(QColor(35, 9, 10, 42 + layer * 4), max(1.0, 2.6 - depth)))
+                    q.drawPath(edge)
+            # Warm light shaft with more 3D contrast.
+            shaft = QLinearGradient(QPointF(w * 0.52, 0), QPointF(w * 0.45, h))
+            shaft.setColorAt(0.0, QColor(255, 233, 170, 140))
+            shaft.setColorAt(0.22, QColor(255, 186, 92, 70))
+            shaft.setColorAt(0.72, QColor(150, 55, 30, 14))
+            shaft.setColorAt(1.0, QColor(0, 0, 0, 0))
+            q.setBrush(QBrush(shaft)); q.setPen(Qt.PenStyle.NoPen)
+            q.drawRect(QRectF(w * 0.36, 0, w * 0.32, h))
             rnd = random.Random((w * 6113) ^ (h * 1297) ^ 0xCA77)
+            # Strata lines follow perspective; more contrast near sides.
             for i in range(150):
-                y = h * rnd.uniform(0.04, 0.98); amp = rnd.uniform(5.0, 24.0); left_side = i % 2 == 0; x_start = -w * 0.02 if left_side else w * 0.50; x_end = w * 0.52 if left_side else w * 1.02
-                c = QColor("#FFD08A" if i % 4 else "#5B1D18"); c.setAlpha(rnd.randint(22, 68)); q.setPen(QPen(c, rnd.uniform(0.55, 1.9)))
-                path = QPainterPath(); path.moveTo(x_start, y); path.cubicTo(w * 0.22, y + amp, w * 0.74, y - amp * 0.8, x_end, y + math.sin(i * 0.37) * amp); q.drawPath(path)
+                y = h * rnd.uniform(0.04, 0.98)
+                amp = rnd.uniform(5.0, 24.0)
+                left_side = i % 2 == 0
+                x_start = -w * 0.02 if left_side else w * 0.50
+                x_end = w * 0.52 if left_side else w * 1.02
+                c = QColor("#FFD08A" if i % 4 else "#5B1D18")
+                c.setAlpha(rnd.randint(22, 68))
+                q.setPen(QPen(c, rnd.uniform(0.55, 1.9)))
+                path = QPainterPath(); path.moveTo(x_start, y)
+                path.cubicTo(w * 0.22, y + amp, w * 0.74, y - amp * 0.8, x_end, y + math.sin(i * 0.37) * amp)
+                q.drawPath(path)
+            # Foreground occlusion silhouettes make the walls feel closer.
             for side in (0, 1):
                 occ = QPainterPath()
-                if side == 0: occ.moveTo(0, 0); occ.cubicTo(w * 0.12, h * 0.20, w * 0.06, h * 0.62, w * 0.20, h); occ.lineTo(0, h); occ.closeSubpath()
-                else: occ.moveTo(w, 0); occ.cubicTo(w * 0.88, h * 0.20, w * 0.94, h * 0.62, w * 0.80, h); occ.lineTo(w, h); occ.closeSubpath()
+                if side == 0:
+                    occ.moveTo(0, 0); occ.cubicTo(w * 0.12, h * 0.20, w * 0.06, h * 0.62, w * 0.20, h); occ.lineTo(0, h); occ.closeSubpath()
+                else:
+                    occ.moveTo(w, 0); occ.cubicTo(w * 0.88, h * 0.20, w * 0.94, h * 0.62, w * 0.80, h); occ.lineTo(w, h); occ.closeSubpath()
                 q.setBrush(QBrush(QColor(29, 8, 9, 96))); q.setPen(Qt.PenStyle.NoPen); q.drawPath(occ)
+            # Dust particles in shaft.
             for i in range(max(120, int(w * h / 8500))):
-                x = rnd.gauss(w * 0.52, w * 0.12); y = rnd.uniform(h * 0.03, h * 0.84)
+                x = rnd.gauss(w * 0.52, w * 0.12)
+                y = rnd.uniform(h * 0.03, h * 0.84)
                 if 0 <= x <= w and 0 <= y <= h:
-                    c = QColor("#FFE7B8"); c.setAlpha(rnd.randint(20, 82)); q.setPen(QPen(c, 1.0)); q.drawPoint(QPointF(x, y))
-            vignette = QRadialGradient(QPointF(w * 0.52, h * 0.52), max(w, h) * 0.62); vignette.setColorAt(0.0, QColor(0, 0, 0, 0)); vignette.setColorAt(0.62, QColor(35, 8, 10, 22)); vignette.setColorAt(1.0, QColor(20, 4, 7, 155))
-            q.setBrush(QBrush(vignette)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(0, 0, w, h))
-        finally:
-            q.end()
-        return img
-
-    def clear_suzhou_flower_meadow_cache(self):
-        try:
-            self._suzhou_flower_meadow_cache.clear()
-            self._suzhou_flower_meadow_cache_order.clear()
-        except:
-            self._suzhou_flower_meadow_cache = {}
-            self._suzhou_flower_meadow_cache_order = []
-
-    def _suzhou_meadow_cache_put(self, key, image: QImage):
-        try:
-            cache = getattr(self, "_suzhou_flower_meadow_cache", None)
-            order = getattr(self, "_suzhou_flower_meadow_cache_order", None)
-            if cache is None:
-                self._suzhou_flower_meadow_cache = {}
-                cache = self._suzhou_flower_meadow_cache
-            if order is None:
-                self._suzhou_flower_meadow_cache_order = []
-                order = self._suzhou_flower_meadow_cache_order
-            if key not in cache:
-                order.append(key)
-            cache[key] = image
-            limit = max(1, int(getattr(self, "_suzhou_flower_meadow_cache_limit", 4)))
-            while len(order) > limit:
-                cache.pop(order.pop(0), None)
-        except:
-            pass
-        return image
-
-    def _draw_suzhou_flower_meadow_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
-        """Draw a small cached flower-meadow layer for the Humble Administrator's Garden preset.
-
-        This intentionally avoids per-frame vector work. The static meadow is rendered
-        into QImage once per size/settings signature, then pasted with drawImage().
-        """
-        try:
-            if not self._scenic_engine_flag("suzhou_flower_meadow_enabled", False):
-                return
-            w = int(max(1, r.width()))
-            h = int(max(1, r.height()))
-            sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("suzhou_meadow_v1", w, h, sig)
-            cache = getattr(self, "_suzhou_flower_meadow_cache", {})
-            img = cache.get(key)
-            if img is None or img.isNull():
-                img = self._render_suzhou_flower_meadow_static(w, h)
-                self._suzhou_meadow_cache_put(key, img)
-            p.drawImage(QRectF(r.left(), r.top(), w, h), img)
-        except:
-            pass
-
-    def _render_suzhou_flower_meadow_static(self, w: int, h: int) -> QImage:
-        img = QImage(max(1, w), max(1, h), QImage.Format.Format_ARGB32_Premultiplied)
-        img.fill(Qt.GlobalColor.transparent)
-        q = QPainter(img)
-        try:
-            q.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            rnd = random.Random((w * 4129) ^ (h * 7919) ^ 0x535A48)
-            # Low, quiet garden bank above the water. Kept subtle to avoid fighting the water garden.
-            bank_top = h * 0.64
-            bank_h = h * 0.22
-            grad = QLinearGradient(QPointF(0, bank_top), QPointF(0, bank_top + bank_h))
-            g0 = QColor("#A9CFA8"); g0.setAlpha(42)
-            g1 = QColor("#4F8A63"); g1.setAlpha(74)
-            grad.setColorAt(0.0, g0); grad.setColorAt(1.0, g1)
-            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(grad))
-            q.drawRect(QRectF(0, bank_top, w, bank_h))
-            petals = ["#F3C9C2", "#F7D6B7", "#EED3EA", "#FFF1EA", "#DDEDC6"]
-            leaves = ["#6D9D68", "#83AD73", "#4F8A63", "#A3BF78"]
-            # LOD0: distant flower dots.
-            for row in range(4):
-                depth = row / 3.0
-                y_base = bank_top + bank_h * (0.16 + depth * 0.66)
-                count = max(20, int(w / 26))
-                for i in range(count):
-                    x = (i + rnd.random()) / count * w
-                    y = y_base + rnd.uniform(-bank_h * 0.05, bank_h * 0.05)
-                    c = QColor(petals[(i + row) % len(petals)]); c.setAlpha(45 + row * 13)
+                    c = QColor("#FFE7B8"); c.setAlpha(rnd.randint(20, 82))
                     q.setPen(QPen(c, 1.0)); q.drawPoint(QPointF(x, y))
-            # LOD1: foreground small blossoms and leaves, still simple ellipses only.
-            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            for i in range(max(18, int(w / 42))):
-                x = (i + rnd.random() * 0.85) / max(1, int(max(18, w / 42))) * w
-                y = bank_top + bank_h * rnd.uniform(0.56, 0.98)
-                size = rnd.uniform(2.2, 5.0)
-                stem = size * rnd.uniform(2.0, 3.2)
-                leaf = QColor(leaves[i % len(leaves)]); leaf.setAlpha(70)
-                q.setPen(QPen(leaf, 0.8)); q.drawLine(QPointF(x, y + stem * 0.35), QPointF(x, y - stem))
-                pc = QColor(petals[(i * 3) % len(petals)]); pc.setAlpha(92)
-                q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(pc))
-                q.drawEllipse(QRectF(x - size, y - stem - size * 0.65, size * 2.0, size * 1.3))
-                hi = QColor("#FFFFFF"); hi.setAlpha(44)
-                q.setBrush(QBrush(hi)); q.drawEllipse(QRectF(x - size * 0.35, y - stem - size * 0.55, size * 0.7, size * 0.35))
-            # A few lotus-like pads near the water edge, also static.
-            for i in range(max(5, int(w / 180))):
-                x = rnd.uniform(w * 0.04, w * 0.96)
-                y = h * rnd.uniform(0.73, 0.86)
-                rw = rnd.uniform(18.0, 46.0)
-                rh = rw * rnd.uniform(0.26, 0.42)
-                pad = QColor("#6FA27A"); pad.setAlpha(38)
-                q.setBrush(QBrush(pad)); q.setPen(Qt.PenStyle.NoPen)
-                q.drawEllipse(QRectF(x - rw * 0.5, y - rh * 0.5, rw, rh))
+            vignette = QRadialGradient(QPointF(w * 0.52, h * 0.52), max(w, h) * 0.62)
+            vignette.setColorAt(0.0, QColor(0, 0, 0, 0))
+            vignette.setColorAt(0.62, QColor(35, 8, 10, 22))
+            vignette.setColorAt(1.0, QColor(20, 4, 7, 155))
+            q.setBrush(QBrush(vignette)); q.setPen(Qt.PenStyle.NoPen); q.drawRect(QRectF(0, 0, w, h))
         finally:
             q.end()
         return img
@@ -6668,14 +7757,14 @@ class EffectsOverlayWidget(BaseWidget):
         if settings.noise_enabled:
             self._draw_cached_vector_layer(p, r, settings, now, "noise", self._draw_noise, fps=12)
 
+        if self._scenic_engine_flag("sahara_desert_engine_enabled"):
+            self._draw_sahara_desert_engine(p, r, settings, now)
+
         if self._scenic_engine_flag("uyuni_salt_flat_engine_enabled"):
             self._draw_uyuni_salt_flat_engine(p, r, settings, now)
 
         if self._scenic_engine_flag("antelope_canyon_engine_enabled"):
             self._draw_antelope_canyon_engine(p, r, settings, now)
-
-        if self._scenic_engine_flag("suzhou_flower_meadow_enabled"):
-            self._draw_suzhou_flower_meadow_engine(p, r, settings, now)
 
         if (
             getattr(settings, "sunrise_enabled", False)
@@ -6731,6 +7820,8 @@ class EffectsOverlayWidget(BaseWidget):
             self._ensure_blooming_roses(r, settings, now)
             self._update_blooming_roses(r, settings, dt, now)
             self._draw_cached_vector_layer(p, r, settings, now, "blooming_roses", self._draw_blooming_roses, fps=12)
+
+        self._apply_desktop_ui_aware_icon_mask(p, r, now)
 
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
@@ -7957,24 +9048,6 @@ class EffectsOverlayWidget(BaseWidget):
             if self._point_in_puddle(x, y, rect):
                 return True
         return False
-
-    def clear_puddle_runtime_state(self):
-        """Clear cached water/puddle render state after puddles are turned off."""
-        for attr in [
-            "_water_reflection_cache_signature", "_water_reflection_cache_image",
-            "_ice_reflection_cache_signature", "_ice_reflection_cache_image",
-            "_ice_reflected_effects_cache_signature", "_ice_reflected_effects_cache_image",
-            "_ice_surface_cache_signature", "_ice_surface_cache_image",
-        ]:
-            try:
-                setattr(self, attr, None)
-            except:
-                pass
-        try:
-            if hasattr(self, "clear_vector_image_cache"):
-                self.clear_vector_image_cache()
-        except:
-            pass
 
     def _has_visible_puddle_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
         if settings is None:
@@ -13193,7 +14266,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -13362,7 +14435,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -13758,7 +14831,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.0"))
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -14438,7 +15511,6 @@ class LiteDeskStudio(QMainWindow):
                 return
 
             cfg = widget.cfg
-
             self.set_property_enabled(True)
             self.set_system_color_controls_visible(cfg.type == "system")
             is_system_widget = cfg.type == "system"
@@ -14898,7 +15970,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v2.0.0 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v1.5.6 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -15015,6 +16087,2616 @@ class LiteDeskStudio(QMainWindow):
 
         event.accept()
 
+
+
+# -----------------------------------------------------------------------------
+# Immersive desktop scene icon overlay / interaction proxy helpers
+# -----------------------------------------------------------------------------
+_LDS_ICON_SCENE_CACHE = {"time": 0.0, "items": [], "size": (0, 0), "listview": 0}
+_LDS_ICON_IMAGE_CACHE = {}
+_LDS_ICON_FIELD_CACHE = {"key": None, "field": None}
+_LDS_ICON_PROXY_LAST_HOVER = {"time": 0.0, "x": -99999, "y": -99999}
+_LDS_ICON_SCENE_OVERLAY_CACHE = {"key": None, "image": None}
+_LDS_ICON_FOREGROUND_LAYER_CACHE = {"key": None, "image": None}
+_LDS_ICON_LABEL_IMAGE_CACHE = {}
+_LDS_ICON_SCENE_ACTIVE_PROFILE = "default"
+_LDS_ICON_SCENE_RENDER_ICONS_MODE = "off"
+
+_LDS_DESKTOP_ICON_ROOTS_CACHE = {
+    "time": 0.0,
+    "roots": [],
+    "env": None,
+}
+
+_LDS_DESKTOP_ICON_PATH_CANDIDATE_CACHE = {}
+
+
+def _lds_float_env(name: str, default_value: float, min_value: float, max_value: float) -> float:
+    try:
+        v = float(os.environ.get(name, str(default_value)))
+        return max(float(min_value), min(float(max_value), v))
+    except:
+        return float(default_value)
+
+
+
+
+def _lds_icon_scene_profile_defaults(profile: str):
+    p = str(profile or "default").lower()
+    base = {
+        "LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 132.0,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.50,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.42,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.40,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.38,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.08,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.34,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.20,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.28,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.16,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_SELECTION": 0.42,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_OVERLAY_RADIUS": 74.0,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO": 0.16,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE": 0.13,
+        "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO_SIZE": 42.0,
+    }
+    profiles = {
+        "uyuni": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 170.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.42, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.50, "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.32, "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.34, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.12, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.22, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.28, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.12, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.42, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO": 0.10, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE": 0.28},
+        "water": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 150.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.46, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.48, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.10, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.28, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.22, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.18, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.30, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE": 0.22},
+        "flower": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 138.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.58, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.44, "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.28, "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.30, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.06, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.36, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.14, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.32, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.08, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO": 0.12, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE": 0.04},
+        "forest": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 126.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.48, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.46, "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.36, "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.42, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.04, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.20, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.10, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.46, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.06, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO": 0.10, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE": 0.03},
+        "mist": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 182.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.38, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.54, "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.50, "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.56, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.18, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.18, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.38, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.10, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.10, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO": 0.08},
+        "desert": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 142.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.44, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.48, "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.24, "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.30, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.05, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.30, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.12, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.40, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.04, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE": 0.02},
+        "canyon": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 134.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.46, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.46, "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.30, "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.36, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.04, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.24, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.10, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.48, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.02, "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE": 0.02},
+        "night": {"LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS": 148.0, "LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION": 0.40, "LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA": 0.50, "LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE": 0.44, "LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE": 0.46, "LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT": 0.06, "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW": 0.42, "LITEDESKTOPSTUDIO_ICON_SCENE_FOG": 0.14, "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW": 0.26, "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION": 0.20},
+    }
+    if p in profiles:
+        base.update(profiles[p])
+    return base
+
+
+def _lds_icon_scene_current_profile() -> str:
+    try:
+        env_profile = str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_PROFILE", "auto")).strip().lower()
+        if env_profile and env_profile != "auto":
+            return env_profile
+    except:
+        pass
+    try:
+        return str(globals().get("_LDS_ICON_SCENE_ACTIVE_PROFILE", "default") or "default").lower()
+    except:
+        return "default"
+
+
+def _lds_icon_scene_float_env(name: str, default_value: float, min_value: float, max_value: float) -> float:
+    try:
+        if name in os.environ:
+            return _lds_float_env(name, default_value, min_value, max_value)
+    except:
+        pass
+    try:
+        profile = _lds_icon_scene_current_profile()
+        prof_default = _lds_icon_scene_profile_defaults(profile).get(name, default_value)
+        return _lds_float_env(name, float(prof_default), min_value, max_value)
+    except:
+        return _lds_float_env(name, default_value, min_value, max_value)
+
+
+def _lds_detect_icon_scene_profile_from_effect_settings(settings) -> str:
+    try:
+        if settings is None:
+            return "default"
+        try:
+            raw = settings.to_dict() if hasattr(settings, "to_dict") else dict(settings)
+        except:
+            raw = {}
+        if bool(raw.get("uyuni_salt_flat_engine_enabled", False)):
+            return "uyuni"
+        if bool(raw.get("sahara_desert_engine_enabled", False)):
+            return "desert"
+        if bool(raw.get("antelope_canyon_engine_enabled", False)):
+            return "canyon"
+        if bool(getattr(settings, "ice_enabled", False)) or bool(getattr(settings, "water_mirror_enabled", False)):
+            return "uyuni"
+        if bool(getattr(settings, "water_surface_enabled", False)):
+            return "water"
+        if bool(getattr(settings, "bamboo_grove_enabled", False)):
+            return "forest"
+        if bool(getattr(settings, "rose_petals_enabled", False)) or bool(getattr(settings, "sakura_petals_enabled", False)) or bool(getattr(settings, "rose_flowers_enabled", False)):
+            return "flower"
+        if bool(getattr(settings, "cloud_enabled", False)) or bool(getattr(settings, "water_morning_fog_enabled", False)) or bool(getattr(settings, "sunrise_enabled", False)):
+            return "mist"
+        if bool(getattr(settings, "star_sky_enabled", False)) or bool(getattr(settings, "moon_body_enabled", False)) or bool(getattr(settings, "moonlight_enabled", False)):
+            return "night"
+    except:
+        pass
+    return "default"
+
+
+def _lds_set_icon_scene_active_profile_from_widget(widget):
+    try:
+        forced = str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_PROFILE", "auto")).strip().lower()
+        if forced and forced != "auto":
+            globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = forced
+            return forced
+    except:
+        pass
+    profile = "default"
+    try:
+        if isinstance(widget, EffectsOverlayWidget):
+            profile = _lds_detect_icon_scene_profile_from_effect_settings(get_effect_overlay_settings(widget.cfg))
+    except:
+        profile = "default"
+    try:
+        if globals().get("_LDS_ICON_SCENE_ACTIVE_PROFILE") != profile:
+            globals()["_LDS_ICON_SCENE_OVERLAY_CACHE"] = {"key": None, "image": None}
+        globals()["_LDS_ICON_SCENE_ACTIVE_PROFILE"] = profile
+    except:
+        pass
+    return profile
+
+def _lds_find_desktop_shell_windows():
+    if not is_windows():
+        return (0, 0, 0)
+    try:
+        user32 = ctypes.windll.user32
+        FindWindowW = user32.FindWindowW
+        FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+        FindWindowW.restype = ctypes.c_void_p
+        FindWindowExW = user32.FindWindowExW
+        FindWindowExW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p]
+        FindWindowExW.restype = ctypes.c_void_p
+        progman = int(FindWindowW("Progman", None) or 0)
+        defview = int(FindWindowExW(ctypes.c_void_p(progman), None, "SHELLDLL_DefView", None) or 0) if progman else 0
+        listview = int(FindWindowExW(ctypes.c_void_p(defview), None, "SysListView32", None) or 0) if defview else 0
+        return (progman, defview, listview)
+    except:
+        return (0, 0, 0)
+
+
+def _lds_get_desktop_listview_hwnd():
+    return _lds_find_desktop_shell_windows()[2]
+
+
+def _lds_make_lparam(x: int, y: int) -> int:
+    return (int(x) & 0xFFFF) | ((int(y) & 0xFFFF) << 16)
+
+
+def _lds_icon_proxy_post_mouse(message: int, x: int, y: int, wparam: int = 0) -> bool:
+    """Forward a mouse message to Explorer's desktop SysListView32."""
+    if not is_windows():
+        return False
+    try:
+        listview = _lds_get_desktop_listview_hwnd()
+        if not listview:
+            return False
+        ctypes.windll.user32.PostMessageW(ctypes.c_void_p(listview), int(message), int(wparam), int(_lds_make_lparam(x, y)))
+        try:
+            # Selection/drag messages can change Explorer state immediately; keep
+            # the scenic overlay in sync without waiting for the normal sync TTL.
+            if int(message) in (0x0201, 0x0202, 0x0203) or (int(message) == 0x0200 and (int(wparam) & 0x0001)):
+                globals()["_LDS_ICON_SCENE_CACHE"] = {"time": 0.0, "items": [], "size": (0, 0), "listview": 0}
+                globals()["_LDS_ICON_SCENE_OVERLAY_CACHE"] = {"key": None, "image": None}
+        except:
+            pass
+        return True
+    except Exception as e:
+        try: print("[LiteDesktopStudio] icon proxy mouse forward failed:", repr(e))
+        except: pass
+        return False
+
+
+def _lds_icon_hit_test(items, x: int, y: int, padding: int = 10):
+    try:
+        for it in reversed(list(items or [])):
+            left, top, right, bottom = it.get("rect", (0, 0, 0, 0))
+            if int(left) - padding <= x <= int(right) + padding and int(top) - padding <= y <= int(bottom) + padding:
+                return it
+    except:
+        pass
+    return None
+
+
+def _lds_point_hits_litedesktop_widget(canvas, pos) -> bool:
+    """Do not steal input from LiteDesktopStudio widgets in normal mode."""
+    try:
+        for w in reversed(getattr(canvas, "widgets", []) or []):
+            try:
+                if isinstance(w, EffectsOverlayWidget):
+                    continue
+            except:
+                pass
+            try:
+                if w.contains(pos):
+                    return True
+            except:
+                pass
+    except:
+        pass
+    return False
+
+
+def _lds_icon_proxy_should_handle(canvas, pos, require_icon: bool = False):
+    """Return (should_handle, hit_item, items) for desktop icon proxy input."""
+    try:
+        if _lds_point_hits_litedesktop_widget(canvas, pos):
+            return (False, None, [])
+        items = _lds_get_icon_scene_items(int(canvas.width()), int(canvas.height()))
+        hit = _lds_icon_hit_test(items, int(pos.x()), int(pos.y()), padding=12)
+        if hit is not None:
+            return (True, hit, items)
+        if require_icon:
+            return (False, None, items)
+        blank_drag = str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_PROXY_BLANK_DRAG", "1")).lower() in ("1", "true", "on", "yes")
+        return (bool(blank_drag), None, items)
+    except:
+        return (False, None, [])
+
+
+def _lds_read_desktop_icon_items(canvas_width: int, canvas_height: int):
+    """Read desktop icon rect/text/state/image index from Explorer SysListView32.
+
+    Read-only synchronization: Explorer remains the source of truth. Results are
+    cached to keep rendering non-blocking.
+    """
+    if not is_windows():
+        return []
+    try:
+        now = time.time()
+        cache = globals().get("_LDS_ICON_SCENE_CACHE", {})
+        if cache and now - float(cache.get("time", 0.0)) < _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_SYNC_INTERVAL", 1.50, 0.10, 5.0) and tuple(cache.get("size", (0, 0))) == (int(canvas_width), int(canvas_height)):
+            return list(cache.get("items", []))
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        listview = _lds_get_desktop_listview_hwnd()
+        if not listview:
+            return []
+
+        LVM_FIRST = 0x1000
+        LVM_GETITEMCOUNT = LVM_FIRST + 4
+        LVM_GETITEMPOSITION = LVM_FIRST + 16
+        LVM_GETITEMRECT = LVM_FIRST + 14
+        LVM_GETITEMTEXTW = LVM_FIRST + 115
+        LVM_GETITEMSTATE = LVM_FIRST + 44
+        LVM_GETITEMW = LVM_FIRST + 75
+        LVIR_BOUNDS = 0
+        LVIF_TEXT = 0x0001
+        LVIF_IMAGE = 0x0002
+        LVIS_SELECTED = 0x0002
+        LVIS_FOCUSED = 0x0001
+
+        count = int(user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETITEMCOUNT, 0, 0) or 0)
+        if count <= 0 or count > 4096:
+            return []
+
+        pid = ctypes.c_ulong(0)
+        user32.GetWindowThreadProcessId(ctypes.c_void_p(listview), ctypes.byref(pid))
+        pid_value = int(pid.value or 0)
+        if not pid_value:
+            return []
+
+        PROCESS_VM_OPERATION = 0x0008
+        PROCESS_VM_READ = 0x0010
+        PROCESS_VM_WRITE = 0x0020
+        PROCESS_QUERY_INFORMATION = 0x0400
+        MEM_COMMIT = 0x1000
+        MEM_RESERVE = 0x2000
+        MEM_RELEASE = 0x8000
+        PAGE_READWRITE = 0x04
+        process = kernel32.OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, False, pid_value)
+        if not process:
+            return []
+
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+        class RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+        class LVITEMW(ctypes.Structure):
+            _fields_ = [
+                ("mask", ctypes.c_uint), ("iItem", ctypes.c_int), ("iSubItem", ctypes.c_int),
+                ("state", ctypes.c_uint), ("stateMask", ctypes.c_uint), ("pszText", ctypes.c_void_p),
+                ("cchTextMax", ctypes.c_int), ("iImage", ctypes.c_int), ("lParam", ctypes.c_void_p),
+                ("iIndent", ctypes.c_int), ("iGroupId", ctypes.c_int), ("cColumns", ctypes.c_uint),
+                ("puColumns", ctypes.c_void_p), ("piColFmt", ctypes.c_void_p), ("iGroup", ctypes.c_int),
+            ]
+
+        text_chars = 260
+        allocs = []
+        def valloc(sz):
+            addr = kernel32.VirtualAllocEx(process, None, int(sz), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+            if addr: allocs.append(addr)
+            return addr
+        remote_point = valloc(ctypes.sizeof(POINT))
+        remote_rect = valloc(ctypes.sizeof(RECT))
+        remote_text = valloc(text_chars * 2)
+        remote_item = valloc(ctypes.sizeof(LVITEMW))
+        if not remote_point or not remote_rect or not remote_text or not remote_item:
+            for addr in allocs:
+                try: kernel32.VirtualFreeEx(process, ctypes.c_void_p(addr), 0, MEM_RELEASE)
+                except: pass
+            try: kernel32.CloseHandle(process)
+            except: pass
+            return []
+
+        items = []
+        try:
+            max_count = min(count, int(_lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_MAX_ICONS", 256, 1, 4096)))
+            for i in range(max_count):
+                pt = POINT()
+                if user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETITEMPOSITION, int(i), ctypes.c_void_p(remote_point)):
+                    read = ctypes.c_size_t(0)
+                    kernel32.ReadProcessMemory(process, ctypes.c_void_p(remote_point), ctypes.byref(pt), ctypes.sizeof(pt), ctypes.byref(read))
+                else:
+                    pt.x = 0; pt.y = 0
+
+                rc = RECT(); rc.left = LVIR_BOUNDS
+                try:
+                    written = ctypes.c_size_t(0)
+                    kernel32.WriteProcessMemory(process, ctypes.c_void_p(remote_rect), ctypes.byref(rc), ctypes.sizeof(rc), ctypes.byref(written))
+                    if user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETITEMRECT, int(i), ctypes.c_void_p(remote_rect)):
+                        read = ctypes.c_size_t(0)
+                        kernel32.ReadProcessMemory(process, ctypes.c_void_p(remote_rect), ctypes.byref(rc), ctypes.sizeof(rc), ctypes.byref(read))
+                    else:
+                        rc.left = int(pt.x); rc.top = int(pt.y); rc.right = int(pt.x) + 96; rc.bottom = int(pt.y) + 76
+                except:
+                    rc.left = int(pt.x); rc.top = int(pt.y); rc.right = int(pt.x) + 96; rc.bottom = int(pt.y) + 76
+
+                label = ""
+                image_index = -1
+                try:
+                    item = LVITEMW(); item.mask = LVIF_TEXT | LVIF_IMAGE; item.iItem = int(i); item.iSubItem = 0; item.pszText = int(remote_text); item.cchTextMax = int(text_chars); item.iImage = -1
+                    written = ctypes.c_size_t(0)
+                    kernel32.WriteProcessMemory(process, ctypes.c_void_p(remote_item), ctypes.byref(item), ctypes.sizeof(item), ctypes.byref(written))
+                    user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETITEMW, 0, ctypes.c_void_p(remote_item))
+                    read_item = LVITEMW(); read = ctypes.c_size_t(0)
+                    kernel32.ReadProcessMemory(process, ctypes.c_void_p(remote_item), ctypes.byref(read_item), ctypes.sizeof(read_item), ctypes.byref(read))
+                    image_index = int(read_item.iImage)
+                    buf = ctypes.create_unicode_buffer(text_chars)
+                    kernel32.ReadProcessMemory(process, ctypes.c_void_p(remote_text), ctypes.byref(buf), text_chars * 2, ctypes.byref(read))
+                    label = str(buf.value or "")
+                    if not label:
+                        # Some desktop listviews prefer LVM_GETITEMTEXT.
+                        user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETITEMTEXTW, int(i), ctypes.c_void_p(remote_item))
+                        kernel32.ReadProcessMemory(process, ctypes.c_void_p(remote_text), ctypes.byref(buf), text_chars * 2, ctypes.byref(read))
+                        label = str(buf.value or "")
+                except:
+                    label = ""; image_index = -1
+
+                state = 0
+                try:
+                    state = int(user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETITEMSTATE, int(i), LVIS_SELECTED | LVIS_FOCUSED) or 0)
+                except:
+                    state = 0
+                selected = bool(state & LVIS_SELECTED)
+                focused = bool(state & LVIS_FOCUSED)
+
+                left, top, right, bottom = int(rc.left), int(rc.top), int(rc.right), int(rc.bottom)
+                if right <= left or bottom <= top:
+                    left, top, right, bottom = int(pt.x), int(pt.y), int(pt.x) + 96, int(pt.y) + 76
+                cx = int((left + right) * 0.5); cy = int((top + bottom) * 0.5)
+                if -256 <= cx <= int(canvas_width) + 256 and -256 <= cy <= int(canvas_height) + 256:
+                    items.append({"index": int(i), "text": label, "image_index": int(image_index), "state": int(state), "selected": selected, "focused": focused, "rect": (left, top, right, bottom), "center": (cx, cy), "pos": (int(pt.x), int(pt.y))})
+        finally:
+            for addr in allocs:
+                try: kernel32.VirtualFreeEx(process, ctypes.c_void_p(addr), 0, MEM_RELEASE)
+                except: pass
+            try: kernel32.CloseHandle(process)
+            except: pass
+        globals()["_LDS_ICON_SCENE_CACHE"] = {"time": now, "items": items, "size": (int(canvas_width), int(canvas_height)), "listview": int(listview)}
+        return items
+    except Exception as e:
+        try: print("[LiteDesktopStudio] desktop icon scene sync failed:", repr(e))
+        except: pass
+        return []
+
+
+def _lds_fallback_icon_scene_items(canvas_width: int, canvas_height: int):
+    try:
+        step_y = max(72, int(_lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_FALLBACK_STEP_Y", 86, 40, 240)))
+        x = int(_lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_FALLBACK_X", 52, 0, max(64, canvas_width)))
+        y = int(_lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_FALLBACK_Y", 48, 0, max(64, canvas_height)))
+        out = []
+        idx = 0
+        while y < int(canvas_height) - 24:
+            out.append({"index": idx, "text": "", "image_index": -1, "selected": False, "focused": False, "rect": (x-42, y-42, x+54, y+42), "center": (x, y), "pos": (x-42, y-42)})
+            idx += 1; y += step_y
+        return out
+    except:
+        return []
+
+
+def _lds_get_icon_scene_items(canvas_width: int, canvas_height: int):
+    items = _lds_read_desktop_icon_items(canvas_width, canvas_height)
+    if items:
+        return items
+    return _lds_fallback_icon_scene_items(canvas_width, canvas_height)
+
+
+def _lds_build_icon_scene_field(width: int, height: int, items):
+    try:
+        radius = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_RADIUS", 132.0, 32.0, 520.0)
+        centers = tuple((int(it.get("center", (0,0))[0]), int(it.get("center", (0,0))[1])) for it in list(items)[:512])
+        key = (int(width), int(height), centers, round(radius, 2))
+        cache = globals().get("_LDS_ICON_FIELD_CACHE", {})
+        if cache and cache.get("key") == key:
+            return cache.get("field")
+        yy, xx = np.mgrid[0:int(height), 0:int(width)].astype(np.float32)
+        field = np.zeros((int(height), int(width)), dtype=np.float32)
+        sigma = max(1.0, float(radius) * 0.52)
+        denom = 2.0 * sigma * sigma
+        for cx, cy in centers:
+            dx = xx - float(cx); dy = yy - float(cy)
+            field = np.maximum(field, np.exp(-(dx*dx + dy*dy) / denom).astype(np.float32))
+        field = np.clip(field, 0.0, 1.0)
+        globals()["_LDS_ICON_FIELD_CACHE"] = {"key": key, "field": field}
+        return field
+    except:
+        return None
+
+
+
+
+def _lds_bool_env(name: str, default_value: bool = False) -> bool:
+    try:
+        raw = str(os.environ.get(name, "1" if default_value else "0")).strip().lower()
+        return raw in ("1", "true", "on", "yes")
+    except:
+        return bool(default_value)
+
+
+def _lds_icon_scene_effect_integration_enabled() -> bool:
+    return _lds_bool_env("LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_INTEGRATION_ENABLED", False)
+
+
+def _lds_icon_scene_echo_enabled() -> bool:
+    return _lds_bool_env("LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO_ENABLED", False)
+
+def _lds_integrate_scene_effects_with_icons(image: QImage, items):
+    try:
+        if image is None or image.isNull() or not items:
+            return image
+        w, h = int(image.width()), int(image.height())
+        field = _lds_build_icon_scene_field(w, h, items)
+        if field is None:
+            return image
+        strength = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_EFFECT_ATTENUATION", 0.50, 0.0, 0.95)
+        min_alpha = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_MIN_ALPHA", 0.42, 0.03, 1.0)
+        sat_reduce = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_SATURATION_REDUCE", 0.40, 0.0, 1.0)
+        contrast_reduce = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_CONTRAST_REDUCE", 0.38, 0.0, 1.0)
+        mist_lift = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_MIST_LIFT", 0.08, 0.0, 0.50)
+        img = image.convertToFormat(QImage.Format.Format_RGBA8888) if image.format() != QImage.Format.Format_RGBA8888 else image
+        ptr = img.bits()
+        arr = np.frombuffer(ptr, dtype=np.uint8, count=int(img.bytesPerLine()) * h).reshape((h, int(img.bytesPerLine())))[:, :w*4].reshape((h,w,4))
+        rgb = arr[:,:,:3].astype(np.float32); alpha = arr[:,:,3].astype(np.float32)
+        f = field[:,:,None]
+        alpha *= np.maximum(float(min_alpha), 1.0 - field * float(strength))
+        lum = rgb[:,:,0:1]*0.2126 + rgb[:,:,1:2]*0.7152 + rgb[:,:,2:3]*0.0722
+        rgb = lum + (rgb-lum) * (1.0 - f*float(sat_reduce))
+        rgb = 128.0 + (rgb-128.0) * (1.0 - f*float(contrast_reduce))
+        rgb = rgb + (255.0-rgb) * (f*float(mist_lift))
+        arr[:,:,:3] = np.clip(rgb,0,255).astype(np.uint8)
+        arr[:,:,3] = np.clip(alpha,0,255).astype(np.uint8)
+        return img
+    except Exception as e:
+        try: print("[LiteDesktopStudio] scene/icon effect integration failed:", repr(e))
+        except: pass
+        return image
+
+
+def _lds_extract_desktop_icon_image(image_index, size=48):
+    try:
+        image_index = int(image_index)
+        size = int(size)
+        if image_index < 0 or size <= 0 or not is_windows():
+            return None
+        key = (image_index, size, "dib-v2")
+        cache = globals().get("_LDS_ICON_IMAGE_CACHE", {})
+        if key in cache:
+            return cache[key]
+
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        comctl32 = ctypes.windll.comctl32
+
+        user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+        user32.SendMessageW.restype = ctypes.c_void_p
+        user32.GetDC.argtypes = [ctypes.c_void_p]
+        user32.GetDC.restype = ctypes.c_void_p
+        user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        user32.ReleaseDC.restype = ctypes.c_int
+        user32.DrawIconEx.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint]
+        user32.DrawIconEx.restype = ctypes.c_bool
+        user32.DestroyIcon.argtypes = [ctypes.c_void_p]
+        user32.DestroyIcon.restype = ctypes.c_bool
+        gdi32.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
+        gdi32.CreateCompatibleDC.restype = ctypes.c_void_p
+        gdi32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        gdi32.SelectObject.restype = ctypes.c_void_p
+        gdi32.DeleteObject.argtypes = [ctypes.c_void_p]
+        gdi32.DeleteObject.restype = ctypes.c_bool
+        gdi32.DeleteDC.argtypes = [ctypes.c_void_p]
+        gdi32.DeleteDC.restype = ctypes.c_bool
+        comctl32.ImageList_GetIcon.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint]
+        comctl32.ImageList_GetIcon.restype = ctypes.c_void_p
+
+        listview = _lds_get_desktop_listview_hwnd()
+        if not listview:
+            return None
+        LVM_FIRST = 0x1000
+        LVM_GETIMAGELIST = LVM_FIRST + 2
+        LVSIL_NORMAL = 0
+        LVSIL_SMALL = 1
+        ILD_NORMAL = 0x00000000
+        himl = user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETIMAGELIST, ctypes.c_void_p(LVSIL_NORMAL), None)
+        if not himl:
+            himl = user32.SendMessageW(ctypes.c_void_p(listview), LVM_GETIMAGELIST, ctypes.c_void_p(LVSIL_SMALL), None)
+        if not himl:
+            cache[key] = None
+            globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+            return None
+        hicon = comctl32.ImageList_GetIcon(ctypes.c_void_p(int(himl)), int(image_index), ILD_NORMAL)
+        if not hicon:
+            cache[key] = None
+            globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+            return None
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [("biSize", ctypes.c_uint32), ("biWidth", ctypes.c_int32), ("biHeight", ctypes.c_int32), ("biPlanes", ctypes.c_uint16), ("biBitCount", ctypes.c_uint16), ("biCompression", ctypes.c_uint32), ("biSizeImage", ctypes.c_uint32), ("biXPelsPerMeter", ctypes.c_int32), ("biYPelsPerMeter", ctypes.c_int32), ("biClrUsed", ctypes.c_uint32), ("biClrImportant", ctypes.c_uint32)]
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", ctypes.c_uint32 * 3)]
+
+        gdi32.CreateDIBSection.argtypes = [ctypes.c_void_p, ctypes.POINTER(BITMAPINFO), ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_uint32]
+        gdi32.CreateDIBSection.restype = ctypes.c_void_p
+        BI_RGB = 0
+        DIB_RGB_COLORS = 0
+        DI_NORMAL = 0x0003
+
+        hdc = None
+        memdc = None
+        hbmp = None
+        oldobj = None
+        bits = ctypes.c_void_p()
+        try:
+            hdc = user32.GetDC(None)
+            if not hdc:
+                return None
+            memdc = gdi32.CreateCompatibleDC(ctypes.c_void_p(hdc))
+            if not memdc:
+                return None
+            bmi = BITMAPINFO()
+            bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            bmi.bmiHeader.biWidth = int(size)
+            bmi.bmiHeader.biHeight = -int(size)
+            bmi.bmiHeader.biPlanes = 1
+            bmi.bmiHeader.biBitCount = 32
+            bmi.bmiHeader.biCompression = BI_RGB
+            bmi.bmiHeader.biSizeImage = int(size * size * 4)
+            hbmp = gdi32.CreateDIBSection(ctypes.c_void_p(memdc), ctypes.byref(bmi), DIB_RGB_COLORS, ctypes.byref(bits), None, 0)
+            if not hbmp or not bits or not bits.value:
+                return None
+            oldobj = gdi32.SelectObject(ctypes.c_void_p(memdc), ctypes.c_void_p(hbmp))
+            ctypes.memset(bits, 0, int(size * size * 4))
+            ok = user32.DrawIconEx(ctypes.c_void_p(memdc), 0, 0, ctypes.c_void_p(int(hicon)), int(size), int(size), 0, None, DI_NORMAL)
+            if not ok:
+                return None
+            raw = np.ctypeslib.as_array((ctypes.c_ubyte * int(size * size * 4)).from_address(int(bits.value))).reshape((size, size, 4)).copy()
+            rgba = raw[:, :, [2, 1, 0, 3]].copy()
+            if int(rgba[:, :, 3].max()) == 0:
+                color_mask = np.maximum.reduce([rgba[:, :, 0], rgba[:, :, 1], rgba[:, :, 2]])
+                rgba[:, :, 3] = np.where(color_mask > 0, 255, 0).astype(np.uint8)
+            img = QImage(rgba.tobytes(), int(size), int(size), QImage.Format.Format_RGBA8888).copy()
+            cache[key] = img
+            globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+            return img
+        finally:
+            try:
+                if oldobj and memdc:
+                    gdi32.SelectObject(ctypes.c_void_p(memdc), ctypes.c_void_p(oldobj))
+            except:
+                pass
+            try:
+                if hbmp:
+                    gdi32.DeleteObject(ctypes.c_void_p(hbmp))
+            except:
+                pass
+            try:
+                if memdc:
+                    gdi32.DeleteDC(ctypes.c_void_p(memdc))
+            except:
+                pass
+            try:
+                if hdc:
+                    user32.ReleaseDC(None, ctypes.c_void_p(hdc))
+            except:
+                pass
+            try:
+                if hicon:
+                    user32.DestroyIcon(ctypes.c_void_p(int(hicon)))
+            except:
+                pass
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] desktop icon image extraction failed:", repr(e))
+        except:
+            pass
+        return None
+
+
+def _lds_paint_desktop_icon_scene_overlay(p: QPainter, canvas, items):
+    icon_img = None
+    icon_size = None
+    """Paint atmospheric icon layer: not a copied UI, a scene integration layer."""
+    try:
+        if not items:
+            return
+        mouse = None
+        try: mouse = canvas.mapFromGlobal(QApplication.instance().primaryScreen().cursor().pos())
+        except: mouse = None
+        glow = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_GLOW", 0.34, 0.0, 1.0)
+        fog = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_FOG", 0.20, 0.0, 1.0)
+        shadow = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW", 0.28, 0.0, 1.0)
+        reflection = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION", 0.16, 0.0, 1.0)
+        sel = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_SELECTION", 0.42, 0.0, 1.0)
+        radius = _lds_icon_scene_float_env("LITEDESKTOPSTUDIO_ICON_SCENE_OVERLAY_RADIUS", 74.0, 24.0, 240.0)
+        for it in list(items)[:512]:
+            cx, cy = it.get("center", (0,0)); cx=float(cx); cy=float(cy)
+            left, top, right, bottom = [float(v) for v in it.get("rect", (cx-42,cy-42,cx+54,cy+42))]
+            hovered = False
+            if mouse is not None:
+                try: hovered = left-8 <= mouse.x() <= right+8 and top-8 <= mouse.y() <= bottom+8
+                except: hovered = False
+            selected = bool(it.get("selected", False)); focused = bool(it.get("focused", False))
+            boost = 1.0 + (0.45 if hovered else 0.0) + (0.55 if selected else 0.0)
+
+            if shadow > 0:
+                g = QRadialGradient(QPointF(cx, bottom+10), radius*0.78)
+                g.setColorAt(0.0, QColor(0,0,0,int(42*shadow*boost)))
+                g.setColorAt(0.65, QColor(0,0,0,int(14*shadow*boost)))
+                g.setColorAt(1.0, QColor(0,0,0,0))
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(g))
+                p.drawEllipse(QRectF(cx-radius*0.75, bottom-16, radius*1.5, radius*0.55))
+
+            if reflection > 0:
+                rg = QLinearGradient(QPointF(cx,bottom+2), QPointF(cx,bottom+54))
+                rg.setColorAt(0.0, QColor(205,232,255,int(34*reflection*boost)))
+                rg.setColorAt(1.0, QColor(205,232,255,0))
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(rg))
+                p.drawEllipse(QRectF(left+4,bottom+4,max(24,right-left-8),34))
+
+            if glow > 0:
+                gg = QRadialGradient(QPointF(cx,cy), radius)
+                gg.setColorAt(0.0, QColor(190,225,255,int(30*glow*boost)))
+                gg.setColorAt(0.48, QColor(140,205,255,int(16*glow*boost)))
+                gg.setColorAt(1.0, QColor(140,205,255,0))
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(gg))
+                p.drawEllipse(QRectF(cx-radius, cy-radius, radius*2, radius*2))
+
+            if fog > 0:
+                fg = QRadialGradient(QPointF(cx+radius*0.08,cy-radius*0.05), radius*1.25)
+                fg.setColorAt(0.0, QColor(235,246,255,int(24*fog*boost)))
+                fg.setColorAt(0.58, QColor(225,240,255,int(11*fog*boost)))
+                fg.setColorAt(1.0, QColor(225,240,255,0))
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(fg))
+                p.drawEllipse(QRectF(cx-radius*1.18, cy-radius*1.02, radius*2.36, radius*2.04))
+
+            # Optional extracted-icon echo/reflection. This is not a copied UI layer;
+            # it is a low-alpha scenic echo used for water/air integration while
+            # Explorer's real icon remains the source of truth.
+            try:
+                echo_opacity = _lds_icon_scene_float_env(
+                    "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO",
+                    0.16,
+                    0.0,
+                    0.70,
+                )
+
+                if echo_opacity > 0 and _lds_icon_scene_echo_enabled():
+                    icon_size = int(
+                        _lds_icon_scene_float_env(
+                            "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_SIZE",
+                            48,
+                            16,
+                            128,
+                        )
+                    )
+
+                    icon_img = None
+
+                    try:
+                        icon_img = _lds_extract_desktop_icon_image(
+                            int(it.get("image_index", -1)),
+                            icon_size,
+                        )
+                    except:
+                        icon_img = None
+
+                    if icon_img is None or icon_img.isNull():
+                        try:
+                            icon_img = _lds_try_qfileiconprovider_from_item_label(it, icon_size)
+                        except:
+                            icon_img = None
+
+                    if icon_img is not None and not icon_img.isNull():
+                        target_size = int(
+                            _lds_icon_scene_float_env(
+                                "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO_SIZE",
+                                42,
+                                16,
+                                128,
+                            )
+                        )
+
+                        small = icon_img.scaled(
+                            target_size,
+                            target_size,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+
+                        p.save()
+                        p.setOpacity(float(echo_opacity) * (1.25 if hovered or selected else 1.0))
+                        p.drawImage(
+                            int(cx - small.width() * 0.5),
+                            int(cy - small.height() * 0.5),
+                            small,
+                        )
+                        p.restore()
+
+                        refl_opacity = _lds_icon_scene_float_env(
+                            "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE",
+                            0.13,
+                            0.0,
+                            0.60,
+                        )
+
+                        if refl_opacity > 0:
+                            refl = small.mirrored(False, True)
+                            p.save()
+                            p.setOpacity(float(refl_opacity) * (1.25 if hovered or selected else 1.0))
+                            p.drawImage(
+                                int(cx - refl.width() * 0.5),
+                                int(bottom + 6),
+                                refl,
+                            )
+                            p.restore()
+
+            except Exception as e:
+                try:
+                    print("[LiteDesktopStudio] icon scenic echo failed:", repr(e))
+                except:
+                    pass
+
+            if selected or focused:
+                sr = QRectF(left-5, top-4, max(24,right-left+10), max(24,bottom-top+8))
+                p.setPen(QPen(QColor(150,210,255,int(90*sel)), 1.2))
+                p.setBrush(QColor(70,150,255,int(30*sel)))
+                p.drawRoundedRect(sr, 10, 10)
+    except Exception as e:
+        try: print("[LiteDesktopStudio] desktop icon scene overlay failed:", repr(e))
+        except: pass
+
+
+def _lds_icon_scene_overlay_signature(canvas, items):
+    """Compact signature for cached atmospheric icon overlay."""
+    try:
+        mouse = None
+        try:
+            mouse = canvas.mapFromGlobal(QApplication.instance().primaryScreen().cursor().pos())
+        except:
+            mouse = None
+        hover_index = -1
+        if mouse is not None:
+            hit = _lds_icon_hit_test(items, int(mouse.x()), int(mouse.y()), padding=12)
+            if hit is not None:
+                hover_index = int(hit.get("index", -1))
+        env_keys = (
+            "LITEDESKTOPSTUDIO_ICON_SCENE_GLOW",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_FOG",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_SHADOW",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_REFLECTION",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_SELECTION",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_OVERLAY_RADIUS",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_REFLECTION_IMAGE",
+            "LITEDESKTOPSTUDIO_ICON_SCENE_ICON_ECHO_SIZE",
+        )
+        env_sig = tuple((k, str(os.environ.get(k, ""))) for k in env_keys)
+        item_sig = tuple(
+            (
+                int(it.get("index", -1)),
+                tuple(int(v) for v in it.get("rect", (0, 0, 0, 0))),
+                tuple(int(v) for v in it.get("center", (0, 0))),
+                int(it.get("image_index", -1)),
+                bool(it.get("selected", False)),
+                bool(it.get("focused", False)),
+            )
+            for it in list(items or [])[:512]
+        )
+        profile_sig = _lds_icon_scene_current_profile()
+        return (int(canvas.width()), int(canvas.height()), hover_index, profile_sig, item_sig, env_sig)
+    except:
+        return None
+
+
+def _lds_paint_desktop_icon_scene_overlay_cached(p: QPainter, canvas, items):
+    """Draw cached icon scene overlay as QImage to keep redraw cost low."""
+    try:
+        if not items:
+            return
+        key = _lds_icon_scene_overlay_signature(canvas, items)
+        cache = globals().get("_LDS_ICON_SCENE_OVERLAY_CACHE", {})
+        image = None
+        if cache and cache.get("key") == key:
+            image = cache.get("image")
+        if image is None or image.isNull():
+            image = QImage(canvas.size(), QImage.Format.Format_RGBA8888)
+            image.fill(Qt.GlobalColor.transparent)
+            ip = QPainter(image)
+            ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                ip.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            except:
+                pass
+            _lds_paint_desktop_icon_scene_overlay(ip, canvas, items)
+            ip.end()
+            globals()["_LDS_ICON_SCENE_OVERLAY_CACHE"] = {"key": key, "image": image}
+        p.drawImage(0, 0, image)
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] cached desktop icon scene overlay failed:", repr(e))
+        except:
+            pass
+        try:
+            _lds_paint_desktop_icon_scene_overlay(p, canvas, items)
+        except:
+            pass
+
+def _lds_should_paint_icon_foreground_for_canvas(canvas):
+    """Return whether the visible LiteDesktopStudio icon foreground layer should be painted.
+
+    This is a stricter call-site gate to avoid double icons.
+
+    Policy:
+      - env force ON: draw
+      - env force OFF: do not draw
+      - auto/default: draw only when a full-screen scenic engine is actually enabled
+        in an EffectsOverlayWidget config.
+    """
+    try:
+        raw = str(
+            os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS", "0")
+        ).strip().lower()
+
+        if raw in ("1", "true", "on", "yes", "always", "force"):
+            return True
+
+        if raw in ("0", "false", "off", "no", "never", "none"):
+            return False
+
+        # Auto mode:
+        # Do NOT rely only on _LDS_ICON_SCENE_ACTIVE_PROFILE because it can be stale.
+        # Inspect actual EffectsOverlayWidget settings on the current canvas.
+        try:
+            widgets = list(getattr(canvas, "widgets", []) or [])
+        except:
+            widgets = []
+
+        for w in widgets:
+            try:
+                if not isinstance(w, EffectsOverlayWidget):
+                    continue
+
+                cfg = getattr(w, "cfg", None)
+                if cfg is None:
+                    continue
+
+                settings = get_effect_overlay_settings(cfg)
+                raw_settings = settings.to_dict() if hasattr(settings, "to_dict") else {}
+
+                # Only these full-screen scenic engines need LiteDesktopStudio's
+                # own icon foreground layer. Other effects should use Explorer icons.
+                if bool(raw_settings.get("uyuni_salt_flat_engine_enabled", False)):
+                    return True
+
+                if bool(raw_settings.get("antelope_canyon_engine_enabled", False)):
+                    return True
+
+                if bool(raw_settings.get("sahara_desert_engine_enabled", False)):
+                    return True
+
+            except:
+                pass
+
+        return False
+
+    except:
+        # Safe default: avoid double icons.
+        return False
+
+def _lds_icon_foreground_layer_enabled():
+    """Return whether LiteDesktopStudio should draw its own visible icon layer.
+
+    Priority:
+      1. Environment variable override
+      2. Runtime/theme mode saved in global
+      3. Safe default OFF
+    """
+    try:
+        raw_env = os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS", None)
+
+        if raw_env is not None:
+            raw = str(raw_env).strip().lower()
+
+            if raw in ("1", "true", "on", "yes", "always", "force"):
+                return True
+
+            if raw in ("0", "false", "off", "no", "never", "none"):
+                return False
+
+            if raw in ("auto", "default"):
+                # fall through to runtime mode
+                pass
+
+        mode = str(
+            globals().get("_LDS_ICON_SCENE_RENDER_ICONS_MODE", "off")
+        ).strip().lower()
+
+        if mode in ("1", "true", "on", "yes", "always", "force"):
+            return True
+
+        if mode in ("0", "false", "off", "no", "never", "none", "auto", "default"):
+            return False
+
+        return False
+
+    except:
+        return False
+
+def _lds_make_icon_label_image(text_value, selected=False, focused=False):
+    """Create cached soft desktop-icon label QImage.
+
+    Visual intent:
+      - softer translucent label backing
+      - subtle blue-white halo around the label
+      - slight text glow for readability
+      - selected/focused state remains visible but not harsh
+
+    Required names already expected in LiteDesktopStudio.py:
+      QFont, QFontMetrics, QImage, QPainter, QColor, QPen,
+      QRadialGradient, QBrush, QPointF, QRectF, Qt, os
+    """
+    try:
+        label = str(text_value or "")[:96]
+        if not label:
+            return None
+
+        # Visual tuning values.
+        # These are included in the cache key so env changes are reflected.
+        label_bg_alpha = int(float(os.environ.get(
+            "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_BG_ALPHA_SELECTED" if selected else "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_BG_ALPHA",
+            "58" if selected else "24",
+        )))
+        label_glow_alpha = int(float(os.environ.get(
+            "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_GLOW_ALPHA_SELECTED" if selected else "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_GLOW_ALPHA",
+            "70" if selected else "28",
+        )))
+        label_text_glow_alpha = int(float(os.environ.get(
+            "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_TEXT_GLOW_ALPHA_SELECTED" if selected else "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_TEXT_GLOW_ALPHA",
+            "86" if selected else "38",
+        )))
+        label_text_alpha = int(float(os.environ.get(
+            "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_TEXT_ALPHA_SELECTED" if selected else "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_TEXT_ALPHA",
+            "238" if selected else "224",
+        )))
+        label_radius = float(os.environ.get(
+            "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_RADIUS",
+            "8",
+        ))
+
+        key = (
+            label,
+            bool(selected),
+            bool(focused),
+            label_bg_alpha,
+            label_glow_alpha,
+            label_text_glow_alpha,
+            label_text_alpha,
+            label_radius,
+        )
+
+        cache = globals().get("_LDS_ICON_LABEL_IMAGE_CACHE", {})
+        if key in cache:
+            return cache[key]
+
+        font = QFont("Segoe UI", 9)
+        metrics = QFontMetrics(font)
+        max_w = int(float(os.environ.get(
+            "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_MAX_WIDTH",
+            "128",
+        )))
+
+        lines = []
+        rest = label
+
+        for _ in range(2):
+            if metrics.horizontalAdvance(rest) <= max_w:
+                lines.append(rest)
+                rest = ""
+                break
+
+            cut = max(1, len(rest))
+            while cut > 1 and metrics.horizontalAdvance(rest[:cut] + "…") > max_w:
+                cut -= 1
+
+            lines.append(rest[:cut] + ("…" if cut < len(rest) else ""))
+            rest = rest[cut:]
+
+            if not rest:
+                break
+
+        if not lines:
+            return None
+
+        text_w = max(metrics.horizontalAdvance(x) for x in lines)
+        w = max(24, min(max_w + 14, text_w + 14))
+        h = max(18, len(lines) * (metrics.height() + 1) + 8)
+
+        # Padding lets the soft glow extend outside the core label backing.
+        pad = 3
+        img = QImage(w + pad * 2, h + pad * 2, QImage.Format.Format_RGBA8888)
+        img.fill(Qt.GlobalColor.transparent)
+
+        qp = QPainter(img)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        bg_rect = QRectF(pad, pad, w, h)
+
+        # ------------------------------------------------------------
+        # 1. Soft outer glow / halo
+        # ------------------------------------------------------------
+        try:
+            glow = QRadialGradient(
+                QPointF(pad + w * 0.5, pad + h * 0.52),
+                max(w, h) * 0.70,
+            )
+            glow.setColorAt(0.0, QColor(120, 185, 255, label_glow_alpha))
+            glow.setColorAt(0.42, QColor(80, 135, 210, int(label_glow_alpha * 0.34)))
+            glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+
+            qp.setPen(Qt.PenStyle.NoPen)
+            qp.setBrush(QBrush(glow))
+            qp.drawRoundedRect(
+                bg_rect.adjusted(-2.0, -1.5, 2.0, 1.5),
+                label_radius + 2,
+                label_radius + 2,
+            )
+        except:
+            pass
+
+        # ------------------------------------------------------------
+        # 2. Soft translucent label backing
+        # ------------------------------------------------------------
+        try:
+            qp.setPen(Qt.PenStyle.NoPen)
+
+            # Outer soft wash.
+            qp.setBrush(QColor(8, 14, 24, max(0, min(255, int(label_bg_alpha * 0.58)))))
+            qp.drawRoundedRect(
+                bg_rect.adjusted(-0.5, -0.5, 0.5, 0.5),
+                label_radius + 1,
+                label_radius + 1,
+            )
+
+            # Inner backing.
+            qp.setBrush(QColor(10, 18, 30, max(0, min(255, label_bg_alpha))))
+            qp.drawRoundedRect(
+                bg_rect.adjusted(1.0, 1.0, -1.0, -1.0),
+                label_radius,
+                label_radius,
+            )
+        except:
+            qp.setPen(Qt.PenStyle.NoPen)
+            qp.setBrush(QColor(8, 14, 24, label_bg_alpha))
+            qp.drawRoundedRect(bg_rect, label_radius, label_radius)
+
+        # ------------------------------------------------------------
+        # 3. Selected/focused subtle border
+        # ------------------------------------------------------------
+        if selected or focused:
+            try:
+                qp.setPen(QPen(QColor(150, 210, 255, 105), 1.0))
+                qp.setBrush(Qt.BrushStyle.NoBrush)
+                qp.drawRoundedRect(
+                    bg_rect.adjusted(0.5, 0.5, -0.5, -0.5),
+                    label_radius,
+                    label_radius,
+                )
+            except:
+                pass
+
+        # ------------------------------------------------------------
+        # 4. Text with subtle glow
+        # ------------------------------------------------------------
+        qp.setFont(font)
+        y = pad + 4 + metrics.ascent()
+
+        for line in lines:
+            text_rect = QRectF(
+                pad + 5,
+                y - metrics.ascent(),
+                w - 10,
+                metrics.height() + 2,
+            )
+
+            # Text halo. Very subtle; improves readability on bright scenes.
+            try:
+                qp.setPen(QColor(90, 170, 255, label_text_glow_alpha))
+                for dx, dy in (
+                    (-1, 0),
+                    (1, 0),
+                    (0, -1),
+                    (0, 1),
+                ):
+                    qp.drawText(
+                        text_rect.translated(dx, dy),
+                        Qt.AlignmentFlag.AlignCenter,
+                        line,
+                    )
+            except:
+                pass
+
+            # Main text.
+            qp.setPen(QColor(248, 252, 255, max(0, min(255, label_text_alpha))))
+            qp.drawText(
+                text_rect,
+                Qt.AlignmentFlag.AlignCenter,
+                line,
+            )
+
+            y += metrics.height() + 1
+
+        qp.end()
+
+        cache[key] = img
+        globals()["_LDS_ICON_LABEL_IMAGE_CACHE"] = cache
+        return img
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] icon label image failed:", repr(e))
+        except:
+            pass
+        return None
+
+def _lds_icon_foreground_signature(canvas, items):
+    try:
+        mouse = None
+        try:
+            mouse = canvas.mapFromGlobal(QApplication.instance().primaryScreen().cursor().pos())
+        except:
+            mouse = None
+        hover_index = -1
+        if mouse is not None:
+            hit = _lds_icon_hit_test(items, int(mouse.x()), int(mouse.y()), padding=12)
+            if hit is not None:
+                hover_index = int(hit.get("index", -1))
+        item_sig = tuple((int(it.get("index", -1)), tuple(int(v) for v in it.get("rect", (0,0,0,0))), tuple(int(v) for v in it.get("center", (0,0))), int(it.get("image_index", -1)), str(it.get("text", ""))[:96], bool(it.get("selected", False)), bool(it.get("focused", False))) for it in list(items or [])[:512])
+        env_sig = (str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS", "1")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_OPACITY", "0.96")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_LABELS", "1")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_SIZE", "48")))
+        try:
+            profile_sig = _lds_icon_scene_current_profile()
+        except:
+            profile_sig = str(globals().get("_LDS_ICON_SCENE_ACTIVE_PROFILE", "default"))
+
+        return (
+            int(canvas.width()),
+            int(canvas.height()),
+            hover_index,
+            profile_sig,
+            item_sig,
+            env_sig,
+        )
+    except:
+        return None
+
+
+def _lds_paint_desktop_icon_foreground_layer_cached(p, canvas, items):
+    """Paint visible desktop icons as a cached drawImage layer.
+
+    Explorer remains the source of truth for:
+      - position
+      - text
+      - selection/focus
+      - input routing
+
+    LiteDesktopStudio draws the visual icon layer on top of the scene.
+    """
+    try:
+        if not _lds_icon_foreground_layer_enabled() or not items:
+            return
+
+        try:
+            key = _lds_icon_foreground_signature(canvas, items)
+        except:
+            key = None
+
+        cache = globals().get("_LDS_ICON_FOREGROUND_LAYER_CACHE", {})
+        image = None
+
+        if cache and cache.get("key") == key:
+            image = cache.get("image")
+
+        if image is None or image.isNull():
+            image = QImage(canvas.size(), QImage.Format.Format_RGBA8888)
+            image.fill(Qt.GlobalColor.transparent)
+
+            ip = QPainter(image)
+            ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+            try:
+                ip.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            except:
+                pass
+
+            icon_size = int(float(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_SIZE", "48")))
+            icon_opacity = max(
+                0.05,
+                min(1.0, float(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_OPACITY", "0.96")))
+            )
+            render_labels = str(
+                os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_LABELS", "1")
+            ).strip().lower() in ("1", "true", "on", "yes")
+
+            for it in list(items)[:512]:
+                left, top, right, bottom = [int(v) for v in it.get("rect", (0, 0, 0, 0))]
+                cx, cy = [
+                    int(v) for v in it.get(
+                        "center",
+                        ((left + right) // 2, (top + bottom) // 2)
+                    )
+                ]
+
+                selected = bool(it.get("selected", False))
+                focused = bool(it.get("focused", False))
+
+                # Selection / focus backing
+                if selected or focused:
+                    ip.setPen(QPen(QColor(120, 190, 255, 110), 1.0))
+                    ip.setBrush(QColor(50, 125, 255, 45))
+                    ip.drawRoundedRect(
+                        QRectF(
+                            left - 3,
+                            top - 3,
+                            max(24, right - left + 6),
+                            max(24, bottom - top + 6),
+                        ),
+                        10,
+                        10,
+                    )
+
+                icon_img = None
+
+                # 1. Existing extractor chain, if available
+                try:
+                    icon_img = _lds_extract_desktop_icon_image_for_item(it, icon_size)
+                except:
+                    icon_img = None
+
+                # 2. Explicit QFileIconProvider fallback
+                if icon_img is None or icon_img.isNull():
+                    icon_img = _lds_try_qfileiconprovider_from_item_label(it, icon_size)
+
+                # 3. Draw icon image
+                if icon_img is not None and not icon_img.isNull():
+                    try:
+                        draw = icon_img.scaled(
+                            icon_size,
+                            icon_size,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    except:
+                        draw = icon_img
+
+                    draw_x = int(cx - draw.width() * 0.5)
+                    draw_y = int(top + 4)
+
+                    # Soft grounding shadow under icon.
+                    try:
+                        shadow_enabled = str(
+                            os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_ICON_SHADOW", "1")
+                        ).strip().lower() in ("1", "true", "on", "yes")
+
+                        if shadow_enabled:
+                            shadow_alpha = int(
+                                max(
+                                    0,
+                                    min(
+                                        120,
+                                        float(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_ICON_SHADOW_ALPHA", "38")),
+                                    ),
+                                )
+                            )
+                            shadow_w = max(18, int(draw.width() * 0.78))
+                            shadow_h = max(5, int(draw.height() * 0.18))
+                            shadow_x = int(cx - shadow_w * 0.5)
+                            shadow_y = int(draw_y + draw.height() - shadow_h * 0.28)
+
+                            sg = QRadialGradient(
+                                QPointF(shadow_x + shadow_w * 0.5, shadow_y + shadow_h * 0.5),
+                                max(shadow_w, shadow_h) * 0.55,
+                            )
+                            sg.setColorAt(0.0, QColor(0, 0, 0, shadow_alpha))
+                            sg.setColorAt(0.55, QColor(0, 0, 0, int(shadow_alpha * 0.38)))
+                            sg.setColorAt(1.0, QColor(0, 0, 0, 0))
+
+                            ip.save()
+                            ip.setPen(Qt.PenStyle.NoPen)
+                            ip.setBrush(QBrush(sg))
+                            ip.drawEllipse(QRectF(shadow_x, shadow_y, shadow_w, shadow_h))
+                            ip.restore()
+                    except:
+                        pass
+
+                    # Actual icon.
+                    ip.save()
+                    ip.setOpacity(icon_opacity)
+                    ip.drawImage(draw_x, draw_y, draw)
+                    ip.restore()
+
+                else:
+                    # Final fallback glyph.
+                    # If this appears, the foreground layer itself is working,
+                    # but icon extraction did not return an image.
+                    ip.setPen(QPen(QColor(230, 245, 255, 190), 1.1))
+                    ip.setBrush(QColor(80, 140, 200, 110))
+                    ip.drawRoundedRect(QRectF(cx - 18, top + 8, 36, 36), 8, 8)
+
+                    ip.setPen(QColor(255, 255, 255, 190))
+                    ip.drawLine(cx - 9, top + 26, cx + 9, top + 26)
+                    ip.drawLine(cx, top + 17, cx, top + 35)
+
+                # Labels
+                if render_labels:
+                    try:
+                        label_img = _lds_make_icon_label_image(
+                            str(it.get("text", "")),
+                            selected,
+                            focused,
+                        )
+                    except:
+                        label_img = None
+
+                    if label_img is not None and not label_img.isNull():
+                        ip.drawImage(
+                            int(cx - label_img.width() * 0.5),
+                            int(bottom + 4),
+                            label_img,
+                        )
+
+            ip.end()
+            globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                "key": key,
+                "image": image,
+            }
+
+        p.drawImage(0, 0, image)
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] desktop icon foreground layer failed:", repr(e))
+        except:
+            pass
+
+
+def _lds_normalize_desktop_icon_label(value):
+    """Normalize Explorer display label and filesystem names for matching."""
+    try:
+        import unicodedata
+
+        s = str(value or "")
+        s = s.replace("\r", " ").replace("\n", " ")
+        s = unicodedata.normalize("NFKC", s)
+        s = " ".join(s.split())
+        return s.strip().lower()
+    except:
+        return str(value or "").strip().lower()
+
+
+def _lds_expand_windows_path(value):
+    """Expand Windows registry/env-style path strings."""
+    try:
+        s = str(value or "").strip()
+        if not s:
+            return None
+
+        # Expand %USERPROFILE%, %OneDrive%, etc.
+        try:
+            s = os.path.expandvars(s)
+        except:
+            pass
+
+        # Expand ~ if any
+        try:
+            s = os.path.expanduser(s)
+        except:
+            pass
+
+        return Path(s)
+    except:
+        return None
+
+
+def _lds_registry_desktop_roots():
+    """Read actual Desktop roots from Windows registry.
+
+    This is usually more reliable than guessing USERPROFILE/Desktop when
+    Desktop is redirected to OneDrive or another folder.
+    """
+    roots = []
+
+    try:
+        if not is_windows():
+            return roots
+
+        import winreg
+
+        registry_locations = [
+            (
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                ["Desktop"],
+            ),
+            (
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+                ["Desktop"],
+            ),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                ["Common Desktop"],
+            ),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+                ["Common Desktop"],
+            ),
+        ]
+
+        for hive, key_path, names in registry_locations:
+            try:
+                with winreg.OpenKey(hive, key_path) as key:
+                    for name in names:
+                        try:
+                            value, _ = winreg.QueryValueEx(key, name)
+                            p = _lds_expand_windows_path(value)
+                            if p is not None and p.exists() and p.is_dir():
+                                roots.append(p)
+                        except:
+                            pass
+            except:
+                pass
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] registry desktop roots failed:", repr(e))
+        except:
+            pass
+
+    return roots
+
+
+def _lds_desktop_roots_for_icon_resolution():
+    """Collect actual roots for icon path resolution.
+
+    This intentionally includes:
+      - registry/known desktop roots if available
+      - conventional Desktop folders
+      - OneDrive Desktop folders
+      - Public Desktop
+      - manual override by LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_ROOTS
+      - current working directory and app directory as a practical fallback
+
+    The last two are important when LiteDesktopStudio is being developed from a
+    build/project folder and desktop labels point to files near the app.
+    """
+    roots = []
+    seen = set()
+    
+    try:
+        cache = globals().get("_LDS_DESKTOP_ICON_ROOTS_CACHE", {})
+        now = time.time()
+        env_value = os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_ROOTS", "")
+
+        if (
+            cache
+            and cache.get("env") == env_value
+            and now - float(cache.get("time", 0.0)) < 10.0
+            and cache.get("roots")
+        ):
+            return list(cache.get("roots", []))
+    except:
+        pass
+
+
+    def debug_enabled():
+        try:
+            return str(
+                os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DEBUG_ICONS", "0")
+            ).strip().lower() in ("1", "true", "on", "yes")
+        except:
+            return False
+
+    def debug_print(*args):
+        try:
+            if debug_enabled():
+                print(*args)
+        except:
+            pass
+
+    def clean_path_text(value):
+        try:
+            s = str(value or "").strip()
+
+            # cmd.exe の set "VAR=..." は quotes を含めないが、
+            # set VAR="C:\..." や PowerShell 由来で quotes が入ることがある。
+            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+                s = s[1:-1].strip()
+
+            try:
+                s = os.path.expandvars(s)
+            except:
+                pass
+
+            try:
+                s = os.path.expanduser(s)
+            except:
+                pass
+
+            return s
+        except:
+            return str(value or "")
+
+    def add_root(p, source=""):
+        try:
+            if p is None:
+                return
+
+            raw = p
+            p = clean_path_text(p)
+            if not p:
+                return
+
+            path_obj = Path(p)
+
+            exists = False
+            is_dir = False
+
+            try:
+                exists = path_obj.exists()
+                is_dir = path_obj.is_dir()
+            except:
+                exists = False
+                is_dir = False
+
+            if not exists or not is_dir:
+                debug_print(
+                    "[LiteDesktopStudio] desktop root rejected:",
+                    repr(str(raw)),
+                    "=>",
+                    repr(str(path_obj)),
+                    "exists=",
+                    exists,
+                    "is_dir=",
+                    is_dir,
+                    "source=",
+                    source,
+                )
+                return
+
+            try:
+                key = str(path_obj.resolve()).lower()
+            except:
+                key = str(path_obj).lower()
+
+            if key not in seen:
+                seen.add(key)
+                roots.append(path_obj)
+                debug_print(
+                    "[LiteDesktopStudio] desktop root accepted:",
+                    str(path_obj),
+                    "source=",
+                    source,
+                )
+
+        except Exception as e:
+            debug_print(
+                "[LiteDesktopStudio] desktop root add failed:",
+                repr(p),
+                "source=",
+                source,
+                "error=",
+                repr(e),
+            )
+
+    # 1. Registry-resolved Desktop folders, if helper exists.
+    try:
+        for p in _lds_registry_desktop_roots():
+            add_root(p, "registry")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] registry roots unavailable:", repr(e))
+
+    # 2. KnownFolder helper, if present.
+    try:
+        if "_lds_known_folder_path" in globals():
+            add_root(
+                _lds_known_folder_path("B4BFCC3A-DB2C-424C-B029-7FE99A87C641"),
+                "known-folder Desktop",
+            )
+            add_root(
+                _lds_known_folder_path("C4AA340D-F20F-4863-AFEF-F87EF2E6BA25"),
+                "known-folder PublicDesktop",
+            )
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] known-folder roots unavailable:", repr(e))
+
+    # 3. Conventional locations.
+    try:
+        add_root(Path.home() / "Desktop", "Path.home/Desktop")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] Path.home Desktop failed:", repr(e))
+
+    try:
+        userprofile = os.environ.get("USERPROFILE", "")
+        if userprofile:
+            add_root(Path(userprofile) / "Desktop", "USERPROFILE/Desktop")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] USERPROFILE Desktop failed:", repr(e))
+
+    # 4. OneDrive variants.
+    for env_name in ("OneDrive", "OneDriveCommercial", "OneDriveConsumer"):
+        try:
+            od = os.environ.get(env_name, "")
+            if od:
+                add_root(Path(od) / "Desktop", env_name + "/Desktop")
+        except Exception as e:
+            debug_print("[LiteDesktopStudio] OneDrive Desktop failed:", env_name, repr(e))
+
+    # 5. Public Desktop.
+    try:
+        public = os.environ.get("PUBLIC", r"C:\Users\Public")
+        if public:
+            add_root(Path(public) / "Desktop", "PUBLIC/Desktop")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] PUBLIC Desktop failed:", repr(e))
+
+    # 6. Manual override.
+    try:
+        extra = os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_ROOTS", "")
+        debug_print(
+            "[LiteDesktopStudio] env LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_ROOTS raw:",
+            repr(extra),
+        )
+
+        if extra:
+            for part in str(extra).split(";"):
+                part = clean_path_text(part)
+                if part:
+                    add_root(part, "env:LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_ROOTS")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] env desktop roots parse failed:", repr(e))
+
+    # 7. Practical development/build fallbacks.
+    # If desktop labels refer to files near LiteDesktopStudio.py, this helps.
+    try:
+        add_root(os.getcwd(), "cwd")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] cwd root failed:", repr(e))
+
+    try:
+        add_root(Path(__file__).resolve().parent, "__file__ parent")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] __file__ parent root failed:", repr(e))
+
+    # 8. Optional Documents/DesktopForge-Py/build-v3 fallback from current user.
+    # This is intentionally broad but harmless because it only adds existing dirs.
+    try:
+        up = os.environ.get("USERPROFILE", "")
+        if up:
+            add_root(Path(up) / "Documents" / "DesktopForge-Py" / "build-v3", "known dev build-v3")
+            add_root(Path(up) / "Documents" / "DesktopForge-Py", "known dev project")
+    except Exception as e:
+        debug_print("[LiteDesktopStudio] dev fallback root failed:", repr(e))
+
+    debug_print(
+        "[LiteDesktopStudio] desktop icon roots:",
+        [str(p) for p in roots],
+    )
+    
+    try:
+        globals()["_LDS_DESKTOP_ICON_ROOTS_CACHE"] = {
+            "time": time.time(),
+            "roots": list(roots),
+            "env": os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_ROOTS", ""),
+        }
+    except:
+        pass
+
+    return roots
+
+def _lds_desktop_icon_candidate_paths_from_label(label):
+    """Resolve Explorer desktop display label to filesystem candidates.
+
+    This resolver is intentionally broad:
+      - uses registry Desktop roots
+      - supports OneDrive/Public Desktop
+      - compares exact filename, stem, common hidden extensions
+      - normalizes Unicode, whitespace, full-width/half-width differences
+    """
+    try:
+        raw_label = str(label or "").strip()
+        norm_label = _lds_normalize_desktop_icon_label(raw_label)
+
+        if not norm_label:
+            return []
+
+        roots = _lds_desktop_roots_for_icon_resolution()
+        candidates = []
+
+        common_exts = [
+            "",
+            ".lnk",
+            ".url",
+            ".exe",
+            ".appref-ms",
+            ".txt",
+            ".json",
+            ".ini",
+            ".yaml",
+            ".yml",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+            ".gif",
+            ".zip",
+            ".7z",
+            ".rar",
+            ".py",
+            ".bat",
+            ".cmd",
+        ]
+
+        def add_candidate(p):
+            try:
+                p = Path(p)
+                if p.exists():
+                    candidates.append(p)
+            except:
+                pass
+
+        # Direct label + common extensions
+        for root in roots:
+            for ext in common_exts:
+                add_candidate(root / (raw_label + ext))
+
+        # Full root scan
+        for root in roots:
+            try:
+                for p in root.iterdir():
+                    try:
+                        names = set()
+
+                        names.add(_lds_normalize_desktop_icon_label(p.name))
+                        names.add(_lds_normalize_desktop_icon_label(p.stem))
+
+                        # Shortcut / URL / appref display often corresponds to stem
+                        if p.suffix.lower() in (".lnk", ".url", ".appref-ms"):
+                            names.add(_lds_normalize_desktop_icon_label(p.stem))
+
+                        compact_label = norm_label.replace(" ", "")
+                        compact_names = {n.replace(" ", "") for n in names}
+
+                        if norm_label in names or compact_label in compact_names:
+                            candidates.append(p)
+                    except:
+                        pass
+            except:
+                pass
+
+        # Shallow recursive fallback.
+        # This is limited to avoid scanning the whole user profile.
+        # Useful when Desktop contains grouped folders or redirected cloud folders.
+        recursive_enabled = False
+        try:
+            recursive_enabled = str(
+                os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_RECURSIVE_SEARCH", "0")
+            ).lower() in ("1", "true", "on", "yes")
+        except:
+            recursive_enabled = False
+
+        if recursive_enabled:
+            for root in roots:
+                try:
+                    for p in root.rglob("*"):
+                        try:
+                            if not p.exists():
+                                continue
+
+                            names = {
+                                _lds_normalize_desktop_icon_label(p.name),
+                                _lds_normalize_desktop_icon_label(p.stem),
+                            }
+
+                            compact_label = norm_label.replace(" ", "")
+                            compact_names = {n.replace(" ", "") for n in names}
+
+                            if norm_label in names or compact_label in compact_names:
+                                candidates.append(p)
+                        except:
+                            pass
+                except:
+                    pass
+
+        # Deduplicate while preserving order
+        out = []
+        seen = set()
+
+        for p in candidates:
+            try:
+                key = str(Path(p).resolve()).lower()
+                if key not in seen:
+                    seen.add(key)
+                    out.append(Path(p))
+            except:
+                pass
+
+        # Debug
+        try:
+            if str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DEBUG_ICONS", "0")).lower() in ("1", "true", "on", "yes"):
+                print(
+                    "[LiteDesktopStudio] icon path candidates:",
+                    repr(raw_label),
+                    "=>",
+                    [str(p) for p in out[:12]],
+                )
+        except:
+            pass
+
+        return out
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] desktop icon candidate path resolution failed:", repr(e))
+        except:
+            pass
+        return []
+
+def _lds_hicon_to_qimage(hicon, size):
+    try:
+        hicon = int(hicon or 0); size = int(size)
+        if not hicon or size <= 0:
+            return None
+        user32 = ctypes.windll.user32; gdi32 = ctypes.windll.gdi32
+        user32.GetDC.argtypes = [ctypes.c_void_p]; user32.GetDC.restype = ctypes.c_void_p
+        user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; user32.ReleaseDC.restype = ctypes.c_int
+        user32.DrawIconEx.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint]; user32.DrawIconEx.restype = ctypes.c_bool
+        gdi32.CreateCompatibleDC.argtypes = [ctypes.c_void_p]; gdi32.CreateCompatibleDC.restype = ctypes.c_void_p
+        gdi32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; gdi32.SelectObject.restype = ctypes.c_void_p
+        gdi32.DeleteObject.argtypes = [ctypes.c_void_p]; gdi32.DeleteObject.restype = ctypes.c_bool
+        gdi32.DeleteDC.argtypes = [ctypes.c_void_p]; gdi32.DeleteDC.restype = ctypes.c_bool
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [("biSize", ctypes.c_uint32), ("biWidth", ctypes.c_int32), ("biHeight", ctypes.c_int32), ("biPlanes", ctypes.c_uint16), ("biBitCount", ctypes.c_uint16), ("biCompression", ctypes.c_uint32), ("biSizeImage", ctypes.c_uint32), ("biXPelsPerMeter", ctypes.c_int32), ("biYPelsPerMeter", ctypes.c_int32), ("biClrUsed", ctypes.c_uint32), ("biClrImportant", ctypes.c_uint32)]
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", ctypes.c_uint32 * 3)]
+        gdi32.CreateDIBSection.argtypes = [ctypes.c_void_p, ctypes.POINTER(BITMAPINFO), ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_uint32]; gdi32.CreateDIBSection.restype = ctypes.c_void_p
+        hdc = user32.GetDC(None); memdc = gdi32.CreateCompatibleDC(ctypes.c_void_p(hdc)); bits = ctypes.c_void_p(); hbmp = None; oldobj = None
+        try:
+            bmi = BITMAPINFO(); bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER); bmi.bmiHeader.biWidth = size; bmi.bmiHeader.biHeight = -size; bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32; bmi.bmiHeader.biCompression = 0; bmi.bmiHeader.biSizeImage = size * size * 4
+            hbmp = gdi32.CreateDIBSection(ctypes.c_void_p(memdc), ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+            if not hbmp or not bits or not bits.value: return None
+            oldobj = gdi32.SelectObject(ctypes.c_void_p(memdc), ctypes.c_void_p(hbmp)); ctypes.memset(bits, 0, size * size * 4)
+            if not user32.DrawIconEx(ctypes.c_void_p(memdc), 0, 0, ctypes.c_void_p(hicon), size, size, 0, None, 0x0003): return None
+            raw = np.ctypeslib.as_array((ctypes.c_ubyte * int(size * size * 4)).from_address(int(bits.value))).reshape((size, size, 4)).copy()
+            rgba = raw[:, :, [2, 1, 0, 3]].copy()
+            if int(rgba[:, :, 3].max()) == 0:
+                mask = np.maximum.reduce([rgba[:, :, 0], rgba[:, :, 1], rgba[:, :, 2]])
+                rgba[:, :, 3] = np.where(mask > 0, 255, 0).astype(np.uint8)
+            return QImage(rgba.tobytes(), size, size, QImage.Format.Format_RGBA8888).copy()
+        finally:
+            try:
+                if oldobj and memdc: gdi32.SelectObject(ctypes.c_void_p(memdc), ctypes.c_void_p(oldobj))
+                if hbmp: gdi32.DeleteObject(ctypes.c_void_p(hbmp))
+                if memdc: gdi32.DeleteDC(ctypes.c_void_p(memdc))
+                if hdc: user32.ReleaseDC(None, ctypes.c_void_p(hdc))
+            except: pass
+    except Exception as e:
+        try: print("[LiteDesktopStudio] HICON to QImage failed:", repr(e))
+        except: pass
+        return None
+
+
+def _lds_extract_icon_image_from_filesystem_path(path, size=48):
+    try:
+        p = Path(path)
+        if not is_windows() or not p.exists(): return None
+        key = ("path", str(p).lower(), int(size))
+        cache = globals().get("_LDS_ICON_IMAGE_CACHE", {})
+        if key in cache: return cache[key]
+        shell32 = ctypes.windll.shell32; user32 = ctypes.windll.user32
+        class SHFILEINFOW(ctypes.Structure):
+            _fields_ = [("hIcon", ctypes.c_void_p), ("iIcon", ctypes.c_int), ("dwAttributes", ctypes.c_uint32), ("szDisplayName", ctypes.c_wchar * 260), ("szTypeName", ctypes.c_wchar * 80)]
+        shell32.SHGetFileInfoW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.POINTER(SHFILEINFOW), ctypes.c_uint, ctypes.c_uint]; shell32.SHGetFileInfoW.restype = ctypes.c_void_p
+        user32.DestroyIcon.argtypes = [ctypes.c_void_p]; user32.DestroyIcon.restype = ctypes.c_bool
+        info = SHFILEINFOW(); res = shell32.SHGetFileInfoW(str(p), 0, ctypes.byref(info), ctypes.sizeof(info), 0x100)
+        if not res or not info.hIcon:
+            cache[key] = None; globals()["_LDS_ICON_IMAGE_CACHE"] = cache; return None
+        try:
+            img = _lds_hicon_to_qimage(int(info.hIcon), int(size)); cache[key] = img; globals()["_LDS_ICON_IMAGE_CACHE"] = cache; return img
+        finally:
+            try: user32.DestroyIcon(ctypes.c_void_p(int(info.hIcon)))
+            except: pass
+    except Exception as e:
+        try: print("[LiteDesktopStudio] path icon extraction failed:", repr(e))
+        except: pass
+        return None
+
+
+def _lds_extract_icon_image_with_qfileiconprovider(path, size=48):
+    try:
+        p = Path(path)
+        if not p.exists():
+            return None
+        size = int(size)
+        key = ("qfileiconprovider", str(p).lower(), size)
+        cache = globals().get("_LDS_ICON_IMAGE_CACHE", {})
+        if key in cache:
+            return cache[key]
+        provider = QFileIconProvider()
+        icon = provider.icon(QFileInfo(str(p)))
+        if icon is None or icon.isNull():
+            cache[key] = None
+            globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+            return None
+        pix = icon.pixmap(size, size)
+        if pix is None or pix.isNull():
+            cache[key] = None
+            globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+            return None
+        img = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+        cache[key] = img
+        globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+        return img
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] QFileIconProvider icon extraction failed:", repr(e))
+        except:
+            pass
+        return None
+
+def _lds_is_recycle_bin_label(label):
+    """Return True when Explorer label looks like Recycle Bin."""
+    try:
+        normalized = _lds_normalize_desktop_icon_label(label)
+        return normalized in (
+            "ごみ箱",
+            "ゴミ箱",
+            "recycle bin",
+            "trash",
+            "trashcan",
+            "recyclebin",
+        )
+    except:
+        s = str(label or "").strip().lower()
+        return s in ("ごみ箱", "ゴミ箱", "recycle bin", "trash", "trashcan", "recyclebin")
+
+
+def _lds_extract_recycle_bin_icon_image(size=48):
+    """Return a recycle-bin/trash icon QImage.
+
+    This does not depend on a filesystem path because Recycle Bin is a Shell
+    namespace item, not a normal desktop file.
+    """
+    try:
+        size = int(size)
+        if size <= 0:
+            size = 48
+
+        cache = globals().get("_LDS_ICON_IMAGE_CACHE", {})
+        key = ("special-recycle-bin-v1", size)
+
+        if key in cache:
+            return cache[key]
+
+        icon = None
+
+        # 1. QFileIconProvider Trashcan
+        try:
+            provider = QFileIconProvider()
+            try:
+                icon = provider.icon(QFileIconProvider.IconType.Trashcan)
+            except:
+                icon = provider.icon(QFileIconProvider.Trashcan)
+        except:
+            icon = None
+
+        # 2. QStyle standard Trash icon
+        if icon is None or icon.isNull():
+            try:
+                app = QApplication.instance()
+                if app is not None:
+                    try:
+                        icon = app.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+                    except:
+                        icon = app.style().standardIcon(QStyle.SP_TrashIcon)
+            except:
+                icon = None
+
+        # 3. Convert QIcon to QImage
+        if icon is not None and not icon.isNull():
+            try:
+                pix = icon.pixmap(size, size)
+                if pix is not None and not pix.isNull():
+                    img = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+                    cache[key] = img
+                    globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+                    return img
+            except:
+                pass
+
+        # 4. Final manual trash-bin glyph
+        img = QImage(size, size, QImage.Format.Format_RGBA8888)
+        img.fill(Qt.GlobalColor.transparent)
+
+        qp = QPainter(img)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        w = float(size)
+        h = float(size)
+
+        body = QRectF(w * 0.25, h * 0.34, w * 0.50, h * 0.48)
+        lid = QRectF(w * 0.21, h * 0.24, w * 0.58, h * 0.10)
+        handle = QRectF(w * 0.39, h * 0.16, w * 0.22, h * 0.10)
+
+        qp.setPen(QPen(QColor(235, 248, 255, 220), max(1.0, w * 0.035)))
+        qp.setBrush(QColor(80, 150, 200, 135))
+        qp.drawRoundedRect(body, w * 0.07, w * 0.07)
+
+        qp.setBrush(QColor(120, 190, 230, 170))
+        qp.drawRoundedRect(lid, w * 0.04, w * 0.04)
+        qp.drawRoundedRect(handle, w * 0.04, w * 0.04)
+
+        qp.setPen(QPen(QColor(255, 255, 255, 165), max(1.0, w * 0.025)))
+        qp.drawLine(QPointF(w * 0.39, h * 0.43), QPointF(w * 0.39, h * 0.73))
+        qp.drawLine(QPointF(w * 0.50, h * 0.43), QPointF(w * 0.50, h * 0.73))
+        qp.drawLine(QPointF(w * 0.61, h * 0.43), QPointF(w * 0.61, h * 0.73))
+
+        qp.end()
+
+        cache[key] = img
+        globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+        return img
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] recycle bin icon extraction failed:", repr(e))
+        except:
+            pass
+        return None
+
+def _lds_extract_desktop_icon_image_for_item(item, size=48):
+    """Extract visible icon image for a synced Explorer desktop item.
+
+    Order:
+      1. Resolve label -> filesystem candidates
+      2. QFileIconProvider(path)
+      3. SHGetFileInfoW(path), if available
+      4. Explorer image-list image_index
+      5. QFileIconProvider generic file icon
+
+    Rationale:
+      At this stage, label -> path resolution is confirmed working.
+      Therefore path-based extraction should be preferred over cross-process
+      SysListView32 image-list extraction.
+    """
+    try:
+        size = int(size)
+        label = str(item.get("text", "")) if isinstance(item, dict) else ""
+        image_index = int(item.get("image_index", -1)) if isinstance(item, dict) else -1
+        size = int(size)
+        label = str(item.get("text", "")) if isinstance(item, dict) else ""
+        image_index = int(item.get("image_index", -1)) if isinstance(item, dict) else -1
+
+        debug = False
+        try:
+            debug = str(
+                os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DEBUG_ICONS", "0")
+            ).strip().lower() in ("1", "true", "on", "yes")
+        except:
+            debug = False
+
+        # Special Shell namespace item: Recycle Bin / ごみ箱
+        # It has no normal filesystem path, so handle it before path resolution.
+        try:
+            if _lds_is_recycle_bin_label(label):
+                img = _lds_extract_recycle_bin_icon_image(size)
+                if img is not None and not img.isNull():
+                    if debug:
+                        print("[LiteDesktopStudio] icon source special RecycleBin:", repr(label))
+                    return img
+                else:
+                    if debug:
+                        print("[LiteDesktopStudio] RecycleBin icon returned empty image:", repr(label))
+        except Exception as e:
+            if debug:
+                try:
+                    print("[LiteDesktopStudio] RecycleBin icon fallback failed:", repr(e))
+                except:
+                    pass
+
+        try:
+            debug = str(
+                os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DEBUG_ICONS", "0")
+            ).strip().lower() in ("1", "true", "on", "yes")
+        except:
+            debug = False
+
+        paths = []
+        try:
+            paths = _lds_desktop_icon_candidate_paths_from_label(label)
+        except Exception as e:
+            if debug:
+                try:
+                    print(
+                        "[LiteDesktopStudio] item icon candidate path failed:",
+                        repr(label),
+                        repr(e),
+                    )
+                except:
+                    pass
+            paths = []
+
+        if debug:
+            try:
+                print(
+                    "[LiteDesktopStudio] item icon extractor:",
+                    repr(label),
+                    "image_index=",
+                    image_index,
+                    "paths=",
+                    [str(p) for p in paths[:8]],
+                )
+            except:
+                pass
+
+        # ------------------------------------------------------------
+        # 1. QFileIconProvider path-first
+        # ------------------------------------------------------------
+        for p in paths:
+            try:
+                p = Path(p)
+
+                if not p.exists():
+                    continue
+
+                key = ("qfileiconprovider-path-first-v3", str(p).lower(), size)
+                cache = globals().get("_LDS_ICON_IMAGE_CACHE", {})
+
+                if key in cache:
+                    img = cache[key]
+                    if img is not None and not img.isNull():
+                        if debug:
+                            print("[LiteDesktopStudio] icon source cache QFileIconProvider:", str(p))
+                        return img
+
+                provider = QFileIconProvider()
+                icon = provider.icon(QFileInfo(str(p)))
+
+                if icon is not None and not icon.isNull():
+                    pix = icon.pixmap(size, size)
+
+                    if pix is not None and not pix.isNull():
+                        img = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+
+                        cache[key] = img
+                        globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+
+                        if debug:
+                            print("[LiteDesktopStudio] icon source QFileIconProvider:", str(p))
+
+                        return img
+
+                if debug:
+                    print("[LiteDesktopStudio] QFileIconProvider returned empty icon:", str(p))
+
+            except Exception as e:
+                if debug:
+                    try:
+                        print("[LiteDesktopStudio] QFileIconProvider path failed:", str(p), repr(e))
+                    except:
+                        pass
+
+        # ------------------------------------------------------------
+        # 2. Existing SHGetFileInfo path fallback, if present
+        # ------------------------------------------------------------
+        try:
+            for p in paths:
+                img = _lds_extract_icon_image_from_filesystem_path(p, size)
+                if img is not None and not img.isNull():
+                    if debug:
+                        print("[LiteDesktopStudio] icon source SHGetFileInfo:", str(p))
+                    return img
+        except NameError:
+            pass
+        except Exception as e:
+            if debug:
+                try:
+                    print("[LiteDesktopStudio] SHGetFileInfo path fallback failed:", repr(e))
+                except:
+                    pass
+
+        # ------------------------------------------------------------
+        # 3. Explorer image-list fallback
+        # ------------------------------------------------------------
+        try:
+            img = _lds_extract_desktop_icon_image(image_index, size)
+            if img is not None and not img.isNull():
+                if debug:
+                    print(
+                        "[LiteDesktopStudio] icon source Explorer image-list:",
+                        repr(label),
+                        "image_index=",
+                        image_index,
+                    )
+                return img
+        except Exception as e:
+            if debug:
+                try:
+                    print("[LiteDesktopStudio] Explorer image-list fallback failed:", repr(e))
+                except:
+                    pass
+
+        # ------------------------------------------------------------
+        # 4. Generic QFileIconProvider fallback
+        # ------------------------------------------------------------
+        try:
+            img = _lds_qfileiconprovider_icon_for_path_or_generic(None, size)
+            if img is not None and not img.isNull():
+                if debug:
+                    print("[LiteDesktopStudio] icon source generic QFileIconProvider:", repr(label))
+                return img
+        except Exception as e:
+            if debug:
+                try:
+                    print("[LiteDesktopStudio] generic QFileIconProvider fallback failed:", repr(e))
+                except:
+                    pass
+
+        if debug:
+            try:
+                print("[LiteDesktopStudio] icon source NONE:", repr(label))
+            except:
+                pass
+
+        return None
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] item icon extraction failed:", repr(e))
+        except:
+            pass
+        return None
+
+def _lds_qfileiconprovider_icon_for_path_or_generic(path=None, size=48):
+    """Return a QImage icon using multiple fallback paths.
+
+    Order:
+      1. QFileIconProvider for real filesystem path
+      2. QFileIconProvider generic file icon
+      3. QApplication.style().standardIcon(QStyle.SP_FileIcon)
+      4. Manually drawn fallback document glyph
+
+    This function is intentionally designed to return a visible QImage whenever
+    the foreground icon layer is actually being painted.
+    """
+    try:
+        size = int(size)
+        if size <= 0:
+            size = 48
+
+        cache = globals().get("_LDS_ICON_IMAGE_CACHE", {})
+        key = ("qfileiconprovider-any-v2", str(path or "__generic__").lower(), size)
+
+        if key in cache:
+            return cache[key]
+
+        icon = None
+
+        # 1. Real filesystem path
+        try:
+            if path and Path(path).exists():
+                provider = QFileIconProvider()
+                icon = provider.icon(QFileInfo(str(Path(path))))
+        except:
+            icon = None
+
+        # 2. Generic file icon from QFileIconProvider
+        if icon is None or icon.isNull():
+            try:
+                provider = QFileIconProvider()
+                try:
+                    icon = provider.icon(QFileIconProvider.IconType.File)
+                except:
+                    icon = provider.icon(QFileIconProvider.File)
+            except:
+                icon = None
+
+        # 3. Qt style standard file icon
+        if icon is None or icon.isNull():
+            try:
+                app = QApplication.instance()
+                if app is not None:
+                    icon = app.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+            except:
+                icon = None
+
+        # Convert QIcon to QImage
+        if icon is not None and not icon.isNull():
+            try:
+                pix = icon.pixmap(size, size)
+                if pix is not None and not pix.isNull():
+                    img = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+                    cache[key] = img
+                    globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+                    return img
+            except:
+                pass
+
+        # 4. Absolute final fallback: draw a simple document glyph.
+        img = QImage(size, size, QImage.Format.Format_RGBA8888)
+        img.fill(Qt.GlobalColor.transparent)
+
+        qp = QPainter(img)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        margin = max(3, int(size * 0.12))
+        fold = max(7, int(size * 0.24))
+        rect = QRectF(margin, margin, size - margin * 2, size - margin * 2)
+
+        qp.setPen(QPen(QColor(230, 245, 255, 210), 1.2))
+        qp.setBrush(QColor(80, 140, 200, 130))
+        qp.drawRoundedRect(rect, max(4, int(size * 0.10)), max(4, int(size * 0.10)))
+
+        # folded corner
+        path_obj = QPainterPath()
+        path_obj.moveTo(size - margin - fold, margin)
+        path_obj.lineTo(size - margin, margin)
+        path_obj.lineTo(size - margin, margin + fold)
+        path_obj.closeSubpath()
+        qp.setBrush(QColor(210, 235, 255, 150))
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.drawPath(path_obj)
+
+        qp.setPen(QPen(QColor(255, 255, 255, 190), 1.0))
+        y1 = int(size * 0.48)
+        y2 = int(size * 0.62)
+        qp.drawLine(int(size * 0.30), y1, int(size * 0.70), y1)
+        qp.drawLine(int(size * 0.30), y2, int(size * 0.62), y2)
+
+        qp.end()
+
+        cache[key] = img
+        globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+        return img
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] QFileIconProvider generic/path icon failed:", repr(e))
+        except:
+            pass
+        return None
+
+def _lds_try_qfileiconprovider_from_item_label(item, size=48):
+    """Resolve item label to path, then force QFileIconProvider path icon first."""
+    try:
+        label = str(item.get("text", "")) if isinstance(item, dict) else ""
+        size = int(size)
+
+        paths = []
+        try:
+            paths = _lds_desktop_icon_candidate_paths_from_label(label)
+        except Exception as e:
+            try:
+                print("[LiteDesktopStudio] QFileIconProvider path candidate failed:", repr(label), repr(e))
+            except:
+                pass
+            paths = []
+
+        debug = False
+        try:
+            debug = str(
+                os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DEBUG_ICONS", "0")
+            ).strip().lower() in ("1", "true", "on", "yes")
+        except:
+            debug = False
+
+        if debug:
+            try:
+                print(
+                    "[LiteDesktopStudio] QFileIconProvider try:",
+                    repr(label),
+                    "paths=",
+                    [str(p) for p in paths[:8]],
+                )
+            except:
+                pass
+
+        # 1. Path-specific QFileIconProvider first.
+        for p in paths:
+            try:
+                p = Path(p)
+                if not p.exists():
+                    continue
+
+                key = ("qfileiconprovider-path-first", str(p).lower(), size)
+                cache = globals().get("_LDS_ICON_IMAGE_CACHE", {})
+
+                if key in cache:
+                    img = cache[key]
+                    if img is not None and not img.isNull():
+                        if debug:
+                            print("[LiteDesktopStudio] QFileIconProvider cache hit:", str(p))
+                        return img
+
+                provider = QFileIconProvider()
+                icon = provider.icon(QFileInfo(str(p)))
+
+                if icon is not None and not icon.isNull():
+                    pix = icon.pixmap(size, size)
+
+                    if pix is not None and not pix.isNull():
+                        img = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+                        cache[key] = img
+                        globals()["_LDS_ICON_IMAGE_CACHE"] = cache
+
+                        if debug:
+                            print("[LiteDesktopStudio] QFileIconProvider path icon OK:", str(p))
+
+                        return img
+
+                if debug:
+                    print("[LiteDesktopStudio] QFileIconProvider path icon EMPTY:", str(p))
+
+            except Exception as e:
+                if debug:
+                    try:
+                        print("[LiteDesktopStudio] QFileIconProvider path icon failed:", str(p), repr(e))
+                    except:
+                        pass
+
+        # 2. Existing generic provider fallback.
+        try:
+            img = _lds_qfileiconprovider_icon_for_path_or_generic(None, size)
+            if img is not None and not img.isNull():
+                if debug:
+                    print("[LiteDesktopStudio] QFileIconProvider generic fallback:", repr(label))
+                return img
+        except Exception as e:
+            if debug:
+                try:
+                    print("[LiteDesktopStudio] QFileIconProvider generic fallback failed:", repr(e))
+                except:
+                    pass
+
+        return None
+
+    except Exception as e:
+        try:
+            print("[LiteDesktopStudio] QFileIconProvider item fallback failed:", repr(e))
+        except:
+            pass
+        return None
+
+class BackgroundEffectsCanvas(QWidget):
+    """Hidden-until-attached WorkerW native child background for EffectsOverlayWidget."""
+    def __init__(self, foreground_canvas):
+        super().__init__(None)
+        self.foreground_canvas = foreground_canvas
+        self.setWindowTitle("LiteDesktopStudio Background Effects")
+        self.setMouseTracking(False)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+        try:
+            self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        except:
+            pass
+        try:
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
+        except:
+            pass
+        try:
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        except:
+            pass
+        self._attach_attempts = 0
+        self._last_attach_ok = False
+        # Do not show before WorkerW attach succeeds; otherwise it appears as a
+        # separate program/window when WorkerW cannot be found.
+        try:
+            self.winId()
+            self.hide()
+        except:
+            pass
+
+    def sync_to_foreground(self):
+        try:
+            fg = self.foreground_canvas
+            self.setGeometry(fg.geometry())
+            if is_windows() and not bool(getattr(self, "_lds_desktop_host_attached", False)):
+                if self._attach_attempts < 12:
+                    self._attach_attempts += 1
+                    self._last_attach_ok = attach_background_effects_to_desktop_host(self, prefer="workerw")
+                if not self._last_attach_ok:
+                    try:
+                        self.hide()
+                    except:
+                        pass
+            elif not is_windows():
+                self._last_attach_ok = True
+                if not self.isVisible():
+                    self.show()
+            else:
+                if not self.isVisible():
+                    self.show()
+        except Exception as e:
+            try:
+                print("[LiteDesktopStudio] BackgroundEffectsCanvas sync failed:", repr(e))
+            except:
+                pass
+
+    def build_ctx(self):
+        c = self.foreground_canvas
+        return {
+            "audio": getattr(c, "audio", None),
+            "monitor": getattr(c, "monitor", None),
+            "volume": getattr(c, "volume", DummyVolumeController()),
+            "media": getattr(c, "media", DummyMediaController()),
+            "media_meta": getattr(c, "media_meta", None),
+            "weather": getattr(c, "weather", None),
+            "dark": getattr(c, "dark_mode", False),
+            "edit_mode": False,
+            "reflection_source_image": None,
+        }
+
+    def paintEvent(self, event):
+        try:
+            p = QPainter(self)
+            try:
+                if str(os.environ.get("LITEDESKTOPSTUDIO_EFFECTS_CHILD_FILL", "0")).lower() in ("1", "true", "on", "yes"):
+                    p.fillRect(self.rect(), QColor(0, 0, 0, 255))
+            except:
+                pass
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            except:
+                pass
+            ctx = self.build_ctx()
+            for w in list(getattr(self.foreground_canvas, "widgets", [])):
+                if isinstance(w, EffectsOverlayWidget):
+                    w.paint(p, ctx)
+            p.end()
+        except:
+            pass
+
 class DesktopCanvas(QWidget):
     def __init__(self):
         super().__init__()
@@ -15036,6 +18718,12 @@ class DesktopCanvas(QWidget):
         self.weather = WeatherEngine()
         self.weather.start()
         self.widgets: List[BaseWidget] = []
+        # Immersive desktop scene engine build: Explorer remains the source of
+        # truth for desktop icons, while LiteDesktopStudio synchronizes icon
+        # state and renders an integrated icon overlay inside the scene.
+        # Do not create the experimental desktop-child BackgroundEffectsCanvas.
+        self.background_effects_canvas = None
+        self._lds_icon_proxy_dragging = False
         self.selected: Optional[BaseWidget] = None
         self.dragging = False
         self.drag_offset = QPoint(0, 0)
@@ -15060,6 +18748,14 @@ class DesktopCanvas(QWidget):
         self.dark_mode = WindowsTheme.is_dark_mode()
 
         self.load_config()
+        try:
+            if self.background_effects_canvas is not None:
+                self.background_effects_canvas.sync_to_foreground()
+                QTimer.singleShot(0, self.background_effects_canvas.sync_to_foreground)
+                QTimer.singleShot(800, self.background_effects_canvas.sync_to_foreground)
+                QTimer.singleShot(1800, self.background_effects_canvas.sync_to_foreground)
+        except:
+            pass
         try:
             self.audio.start()
         except:
@@ -15193,6 +18889,11 @@ class DesktopCanvas(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
 
+        try:
+            if self.background_effects_canvas is not None:
+                self.background_effects_canvas.sync_to_foreground()
+        except:
+            pass
         try:
             self.update_platform_hit_mask()
         except:
@@ -15368,6 +19069,19 @@ class DesktopCanvas(QWidget):
             self.dark_mode = now_dark
             self.update()
 
+    def closeEvent(self, event):
+        try:
+            if getattr(self, "background_effects_canvas", None) is not None:
+                self.background_effects_canvas.hide()
+                self.background_effects_canvas.deleteLater()
+                self.background_effects_canvas = None
+        except:
+            pass
+        try:
+            super().closeEvent(event)
+        except:
+            pass
+
     def on_frame(self):
         try:
             interval = self._effective_effect_frame_interval_ms()
@@ -15377,6 +19091,12 @@ class DesktopCanvas(QWidget):
         except:
             pass
         self.js_html_views.sync(self.widgets)
+        try:
+            if self.background_effects_canvas is not None:
+                self.background_effects_canvas.sync_to_foreground()
+                self.background_effects_canvas.update()
+        except:
+            pass
         self.update()
 
     def paintEvent(self, event):
@@ -15426,8 +19146,68 @@ class DesktopCanvas(QWidget):
             reflection_source_image = None
         ctx["reflection_source_image"] = reflection_source_image
 
+        # Immersive desktop scene engine: effects first, then integrated icon
+        # atmosphere layer. Explorer icons remain real; LiteDesktopStudio adds
+        # scenic integration and interaction proxying.
+        icon_scene_items = []
+        try:
+            icon_scene_items = _lds_get_icon_scene_items(int(self.width()), int(self.height()))
+        except:
+            icon_scene_items = []
+
+        icon_scene_disabled = False
+        try:
+            icon_scene_disabled = str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DISABLED", "0")).lower() in ("1", "true", "on", "yes")
+        except:
+            icon_scene_disabled = False
+
         for w in self.widgets:
+            if isinstance(w, EffectsOverlayWidget) and not self.edit_mode and not icon_scene_disabled:
+                try:
+                    _lds_set_icon_scene_active_profile_from_widget(w)
+                    effects_image = QImage(self.size(), QImage.Format.Format_RGBA8888)
+                    effects_image.fill(Qt.GlobalColor.transparent)
+                    ip = QPainter(effects_image)
+                    ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    try:
+                        ip.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                    except:
+                        pass
+                    w.paint(ip, ctx)
+                    ip.end()
+                    if _lds_icon_scene_effect_integration_enabled():
+                        integrated = _lds_integrate_scene_effects_with_icons(effects_image, icon_scene_items)
+                    else:
+                        integrated = effects_image
+                    p.drawImage(0, 0, integrated)
+                    continue
+                except Exception as e:
+                    try:
+                        print("[LiteDesktopStudio] desktop scene effect composition failed:", repr(e))
+                    except:
+                        pass
+                    w.paint(p, ctx)
+                    continue
             w.paint(p, ctx)
+
+        skip_overlay_for_edit = False
+        try:
+            skip_overlay_for_edit = _lds_bool_env("LITEDESKTOPSTUDIO_ICON_SCENE_SKIP_OVERLAY_IN_EDIT", False) and self.edit_mode
+        except:
+            skip_overlay_for_edit = bool(self.edit_mode)
+        if not skip_overlay_for_edit and not icon_scene_disabled:
+            _lds_paint_desktop_icon_scene_overlay_cached(p, self, icon_scene_items)
+            if _lds_should_paint_icon_foreground_for_canvas(self):
+                _lds_paint_desktop_icon_foreground_layer_cached(p, self, icon_scene_items)
+            else:
+                try:
+                    globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {
+                        "key": None,
+                        "image": None,
+                    }
+                except:
+                    pass
+
 
         if self.edit_mode:
             self.paint_edit_badge(p)
@@ -15448,6 +19228,33 @@ class DesktopCanvas(QWidget):
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
     def mousePressEvent(self, event):
+        if not self.edit_mode and event.button() == Qt.MouseButton.LeftButton:
+            try:
+                pos = event.position().toPoint()
+                should_handle, hit, items = _lds_icon_proxy_should_handle(self, pos, require_icon=False)
+                if should_handle:
+                    self._lds_icon_proxy_dragging = True
+                    _lds_icon_proxy_post_mouse(0x0200, int(pos.x()), int(pos.y()), 0x0001)  # WM_MOUSEMOVE/MK_LBUTTON
+                    _lds_icon_proxy_post_mouse(0x0201, int(pos.x()), int(pos.y()), 0x0001)  # WM_LBUTTONDOWN
+                    event.accept()
+                    self.update()
+                    return
+            except Exception as e:
+                try: print("[LiteDesktopStudio] icon proxy press failed:", repr(e))
+                except: pass
+        if not self.edit_mode and event.button() == Qt.MouseButton.RightButton:
+            try:
+                pos = event.position().toPoint()
+                should_handle, hit, items = _lds_icon_proxy_should_handle(self, pos, require_icon=False)
+                if should_handle:
+                    _lds_icon_proxy_post_mouse(0x0204, int(pos.x()), int(pos.y()), 0x0002)  # WM_RBUTTONDOWN/MK_RBUTTON
+                    event.accept()
+                    self.update()
+                    return
+            except Exception as e:
+                try: print("[LiteDesktopStudio] icon proxy right press failed:", repr(e))
+                except: pass
+
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
             self.notify_effect_widgets_mouse_press(pos)
@@ -15573,6 +19380,28 @@ class DesktopCanvas(QWidget):
             return
 
     def mouseMoveEvent(self, event):
+        if not self.edit_mode:
+            try:
+                pos = event.position().toPoint()
+                if getattr(self, "_lds_icon_proxy_dragging", False):
+                    _lds_icon_proxy_post_mouse(0x0200, int(pos.x()), int(pos.y()), 0x0001)  # WM_MOUSEMOVE/MK_LBUTTON
+                    event.accept()
+                    self.update()
+                    return
+                elif not _lds_point_hits_litedesktop_widget(self, pos):
+                    try:
+                        _now = time.time()
+                        _last = globals().get("_LDS_ICON_PROXY_LAST_HOVER", {"time": 0.0, "x": -99999, "y": -99999})
+                        _hz = max(4.0, min(60.0, float(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_HOVER_FORWARD_HZ", "12"))))
+                        _dx = abs(int(pos.x()) - int(_last.get("x", -99999)))
+                        _dy = abs(int(pos.y()) - int(_last.get("y", -99999)))
+                        if (_now - float(_last.get("time", 0.0)) >= 1.0 / _hz) or _dx + _dy >= 18:
+                            _lds_icon_proxy_post_mouse(0x0200, int(pos.x()), int(pos.y()), 0)  # hover sync
+                            globals()["_LDS_ICON_PROXY_LAST_HOVER"] = {"time": _now, "x": int(pos.x()), "y": int(pos.y())}
+                    except:
+                        pass
+            except:
+                pass
         pos = event.position().toPoint()
         self.notify_effect_widgets_mouse_move(pos)
         new_pos = pos - self.drag_offset
@@ -15617,8 +19446,32 @@ class DesktopCanvas(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event):
+        if not self.edit_mode and event.button() == Qt.MouseButton.LeftButton and getattr(self, "_lds_icon_proxy_dragging", False):
+            try:
+                pos = event.position().toPoint()
+                _lds_icon_proxy_post_mouse(0x0202, int(pos.x()), int(pos.y()), 0)  # WM_LBUTTONUP
+                self._lds_icon_proxy_dragging = False
+                event.accept()
+                self.update()
+                return
+            except Exception as e:
+                self._lds_icon_proxy_dragging = False
+                try: print("[LiteDesktopStudio] icon proxy release failed:", repr(e))
+                except: pass
         pos = event.position().toPoint()
         self.notify_effect_widgets_mouse_release(pos)
+        if not self.edit_mode and event.button() == Qt.MouseButton.RightButton:
+            try:
+                pos = event.position().toPoint()
+                if not _lds_point_hits_litedesktop_widget(self, pos):
+                    _lds_icon_proxy_post_mouse(0x0205, int(pos.x()), int(pos.y()), 0)  # WM_RBUTTONUP
+                    event.accept()
+                    self.update()
+                    return
+            except Exception as e:
+                try: print("[LiteDesktopStudio] icon proxy right release failed:", repr(e))
+                except: pass
+
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
             self.dragging_effect_moon = False
@@ -15634,6 +19487,20 @@ class DesktopCanvas(QWidget):
             self.notify_studio_selection_changed()
 
     def mouseDoubleClickEvent(self, event):
+        if not self.edit_mode and event.button() == Qt.MouseButton.LeftButton:
+            try:
+                pos = event.position().toPoint()
+                items = _lds_get_icon_scene_items(int(self.width()), int(self.height()))
+                hit = _lds_icon_hit_test(items, int(pos.x()), int(pos.y()), padding=12)
+                if hit is not None:
+                    _lds_icon_proxy_post_mouse(0x0203, int(pos.x()), int(pos.y()), 0x0001)  # WM_LBUTTONDBLCLK
+                    _lds_icon_proxy_post_mouse(0x0202, int(pos.x()), int(pos.y()), 0)       # WM_LBUTTONUP
+                    event.accept()
+                    self.update()
+                    return
+            except Exception as e:
+                try: print("[LiteDesktopStudio] icon proxy double click failed:", repr(e))
+                except: pass
         if event.button() == Qt.MouseButton.RightButton:
             pos = event.position().toPoint()
             clicked_widget = self.widget_at_pos(pos)
@@ -15835,10 +19702,19 @@ class DesktopCanvas(QWidget):
         self.update()
 
     def save_config(self):
+        
+        try:
+            if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                self.cfg["icon_scene_render_icons"] = "off"
+        except:
+            pass
+        if not os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"]:
+            os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "off"
         data = {
             "studio_theme": get_canvas_studio_theme(self),
             LDS_LANGUAGE_CONFIG_KEY: _lds_normalize_lang(getattr(self, "language", get_litedesktopstudio_language())),
-            "widgets": [asdict(w.to_config()) for w in self.widgets]
+            "widgets": [asdict(w.to_config()) for w in self.widgets],
+            "icon_scene_render_icons": "on" if os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] == "1" else "off"
         }
         try:
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -15936,10 +19812,25 @@ class DesktopCanvas(QWidget):
                 self.studio_theme = normalize_studio_theme(data.get("studio_theme", DEFAULT_STUDIO_THEME))
                 self.language = _lds_normalize_lang(data.get(LDS_LANGUAGE_CONFIG_KEY, get_litedesktopstudio_language()))
                 set_litedesktopstudio_language(QApplication.instance(), self.language)
+                try:
+                    mode = str(data.get("icon_scene_render_icons", "off")).strip().lower()
+
+                    if mode in ("on", "1", "true", "yes"):
+                        globals()["_LDS_ICON_SCENE_RENDER_ICONS_MODE"] = "on"
+                        os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "1"
+                    elif mode in ("off", "0", "false", "no"):
+                        globals()["_LDS_ICON_SCENE_RENDER_ICONS_MODE"] = "off"
+                        os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+                    else:
+                        globals()["_LDS_ICON_SCENE_RENDER_ICONS_MODE"] = "off"
+                        os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "0"
+                except:
+                    pass
             self.widgets = []
             for item in data.get("widgets", []):
                 cfg = widget_config_from_dict(item)
                 self.widgets.append(create_widget(cfg))
+
             self.update_platform_hit_mask()
 
         except:
