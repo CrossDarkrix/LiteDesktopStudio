@@ -108,7 +108,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "Lite Desktop Studio v2.0.1"
+APP_NAME = "Lite Desktop Studio v2.0.6"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 
@@ -126,6 +126,9 @@ _LDS_TRANSLATOR_PATH = ""
 # Japanese remains the source UI language. English is used when language starts with "en".
 LDS_BUILTIN_TRANSLATIONS = {
     "en": {
+        "パムッカレの棚田な湖": "Pamukkale terrace pools",
+        "ブルーホールの深い青の湖": "Blue Hole deep blue lake",
+        "父母ヶ島の鏡面反射する水辺": "Chichibugahama mirror shore",
         "雲の流れ": "Cloud drift",
         "雲": "Clouds",
         "柔らかい雲が空をゆっくり流れる": "Soft clouds drift slowly across the sky",
@@ -877,7 +880,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1 - エフェクト設定"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -938,6 +941,9 @@ class EffectsOverlayEditorDialog(QDialog):
             ('🪞 ' + lds_tr("ウユニ塩湖の静かな反射"), "uyuni_salt_flat_reflection"),
             ('🏜️ ' + lds_tr("サハラ砂漠の灼熱日光"), "sahara_desert_sun"),
             ('🏜️ ' + lds_tr("アンテロープキャニオンの岩肌"), "antelope_canyon_depth"),
+            ('🏞️ ' + lds_tr("パムッカレの棚田な湖"), "pamukkale_terrace_lake"),
+            ('🔵 ' + lds_tr("ブルーホールの深い青の湖"), "blue_hole_deep_lake"),
+            ('🪞 ' + lds_tr("父母ヶ島の鏡面反射する水辺"), "chichibugahama_mirror"),
             ('☁️ ' + lds_tr("雲の流れ"), "cloud_drift"),
         ]
         for i, (label, theme_id) in enumerate(theme_presets):
@@ -1977,10 +1983,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.moon_body_enabled.setChecked(False)
         self.moonlight_enabled.setChecked(False)
         self.moon_shadow_enabled.setChecked(False)
-        self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
-        self._theme_set_raw_extra("sahara_desert_engine_enabled", False)
-        self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
-        self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
+        self._theme_clear_scenic_engine_flags()
         self._set_extra_effect_toggles(False)
         # Disable LiteDesktopStudio's foreground icon redraw to avoid double icons.
         try:
@@ -2066,6 +2069,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ]:
             self._theme_set_checked(name, False)
         self._set_extra_effect_toggles(False)
+        self._theme_clear_scenic_engine_flags()
 
     def _theme_set_extra(self, prefix: str, enabled: bool = True, count=None, speed=None, size=None, alpha=None):
         self._theme_set_checked(f"{prefix}_enabled", enabled)
@@ -2096,6 +2100,70 @@ class EffectsOverlayEditorDialog(QDialog):
             if not hasattr(self, "_theme_extra_settings") or self._theme_extra_settings is None:
                 self._theme_extra_settings = {}
             self._theme_extra_settings[str(name)] = value
+        except:
+            pass
+
+    def _theme_clear_scenic_engine_flags(self):
+        """Clear all mutually-exclusive full-screen scenic engine flags.
+
+        Without writing explicit False values into effects_json, a previously
+        selected scenic preset such as Pamukkale can remain active after choosing
+        a non-scenic preset. This method is intentionally called by every preset
+        reset path before enabling the next theme.
+        """
+        for flag in [
+            "sahara_desert_engine_enabled",
+            "uyuni_salt_flat_engine_enabled",
+            "antelope_canyon_engine_enabled",
+            "pamukkale_terrace_lake_engine_enabled",
+            "blue_hole_deep_lake_engine_enabled",
+            "chichibugahama_mirror_engine_enabled",
+        ]:
+            self._theme_set_raw_extra(flag, False)
+        self._theme_set_raw_extra("realtime_scenic_sky_enabled", False)
+        self._theme_set_raw_extra("realtime_scenic_sun_rays_enabled", False)
+        self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
+
+    def _theme_select_fullscreen_scenic_engine(self, active_flag: str, fps: int = 60, cache_fps: int = 30, intensity: float = 0.88):
+        """Select exactly one full-screen scenic engine and configure safe scenic defaults."""
+        cache_fps = max(60, int(cache_fps))
+        self._theme_apply_60fps_scenic_foundation(fps=fps, cache_fps=cache_fps)
+        self._theme_clear_scenic_engine_flags()
+        scenic_flags = [
+            "sahara_desert_engine_enabled",
+            "uyuni_salt_flat_engine_enabled",
+            "antelope_canyon_engine_enabled",
+            "pamukkale_terrace_lake_engine_enabled",
+            "blue_hole_deep_lake_engine_enabled",
+            "chichibugahama_mirror_engine_enabled",
+        ]
+        for flag in scenic_flags:
+            self._theme_set_raw_extra(flag, flag == active_flag)
+        self._theme_set_raw_extra("realtime_scenic_sky_enabled", active_flag == "chichibugahama_mirror_engine_enabled")
+        self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
+        self._theme_set_raw_extra("desktop_ui_mask_padding", 24)
+        self._theme_set_raw_extra("desktop_ui_mask_blur", 37)
+        self._theme_set_raw_extra("desktop_ui_icon_remaining_alpha", 0.12)
+        self._theme_set_raw_extra("desktop_ui_mask_refresh_sec", 1.0)
+        self._theme_set_raw_extra("desktop_ui_fallback_strip_enabled", True)
+        self._theme_set_raw_extra("desktop_ui_fallback_width_ratio", 0.22)
+        self._theme_set_value("intensity", intensity)
+        self._theme_set_value("background_alpha", 0)
+        self._theme_set_checked("vector_image_cache_enabled", True)
+        self._theme_set_value("vector_image_cache_fps", max(1, min(60, int(cache_fps))))
+        self._theme_set_value("vector_image_cache_fps_extra", max(1, min(60, int(cache_fps))))
+        try:
+            os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "1"
+        except:
+            pass
+        try:
+            globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {"key": None, "image": None}
+            globals()["_LDS_ICON_SCENE_OVERLAY_CACHE"] = {"key": None, "image": None}
+        except:
+            pass
+        try:
+            if hasattr(self, "cfg") and isinstance(self.cfg, dict):
+                self.cfg["icon_scene_render_icons"] = "on"
         except:
             pass
 
@@ -2136,6 +2204,7 @@ class EffectsOverlayEditorDialog(QDialog):
     def apply_effect_theme(self, theme_id: str):
         """Enable a curated group of effects as a theme preset."""
         self._theme_disable_all_visual_effects()
+        self._theme_clear_scenic_engine_flags()
         self._theme_apply_common_lightweight()
 
         if theme_id == "quiet_night":
@@ -2429,6 +2498,7 @@ class EffectsOverlayEditorDialog(QDialog):
             # サハラ砂漠風: 静的QImageで砂丘と灼熱太陽を描き、枯草だけを低数でゆっくり流す。
             self._theme_disable_all_visual_effects()
             self._theme_apply_common_lightweight(fps=60, quality=0.50)
+            self._theme_clear_scenic_engine_flags()
             self._theme_set_raw_extra("sahara_desert_engine_enabled", True)
             self._theme_set_raw_extra("realtime_scenic_sky_enabled", True)
             self._theme_set_raw_extra("realtime_scenic_sun_rays_enabled", False)
@@ -2781,6 +2851,7 @@ class EffectsOverlayEditorDialog(QDialog):
         elif theme_id in ("uyuni_salt_flat_reflection", "uyuni_salt_flat", "salar_de_uyuni"):
             # ウユニ塩湖: 反射背景に加えて、既存の水面・薄い氷/塩結晶エフェクトもONにする。
             self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=6)
+            self._theme_clear_scenic_engine_flags()
             self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", True)
             self._theme_set_raw_extra("realtime_scenic_sky_enabled", True)
             self._theme_set_raw_extra("realtime_scenic_sun_rays_enabled", False)
@@ -2859,6 +2930,7 @@ class EffectsOverlayEditorDialog(QDialog):
         elif theme_id in ("antelope_canyon_depth", "antelope_canyon", "warm_canyon_depth"):
             # アンテロープキャニオン: 背景はQImage静的レンダリング。既存水面/氷はOFFのまま。
             self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=8)
+            self._theme_clear_scenic_engine_flags()
             self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", False)
             self._theme_set_raw_extra("antelope_canyon_engine_enabled", True)
             self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
@@ -2888,6 +2960,12 @@ class EffectsOverlayEditorDialog(QDialog):
                     self.cfg["icon_scene_render_icons"] = "on"
             except:
                 pass
+        elif theme_id in ("pamukkale_terrace_lake", "pamukkale", "pamukkale_lake"):
+            self._theme_select_fullscreen_scenic_engine("pamukkale_terrace_lake_engine_enabled", fps=60, cache_fps=8, intensity=0.84)
+        elif theme_id in ("blue_hole_deep_lake", "blue_hole", "deep_blue_hole"):
+            self._theme_select_fullscreen_scenic_engine("blue_hole_deep_lake_engine_enabled", fps=60, cache_fps=8, intensity=0.92)
+        elif theme_id in ("chichibugahama_mirror", "chichibugahama", "mirror_beach"):
+            self._theme_select_fullscreen_scenic_engine("chichibugahama_mirror_engine_enabled", fps=60, cache_fps=8, intensity=0.78)
         elif theme_id == "fire_and_water":
             self._theme_set_extra("flame", True, count=54, speed=0.55, size=21.0, alpha=205)
             self._theme_set_extra("fireball", True, count=8, speed=0.32, size=18.0, alpha=220)
@@ -7070,6 +7148,7 @@ class EffectsOverlayWidget(BaseWidget):
             return bool(
                 self._scenic_engine_flag("sahara_desert_engine_enabled", False)
                 or self._scenic_engine_flag("uyuni_salt_flat_engine_enabled", False)
+                or self._scenic_engine_flag("chichibugahama_mirror_engine_enabled", False)
             )
         except Exception:
             return True
@@ -7106,6 +7185,244 @@ class EffectsOverlayWidget(BaseWidget):
             t = clamp01((hour + 4.5) / 9.0)
         return {"hour": hour, "phase": "night", "t": t}
 
+    def _draw_realtime_lightweight_clouds(self, p: QPainter, r: QRectF, now: float, scene: str, phase: str, t: float):
+        """Draw scenic clouds as a cached ambient air layer.
+
+        Design intent:
+        - Not moving clouds, but a quiet atmospheric layer.
+        - Cache the full cloud/haze layer into QImage.
+        - Normal frames do not create QImage, random numbers, paths, gradients, or cloud particles.
+        - Normal frames only drawImage the cached layer with a very small opacity drift.
+
+        This is intentionally closer to "air perspective / ambience" than a cloud
+        animation.  It should feel still at a glance, with only a faint breathing
+        quality over long viewing.
+        """
+        try:
+            w = int(max(1, r.width()))
+            h = int(max(1, r.height()))
+            left = float(r.left())
+            top = float(r.top())
+            scene = str(scene or "desert")
+            phase = str(phase or "day")
+            horizon_ratio = 0.50 if scene == "uyuni" else (0.48 if scene == "chichibugahama" else 0.44)
+            mirror_scene = scene in ("uyuni", "chichibugahama")
+
+            # Full-screen cached atmospheric layer.  Bucket dimensions so tiny
+            # geometry changes do not rebuild the cache.
+            quality = 0.48 if mirror_scene else 0.44
+            iw = max(360, int(round((w * quality) / 24.0) * 24))
+            ih = max(220, int(round((h * quality) / 24.0) * 24))
+            key = ("scenic-cloud-ambient-layer-v1", scene, phase, iw, ih)
+
+            cache = getattr(self, "_scenic_cloud_layer_cache", None)
+            order = getattr(self, "_scenic_cloud_layer_cache_order", None)
+            if not isinstance(cache, dict):
+                cache = {}
+                order = []
+                self._scenic_cloud_layer_cache = cache
+                self._scenic_cloud_layer_cache_order = order
+            image = cache.get(key)
+            if image is None or image.isNull():
+                image = QImage(iw, ih, QImage.Format.Format_ARGB32_Premultiplied)
+                image.fill(Qt.GlobalColor.transparent)
+                ip = QPainter(image)
+                try:
+                    ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    try:
+                        ip.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                    except Exception:
+                        pass
+
+                    horizon = ih * horizon_ratio
+                    seed = (iw * 3793) ^ (ih * 7253) ^ sum(ord(c) for c in (scene + phase)) ^ 0xA17A
+                    rnd = random.Random(seed)
+
+                    # Cached broad haze/air-perspective layer.  This is generated
+                    # once, not per frame.
+                    if phase == "night":
+                        haze_top = QColor(12, 16, 32, 34 if scene != "desert" else 42)
+                        haze_mid = QColor(26, 34, 58, 26 if scene != "desert" else 32)
+                        haze_low = QColor(8, 12, 24, 18 if mirror_scene else 24)
+                    elif phase == "dawn":
+                        haze_top = QColor(255, 218, 196, 34)
+                        haze_mid = QColor(255, 186, 148, 28)
+                        haze_low = QColor(255, 244, 224, 18)
+                    elif phase == "dusk":
+                        haze_top = QColor(255, 204, 164, 34)
+                        haze_mid = QColor(220, 132, 112, 28)
+                        haze_low = QColor(122, 78, 88, 18)
+                    else:
+                        haze_top = QColor(255, 255, 255, 30 if scene != "desert" else 22)
+                        haze_mid = QColor(212, 228, 236, 22 if scene != "desert" else 18)
+                        haze_low = QColor(255, 255, 255, 12 if mirror_scene else 8)
+
+                    haze = QLinearGradient(QPointF(0, 0), QPointF(0, ih))
+                    haze.setColorAt(0.0, haze_top)
+                    haze.setColorAt(max(0.18, horizon_ratio * 0.66), haze_mid)
+                    haze.setColorAt(1.0, haze_low)
+                    ip.setPen(Qt.PenStyle.NoPen)
+                    ip.setBrush(QBrush(haze))
+                    ip.drawRect(QRectF(0, 0, iw, ih))
+
+                    cloud_settings = EffectOverlaySettings()
+                    cloud_settings.cloud_cache_enabled = True
+                    cloud_settings.cloud_cache_quality_scale = 0.30 if mirror_scene else 0.26
+                    cloud_settings.cloud_cache_max_items = 28
+                    cloud_settings.cloud_mist_enabled = False
+                    cloud_settings.cloud_cumulus_enabled = True
+                    cloud_settings.cloud_cumulus_fluffiness = 0.84
+                    cloud_settings.cloud_cumulus_tower_strength = 0.24 if mirror_scene else 0.30
+                    cloud_settings.cloud_softness = 0.86
+                    cloud_settings.cloud_volume_strength = 0.54 if mirror_scene else 0.48
+                    cloud_settings.cloud_shader_lighting_enabled = True
+                    cloud_settings.cloud_shader_warmth = 0.32
+                    cloud_settings.cloud_shader_rim_strength = 0.48
+                    cloud_settings.cloud_shader_shadow_strength = 0.30
+                    cloud_settings.cloud_shader_bloom_strength = 0.12
+                    cloud_settings.cloud_shader_contrast = 0.30
+
+                    if phase == "night":
+                        cloud_settings.cloud_color = "#20283D"
+                        cloud_settings.cloud_shadow_color = "#050914"
+                        cloud_settings.cloud_highlight_color = "#4A5A7A"
+                        alpha = 52 if scene != "desert" else 62
+                        ref_alpha = 10
+                    elif phase == "dawn":
+                        cloud_settings.cloud_color = "#FFEADF"
+                        cloud_settings.cloud_shadow_color = "#B9949A"
+                        cloud_settings.cloud_highlight_color = "#FFFFFF"
+                        alpha = 66
+                        ref_alpha = 14
+                    elif phase == "dusk":
+                        cloud_settings.cloud_color = "#FFE0C4"
+                        cloud_settings.cloud_shadow_color = "#A77D78"
+                        cloud_settings.cloud_highlight_color = "#FFF4DE"
+                        alpha = 62
+                        ref_alpha = 16
+                    else:
+                        cloud_settings.cloud_color = "#F5FAFF" if scene != "desert" else "#F6F0E4"
+                        cloud_settings.cloud_shadow_color = "#C1CFDA" if scene != "desert" else "#C9BFA6"
+                        cloud_settings.cloud_highlight_color = "#FFFFFF"
+                        alpha = 64 if scene != "desert" else 48
+                        ref_alpha = 15
+
+                    lobes = [
+                        (-0.56, 0.08, 0.50, 0.34),
+                        (-0.24, -0.08, 0.60, 0.48),
+                        (0.14, -0.18, 0.68, 0.56),
+                        (0.50, -0.02, 0.54, 0.42),
+                        (0.78, 0.12, 0.40, 0.30),
+                    ]
+                    cloud_count = 4 if mirror_scene else 5
+                    for i in range(cloud_count):
+                        item = type("ScenicCloudItem", (), {})()
+                        item.size = min(iw, ih) * rnd.uniform(0.085, 0.145 if mirror_scene else 0.160)
+                        # Large safe margin prevents visible clipping.
+                        x_min = min(iw * 0.88, item.size * 1.70)
+                        x_max = max(x_min + 1.0, iw - item.size * 1.70)
+                        item.x = rnd.uniform(x_min, x_max)
+                        item.y = ih * rnd.uniform(0.09, 0.29 if scene != "desert" else 0.33)
+                        item.y = min(item.y, horizon - item.size * 0.86)
+                        item.y = max(item.size * 1.00, item.y)
+                        item.seed = float(seed % 10000) * 0.001 + i * 1.731
+                        item.cloud_volume_seed = item.seed * 2.37
+                        item.cloud_body_width = rnd.uniform(1.56, 1.90)
+                        item.cloud_body_height = rnd.uniform(0.38, 0.52)
+                        item.cloud_lobes = lobes
+                        self._draw_cloud_particle(ip, item, alpha, cloud_settings)
+
+                        if mirror_scene:
+                            ref_y = horizon + (horizon - item.y) * (0.40 if scene == "chichibugahama" else 0.52)
+                            if ref_y < ih - item.size * 0.50:
+                                ref_item = type("ScenicCloudReflectionItem", (), {})()
+                                ref_item.x = item.x
+                                ref_item.y = ref_y
+                                ref_item.size = item.size * (0.55 if scene == "chichibugahama" else 0.64)
+                                ref_item.seed = item.seed
+                                ref_item.cloud_volume_seed = item.cloud_volume_seed
+                                ref_item.cloud_body_width = item.cloud_body_width * 1.06
+                                ref_item.cloud_body_height = item.cloud_body_height * 0.28
+                                ref_item.cloud_lobes = lobes
+                                self._draw_cloud_particle(ip, ref_item, ref_alpha, cloud_settings)
+
+                    # A final cached haze veil softens cloud edges and makes them
+                    # feel like an air layer instead of foreground objects.
+                    veil = QLinearGradient(QPointF(0, 0), QPointF(0, ih))
+                    veil.setColorAt(0.0, QColor(255, 255, 255, 10 if phase != "night" else 0))
+                    veil.setColorAt(horizon_ratio, QColor(255, 255, 255, 7 if phase in ("day", "dawn") else 3))
+                    veil.setColorAt(1.0, QColor(255, 255, 255, 0))
+                    ip.setBrush(QBrush(veil))
+                    ip.setPen(Qt.PenStyle.NoPen)
+                    ip.drawRect(QRectF(0, 0, iw, ih))
+                finally:
+                    ip.end()
+                cache[key] = image
+                order.append(key)
+                limit = 8
+                while len(order) > limit:
+                    old = order.pop(0)
+                    cache.pop(old, None)
+
+            # Normal frame path: one cached drawImage. No cloud movement.
+            # Only a tiny opacity/brightness drift is applied; it is slow enough
+            # to read as atmospheric breathing, not animation.
+            try:
+                p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            except Exception:
+                pass
+            ambient = 0.965 + 0.025 * math.sin(float(now) * 0.035 + (0.7 if scene == "desert" else 0.0))
+            p.save()
+            try:
+                p.setOpacity(max(0.90, min(1.0, ambient)))
+                p.drawImage(QRectF(left, top, w, h), image)
+            finally:
+                p.restore()
+        except Exception:
+            pass
+
+    def _draw_chichibugahama_time_light_accents(self, p: QPainter, r: QRectF, now: float, phase: str, t: float):
+        """Very lightweight time-of-day light accents for Chichibugahama mirror shore."""
+        try:
+            w = float(max(1.0, r.width()))
+            h = float(max(1.0, r.height()))
+            left = float(r.left())
+            top = float(r.top())
+            horizon = top + h * 0.48
+            p.setPen(Qt.PenStyle.NoPen)
+            if phase == "day":
+                # Glittering midday sunlight: cheap short rect strokes, updated slowly.
+                rnd = random.Random(int(float(now) / 3.0) ^ 0x43484943)
+                for _ in range(28):
+                    x = left + rnd.random() * w
+                    y = horizon + h * rnd.uniform(0.04, 0.46)
+                    ww = w * rnd.uniform(0.018, 0.060)
+                    p.setBrush(QBrush(QColor(255, 255, 225, rnd.randint(24, 58))))
+                    p.drawRect(QRectF(x, y, ww, max(1.0, h * 0.0012)))
+            elif phase == "dusk":
+                warm = QLinearGradient(QPointF(left, horizon), QPointF(left, top + h))
+                warm.setColorAt(0.0, QColor(255, 176, 104, 44))
+                warm.setColorAt(0.42, QColor(255, 128, 84, 36))
+                warm.setColorAt(1.0, QColor(130, 76, 92, 18))
+                p.setBrush(QBrush(warm))
+                p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
+            elif phase == "dawn":
+                glow = QLinearGradient(QPointF(left, horizon - h * 0.08), QPointF(left, horizon + h * 0.30))
+                glow.setColorAt(0.0, QColor(255, 190, 128, 40))
+                glow.setColorAt(1.0, QColor(255, 255, 255, 0))
+                p.setBrush(QBrush(glow))
+                p.drawRect(QRectF(left, horizon - h * 0.08, w, h * 0.40))
+            elif phase == "night":
+                # Very soft moon reflection stripe on the wet flat.
+                moon_reflect = QLinearGradient(QPointF(left + w * 0.70, horizon), QPointF(left + w * 0.78, top + h))
+                moon_reflect.setColorAt(0.0, QColor(210, 230, 255, 24))
+                moon_reflect.setColorAt(0.40, QColor(180, 210, 255, 14))
+                moon_reflect.setColorAt(1.0, QColor(180, 210, 255, 0))
+                p.setBrush(QBrush(moon_reflect))
+                p.drawRect(QRectF(left + w * 0.58, horizon, w * 0.32, top + h - horizon))
+        except Exception:
+            pass
+
     def _draw_realtime_scenic_sky(self, p: QPainter, r: QRectF, now: float, scene: str = "desert"):
         """Overlay real-time sky, sun glow, stars and shooting stars for scenic presets."""
         try:
@@ -7118,7 +7435,7 @@ class EffectsOverlayWidget(BaseWidget):
             h = float(max(1.0, r.height()))
             left = float(r.left())
             top = float(r.top())
-            horizon = top + h * (0.50 if scene == "uyuni" else 0.44)
+            horizon = top + h * (0.50 if scene == "uyuni" else (0.48 if scene == "chichibugahama" else 0.44))
             sky_rect = QRectF(left, top, w, max(1.0, horizon - top + 2.0))
             full_rect = QRectF(left, top, w, h)
 
@@ -7251,6 +7568,10 @@ class EffectsOverlayWidget(BaseWidget):
                     p.setBrush(QBrush(amber)); p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
                     if t > 0.58:
                         self._draw_realtime_stars(p, r, now, scene=scene, alpha_scale=(t - 0.58) / 0.42)
+                self._draw_realtime_lightweight_clouds(p, r, now, scene, phase, t)
+                if scene == "chichibugahama":
+                    self._draw_chichibugahama_time_light_accents(p, r, now, phase, t)
+
             finally:
                 p.restore()
         except Exception:
@@ -7338,9 +7659,9 @@ class EffectsOverlayWidget(BaseWidget):
             w = float(max(1.0, r.width()))
             h = float(max(1.0, r.height()))
             left = float(r.left()); top = float(r.top())
-            horizon = top + h * (0.50 if scene == "uyuni" else 0.44)
+            horizon = top + h * (0.50 if scene == "uyuni" else (0.48 if scene == "chichibugahama" else 0.44))
             rnd = random.Random((int(w) * 92821) ^ (int(h) * 68917) ^ 0x515459)
-            count = max(80, min(420, int(w * h / 5200)))
+            count = max(48, min(180, int(w * h / 10500)))
             twinkle = 0.5 + 0.5 * math.sin(float(now) * 0.9)
             for i in range(count):
                 x = left + rnd.random() * w
@@ -7371,7 +7692,7 @@ class EffectsOverlayWidget(BaseWidget):
             w = float(max(1.0, r.width()))
             h = float(max(1.0, r.height()))
             left = float(r.left()); top = float(r.top())
-            horizon = top + h * (0.50 if scene == "uyuni" else 0.44)
+            horizon = top + h * (0.50 if scene == "uyuni" else (0.48 if scene == "chichibugahama" else 0.44))
             seed = int(float(now) // period) ^ int(w * 13) ^ int(h * 17)
             rnd = random.Random(seed)
             start_x = left + w * rnd.uniform(0.08, 0.62)
@@ -7392,6 +7713,478 @@ class EffectsOverlayWidget(BaseWidget):
         except Exception:
             pass
 
+
+    def _draw_fullscreen_scenic_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float, scene_id: str):
+        """Draw a cached full-screen scenic landscape engine."""
+        try:
+            w = int(max(1, r.width()))
+            h = int(max(1, r.height()))
+            sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
+            tick = int(float(now) / 2.0)
+            # Static scene cache; dynamic shimmer is drawn separately to avoid re-rendering complex artwork.
+            key = ("fullscreen_scenic_static_v23_ambient_air_layer", str(scene_id), w, h, sig)
+            cache = getattr(self, "_scenic_engine_cache", {})
+            img = cache.get(key)
+            if img is None or img.isNull():
+                img = self._render_fullscreen_scenic_static(str(scene_id), w, h)
+                self._scenic_cache_put(key, img)
+            if img is None or img.isNull():
+                if str(scene_id) == "pamukkale":
+                    self._render_pamukkale_opaque_fallback(p, w, h)
+                return
+            try:
+                p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+            except Exception:
+                p.drawImage(QPointF(r.left(), r.top()), img)
+            if str(scene_id) == "chichibugahama":
+                self._draw_realtime_scenic_sky(p, r, now, scene="chichibugahama")
+            self._draw_fullscreen_scenic_dynamic_overlay(p, r, now, str(scene_id), tick)
+        except Exception:
+            try:
+                if str(scene_id) == "pamukkale":
+                    self._render_pamukkale_opaque_fallback(p, int(max(1, r.width())), int(max(1, r.height())))
+            except Exception:
+                pass
+
+    def _draw_pamukkale_terrace_lake_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if self._scenic_engine_flag("pamukkale_terrace_lake_engine_enabled", False):
+            self._draw_fullscreen_scenic_engine(p, r, settings, now, "pamukkale")
+
+    def _draw_blue_hole_deep_lake_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if self._scenic_engine_flag("blue_hole_deep_lake_engine_enabled", False):
+            self._draw_fullscreen_scenic_engine(p, r, settings, now, "blue_hole")
+
+
+
+    def _draw_chichibugahama_mirror_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
+        if self._scenic_engine_flag("chichibugahama_mirror_engine_enabled", False):
+            self._draw_fullscreen_scenic_engine(p, r, settings, now, "chichibugahama")
+
+
+    def _render_pamukkale_opaque_fallback(self, q: QPainter, w: int, h: int):
+        """Opaque line-relief fallback without oval/capsule foreground objects."""
+        try:
+            q.setPen(Qt.PenStyle.NoPen)
+            sky_h = h * 0.25
+            sky = QLinearGradient(QPointF(0, 0), QPointF(0, sky_h))
+            sky.setColorAt(0.0, QColor("#EAFBFF"))
+            sky.setColorAt(1.0, QColor("#FFFFFF"))
+            q.setBrush(QBrush(sky))
+            q.drawRect(QRectF(0, 0, w, sky_h + 2))
+            base = QLinearGradient(QPointF(0, sky_h), QPointF(0, h))
+            base.setColorAt(0.0, QColor("#FFFFFF"))
+            base.setColorAt(0.65, QColor("#EEF8F5"))
+            base.setColorAt(1.0, QColor("#DDEDEA"))
+            q.setBrush(QBrush(base))
+            q.drawRect(QRectF(0, sky_h, w, h - sky_h))
+            y = sky_h + h * 0.055
+            step = h * 0.034
+            row = 0
+            while y < h * 0.91:
+                depth = max(0.0, min(1.0, (y - sky_h) / max(1.0, h - sky_h)))
+                band_h = h * (0.024 + 0.040 * (0.45 + depth))
+                shadow = QLinearGradient(QPointF(0, y + 6), QPointF(0, y + 6 + band_h * 1.8))
+                shadow.setColorAt(0.0, QColor(35, 88, 92, int(22 + 42 * depth)))
+                shadow.setColorAt(1.0, QColor(35, 88, 92, 0))
+                q.setBrush(QBrush(shadow))
+                q.drawRect(QRectF(0, y + 6, w, band_h * 1.8))
+                face = QLinearGradient(QPointF(0, y), QPointF(0, y + band_h))
+                face.setColorAt(0.0, QColor(255, 255, 255, 255))
+                face.setColorAt(1.0, QColor(220, 238, 235, 230))
+                q.setBrush(QBrush(face))
+                path = QPainterPath()
+                path.moveTo(QPointF(-w * 0.1, y))
+                for i in range(24):
+                    t = i / 23.0
+                    x = -w * 0.1 + w * 1.2 * t
+                    yy = y + math.sin(t * math.pi * 2.0 + row) * band_h * 0.04
+                    path.lineTo(QPointF(x, yy))
+                path.lineTo(QPointF(w * 1.1, y + band_h))
+                path.lineTo(QPointF(-w * 0.1, y + band_h))
+                path.closeSubpath()
+                q.drawPath(path)
+                q.setBrush(Qt.BrushStyle.NoBrush)
+                q.setPen(QPen(QColor(255, 255, 255, 255), max(1.8, h * 0.0025)))
+                q.drawLine(QPointF(0, y), QPointF(w, y + math.sin(row) * 2.0))
+                q.setPen(Qt.PenStyle.NoPen)
+                y += step
+                step *= 1.105
+                row += 1
+        except Exception:
+            try:
+                q.fillRect(QRectF(0, 0, w, h), QColor("#F8FFFF"))
+            except Exception:
+                pass
+
+    def _render_fullscreen_scenic_static(self, scene_id: str, w: int, h: int) -> QImage:
+        # Use an ARGB image, but make sure every scenic renderer paints an opaque base.
+        try:
+            fmt = QImage.Format.Format_ARGB32_Premultiplied
+        except Exception:
+            try:
+                fmt = QImage.Format_ARGB32_Premultiplied
+            except Exception:
+                fmt = QImage.Format_ARGB32
+        img = QImage(max(1, w), max(1, h), fmt)
+        # Previous transparent symptom is avoided by starting from a visible base.
+        img.fill(QColor("#F8FFFF"))
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            scene_id = str(scene_id or "")
+            if scene_id == "pamukkale":
+                # Subtle line-only downhill stains; no foreground objects or pool highlights.
+                terrace_y = top + h * 0.292
+                step = h * 0.033
+                previous = []
+                for row in range(10):
+                    depth = min(1.0, row / 9.0)
+                    current = []
+                    flow_count = 2 if depth < 0.50 else 3
+                    for i in range(flow_count):
+                        fx = left + w * (0.28 + 0.20 * i + math.sin(row * 0.66 + i) * 0.020)
+                        fy = terrace_y + h * (0.010 + 0.012 * depth)
+                        current.append((fx, fy))
+                    if previous:
+                        p.setPen(QPen(QColor(215, 247, 249, int(5 + 16 * depth)), max(1.0, h * (0.0010 + 0.0018 * depth))))
+                        p.setBrush(Qt.BrushStyle.NoBrush)
+                        for i, cur in enumerate(current):
+                            prev = previous[min(len(previous) - 1, i)]
+                            path = QPainterPath()
+                            path.moveTo(QPointF(prev[0], prev[1] + h * 0.008))
+                            mid_x = (prev[0] + cur[0]) * 0.5 + rnd.uniform(-w * 0.0035, w * 0.0035)
+                            path.cubicTo(QPointF(mid_x, prev[1] + h * 0.020), QPointF(mid_x, cur[1] - h * 0.020), QPointF(cur[0], cur[1] - h * 0.008))
+                            p.drawPath(path)
+                    previous = current
+                    terrace_y += step * rnd.uniform(0.990, 1.035)
+                    step *= 1.105
+
+            elif scene_id == "chichibugahama":
+                self._render_chichibugahama_static(q, w, h)
+            else:
+                grad = QLinearGradient(QPointF(0, 0), QPointF(0, h))
+                grad.setColorAt(0.0, QColor("#6EC6FF")); grad.setColorAt(1.0, QColor("#072A52"))
+                q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(grad)); q.drawRect(QRectF(0, 0, w, h))
+        except Exception:
+            try:
+                self._render_pamukkale_opaque_fallback(q, w, h)
+            except Exception:
+                try:
+                    q.fillRect(QRectF(0, 0, w, h), QColor("#F8FFFF"))
+                except Exception:
+                    pass
+        finally:
+            q.end()
+        return img
+
+    def _render_pamukkale_static(self, q: QPainter, w: int, h: int):
+        """Render Pamukkale as flat background relief only.
+
+        This version deliberately removes foreground oval/capsule/pool objects.
+        The visual is built from one continuous white limestone surface with
+        subtle horizontal relief bands, chipped edges, fine mineral noise,
+        shadowed terrace faces, and very thin downhill water stains.
+        """
+        q.setPen(Qt.PenStyle.NoPen)
+        sky_h = h * 0.245
+        rnd = random.Random((w * 12007) ^ (h * 27011) ^ 0x50414D74)
+
+        def relief_line(y, amp, seed, left=-0.10, right=1.10, points=26):
+            rr = random.Random(seed)
+            x0 = w * left
+            x1 = w * right
+            path = QPainterPath()
+            path.moveTo(QPointF(x0, y))
+            for i in range(1, points + 1):
+                t = i / float(points)
+                x = x0 + (x1 - x0) * t
+                yy = y + math.sin(t * math.pi * 2.0 + seed * 0.019) * amp * 0.42 + rr.uniform(-amp, amp) * 0.30
+                path.lineTo(QPointF(x, yy))
+            return path
+
+        def relief_band(y, height, seed, left=-0.10, right=1.10):
+            rr = random.Random(seed + 777)
+            x0 = w * left
+            x1 = w * right
+            top_pts = []
+            bot_pts = []
+            for i in range(28):
+                t = i / 27.0
+                x = x0 + (x1 - x0) * t
+                top_y = y + math.sin(t * math.pi * 2.0 + seed * 0.021) * height * 0.045 + rr.uniform(-height * 0.045, height * 0.045)
+                bot_y = y + height + math.sin(t * math.pi * 2.0 + seed * 0.031) * height * 0.070 + rr.uniform(-height * 0.070, height * 0.070)
+                top_pts.append((x, top_y))
+                bot_pts.append((x, bot_y))
+            path = QPainterPath()
+            path.moveTo(QPointF(top_pts[0][0], top_pts[0][1]))
+            for x, yy in top_pts[1:]:
+                path.lineTo(QPointF(x, yy))
+            for x, yy in reversed(bot_pts):
+                path.lineTo(QPointF(x, yy))
+            path.closeSubpath()
+            rim = QPainterPath()
+            rim.moveTo(QPointF(top_pts[0][0], top_pts[0][1]))
+            for x, yy in top_pts[1:]:
+                rim.lineTo(QPointF(x, yy))
+            return path, rim
+
+        # Opaque base.
+        sky = QLinearGradient(QPointF(0, 0), QPointF(0, sky_h))
+        sky.setColorAt(0.0, QColor("#EAFBFF"))
+        sky.setColorAt(0.72, QColor("#FBFEFF"))
+        sky.setColorAt(1.0, QColor("#FFFFFF"))
+        q.setBrush(QBrush(sky))
+        q.drawRect(QRectF(0, 0, w, sky_h + 2))
+
+        base = QLinearGradient(QPointF(0, sky_h), QPointF(0, h))
+        base.setColorAt(0.0, QColor("#FFFFFF"))
+        base.setColorAt(0.48, QColor("#F5FCFA"))
+        base.setColorAt(0.82, QColor("#DDECEA"))
+        base.setColorAt(1.0, QColor("#FAFFFF"))
+        q.setBrush(QBrush(base))
+        q.drawRect(QRectF(0, sky_h, w, h - sky_h))
+
+        # One continuous travertine field; no isolated foreground shapes.
+        field = QPainterPath()
+        field.moveTo(-w * 0.16, sky_h + h * 0.11)
+        field.cubicTo(w * 0.12, sky_h + h * 0.045, w * 0.34, sky_h + h * 0.145, w * 0.53, sky_h + h * 0.090)
+        field.cubicTo(w * 0.72, sky_h + h * 0.040, w * 0.92, sky_h + h * 0.135, w * 1.16, sky_h + h * 0.080)
+        field.lineTo(w * 1.18, h * 1.12)
+        field.lineTo(-w * 0.18, h * 1.12)
+        field.closeSubpath()
+        field_grad = QLinearGradient(QPointF(0, sky_h), QPointF(0, h))
+        field_grad.setColorAt(0.0, QColor(255, 255, 255, 248))
+        field_grad.setColorAt(0.58, QColor(247, 253, 250, 244))
+        field_grad.setColorAt(1.0, QColor(220, 236, 233, 242))
+        q.setBrush(QBrush(field_grad))
+        q.drawPath(field)
+
+        # Top light wash.
+        light = QLinearGradient(QPointF(0, sky_h), QPointF(0, h * 0.60))
+        light.setColorAt(0.0, QColor(255, 255, 255, 92))
+        light.setColorAt(0.50, QColor(255, 255, 255, 30))
+        light.setColorAt(1.0, QColor(255, 255, 255, 0))
+        q.setBrush(QBrush(light))
+        q.drawRect(QRectF(0, sky_h, w, h * 0.50))
+
+        terrace_y = sky_h + h * 0.045
+        step = h * 0.030
+        row = 0
+        prev_flows = []
+        while terrace_y < h * 0.925:
+            depth = max(0.0, min(1.0, (terrace_y - sky_h) / max(1.0, h - sky_h)))
+            scale = 0.42 + 1.00 * (depth ** 1.18)
+            band_h = h * (0.014 + 0.040 * scale)
+            seed = row * 149 + 31
+            band, rim = relief_band(terrace_y, band_h, seed)
+
+            # AO/drop shadow under relief step.
+            shadow_y = terrace_y + max(5.0, h * (0.006 + 0.006 * depth))
+            shadow_alpha = int(18 + 54 * depth)
+            shadow = QLinearGradient(QPointF(0, shadow_y), QPointF(0, shadow_y + band_h * 2.05))
+            shadow.setColorAt(0.0, QColor(24, 72, 78, min(82, shadow_alpha)))
+            shadow.setColorAt(0.45, QColor(24, 72, 78, int(shadow_alpha * 0.48)))
+            shadow.setColorAt(1.0, QColor(24, 72, 78, 0))
+            q.setBrush(QBrush(shadow))
+            q.drawRect(QRectF(0, shadow_y, w, band_h * 2.10))
+
+            # Flat limestone relief face.
+            face = QLinearGradient(QPointF(0, terrace_y - band_h * 0.10), QPointF(0, terrace_y + band_h * 1.10))
+            face.setColorAt(0.0, QColor(255, 255, 255, 255))
+            face.setColorAt(0.50, QColor(250, 255, 253, int(250 - 8 * depth)))
+            face.setColorAt(0.82, QColor(237, 248, 245, int(236 + 8 * depth)))
+            face.setColorAt(1.0, QColor(215, 235, 232, int(210 + 26 * depth)))
+            q.setBrush(QBrush(face))
+            q.setPen(Qt.PenStyle.NoPen)
+            q.drawPath(band)
+
+            # Hard white terrace rim and lower boundary, both line-based relief.
+            edge_w = max(1.6, h * (0.0020 + 0.0023 * depth))
+            q.setBrush(Qt.BrushStyle.NoBrush)
+            q.setPen(QPen(QColor(255, 255, 255, 255), edge_w * 1.85))
+            q.drawPath(rim)
+            q.setPen(QPen(QColor(156, 191, 188, int(24 + 56 * depth)), max(1.0, edge_w * 0.65)))
+            q.drawPath(relief_line(terrace_y + band_h * 0.94, max(1.0, band_h * 0.045), seed + 61, -0.02, 1.02, 20))
+
+            # Fine matte limestone scratches/pits as lines/points only, not oval objects.
+            q.setPen(QPen(QColor(255, 255, 255, int(18 + 12 * (1.0 - depth))), 1.0))
+            for _ in range(6 + int(8 * depth)):
+                x = rnd.uniform(w * 0.04, w * 0.96)
+                y = terrace_y + rnd.uniform(band_h * 0.18, band_h * 0.88)
+                length = w * rnd.uniform(0.010, 0.040) * scale
+                q.drawLine(QPointF(x - length * 0.5, y), QPointF(x + length * 0.5, y + rnd.uniform(-1.0, 1.0)))
+
+            # Very thin water stains along edges only.
+            water_alpha = int(5 + 24 * depth)
+            if water_alpha > 7:
+                q.setPen(QPen(QColor(210, 244, 248, water_alpha), max(1.0, h * (0.0008 + 0.0012 * depth))))
+                q.drawPath(relief_line(terrace_y + band_h * 0.14, max(1.0, band_h * 0.030), seed + 83, 0.06, 0.94, 16))
+
+            # Downhill water route, also line-only.
+            flow_count = 2 if depth < 0.50 else 3
+            flows = []
+            for i in range(flow_count):
+                fx = w * (0.28 + 0.20 * i) + math.sin(row * 0.66 + i) * w * 0.020
+                fy = terrace_y + band_h * 0.56
+                flows.append((fx, fy))
+            if prev_flows:
+                q.setPen(QPen(QColor(214, 247, 249, int(7 + 22 * depth)), max(1.0, h * (0.0010 + 0.0020 * depth))))
+                for i, (fx, fy) in enumerate(flows):
+                    px, py = prev_flows[min(i, len(prev_flows) - 1)]
+                    mid_x = (px + fx) * 0.5 + math.sin(row + i) * w * 0.008
+                    flow = QPainterPath()
+                    flow.moveTo(QPointF(px, py + h * 0.010))
+                    flow.cubicTo(QPointF(mid_x, py + h * 0.021), QPointF(mid_x, fy - h * 0.021), QPointF(fx, fy - h * 0.010))
+                    q.drawPath(flow)
+            prev_flows = flows
+
+            terrace_y += step * rnd.uniform(0.990, 1.035)
+            step *= 1.105
+            row += 1
+
+        # No front object: only a broad, flat continuation of the limestone surface.
+        floor_y = h * 0.860
+        floor = QLinearGradient(QPointF(0, floor_y), QPointF(0, h))
+        floor.setColorAt(0.0, QColor(255, 255, 255, 226))
+        floor.setColorAt(0.52, QColor(247, 252, 250, 236))
+        floor.setColorAt(1.0, QColor(223, 238, 235, 238))
+        q.setBrush(QBrush(floor))
+        q.setPen(Qt.PenStyle.NoPen)
+        q.drawRect(QRectF(0, floor_y, w, h - floor_y))
+
+        q.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        for _ in range(max(260, int(w * h / 6800))):
+            tx = rnd.random() * w
+            ty = sky_h + rnd.random() * (h - sky_h)
+            if rnd.random() < 0.80:
+                q.setPen(QPen(QColor(255, 255, 255, rnd.randint(9, 38)), 1.0))
+            else:
+                q.setPen(QPen(QColor(202, 220, 216, rnd.randint(6, 18)), 1.0))
+            q.drawPoint(QPointF(tx, ty))
+        q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        dry = QRadialGradient(QPointF(w * 0.50, h * 0.52), max(w, h) * 0.78)
+        dry.setColorAt(0.0, QColor(255, 255, 255, 58))
+        dry.setColorAt(0.58, QColor(255, 255, 255, 28))
+        dry.setColorAt(1.0, QColor(255, 255, 255, 0))
+        q.setPen(Qt.PenStyle.NoPen)
+        q.setBrush(QBrush(dry))
+        q.drawRect(QRectF(0, sky_h, w, h - sky_h))
+
+        self._draw_soft_vignette(q, w, h, QColor(45, 116, 126, 12))
+
+    def _render_blue_hole_static(self, q: QPainter, w: int, h: int):
+        bg = QLinearGradient(QPointF(0, 0), QPointF(0, h))
+        bg.setColorAt(0.0, QColor("#7BE7FF")); bg.setColorAt(0.50, QColor("#18A8D6")); bg.setColorAt(1.0, QColor("#063E88"))
+        q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(bg)); q.drawRect(QRectF(0, 0, w, h))
+        cx, cy = w * 0.50, h * 0.54; rad = min(w, h) * 0.43
+        reef = QRadialGradient(QPointF(cx, cy), rad * 1.12)
+        reef.setColorAt(0.0, QColor(0, 20, 74, 255)); reef.setColorAt(0.38, QColor(0, 44, 116, 245)); reef.setColorAt(0.62, QColor(0, 95, 158, 215)); reef.setColorAt(0.78, QColor(86, 218, 222, 205)); reef.setColorAt(0.90, QColor(236, 248, 210, 150)); reef.setColorAt(1.0, QColor(77, 198, 211, 0))
+        q.setBrush(QBrush(reef)); q.drawEllipse(QRectF(cx - rad * 1.12, cy - rad * 1.12, rad * 2.24, rad * 2.24))
+        q.setPen(QPen(QColor(210, 250, 255, 50), 1.3));
+        for i in range(12):
+            rr = rad * (0.20 + i * 0.055)
+            q.drawEllipse(QRectF(cx - rr, cy - rr, rr * 2, rr * 2))
+        self._draw_soft_vignette(q, w, h, QColor(0, 15, 70, 96))
+
+
+
+    def _render_chichibugahama_static(self, q: QPainter, w: int, h: int):
+        """Lightweight neutral mirror-shore base for real-time sky overlays."""
+        horizon = h * 0.48
+        sky = QLinearGradient(QPointF(0, 0), QPointF(0, horizon))
+        sky.setColorAt(0.0, QColor("#BFE9FF"))
+        sky.setColorAt(0.62, QColor("#F8FDFF"))
+        sky.setColorAt(1.0, QColor("#FFF8E8"))
+        q.setPen(Qt.PenStyle.NoPen)
+        q.setBrush(QBrush(sky))
+        q.drawRect(QRectF(0, 0, w, horizon + 2))
+
+        water = QLinearGradient(QPointF(0, horizon), QPointF(0, h))
+        water.setColorAt(0.0, QColor("#F7FBFF"))
+        water.setColorAt(0.42, QColor("#D8F0F7"))
+        water.setColorAt(1.0, QColor("#8DB4CB"))
+        q.setBrush(QBrush(water))
+        q.drawRect(QRectF(0, horizon, w, h - horizon))
+
+        q.setBrush(Qt.BrushStyle.NoBrush)
+        for i in range(16):
+            y = horizon + (h - horizon) * (i + 1) / 18.0
+            alpha = max(12, 44 - i * 2)
+            q.setPen(QPen(QColor(255, 255, 255, alpha), 1.0))
+            q.drawLine(QPointF(w * 0.05, y), QPointF(w * 0.95, y + math.sin(i * 0.7) * 1.4))
+        q.setPen(QPen(QColor(115, 122, 122, 42), max(1.0, h * 0.0014)))
+        q.drawLine(QPointF(0, horizon + h * 0.012), QPointF(w, horizon + h * 0.006))
+        q.setPen(QPen(QColor(255, 255, 255, 30), 1.0))
+        q.drawLine(QPointF(0, horizon + h * 0.020), QPointF(w, horizon + h * 0.018))
+        self._draw_soft_vignette(q, w, h, QColor(20, 46, 90, 26))
+
+    def _draw_fullscreen_scenic_dynamic_overlay(self, p: QPainter, r: QRectF, now: float, scene_id: str, tick: int = 0):
+        try:
+            w = float(max(1.0, r.width())); h = float(max(1.0, r.height()))
+            left = float(r.left()); top = float(r.top())
+            rnd = random.Random((int(w) * 1009) ^ (int(h) * 9176) ^ (int(tick) * 37) ^ hash(scene_id))
+            p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            if scene_id == "pamukkale":
+                # Row-locked subtle sheen and faint edge-water traces; no floating/random sparkle.
+                terrace_y = top + h * 0.315
+                step = h * 0.064
+                previous = []
+                for row in range(8):
+                    count = 2 + (1 if row % 2 == 0 else 0)
+                    current = []
+                    for col in range(count):
+                        cx = left + w * (0.25 + col * 0.225 + rnd.uniform(-0.018, 0.018))
+                        cy = terrace_y + rnd.uniform(-h * 0.002, h * 0.002)
+                        current.append((cx, cy))
+                        ww = w * rnd.uniform(0.034, 0.080)
+                        hh = max(1.4, h * rnd.uniform(0.0022, 0.0040))
+                        p.setPen(Qt.PenStyle.NoPen)
+                        p.setBrush(QBrush(QColor(255, 255, 255, rnd.randint(7, 17))))
+                        p.drawRoundedRect(QRectF(cx - ww * 0.42, cy - hh * 0.5, ww, hh), hh, hh)
+                    if previous:
+                        p.setPen(QPen(QColor(226, 248, 249, 12), max(1.0, h * 0.0020)))
+                        p.setBrush(Qt.BrushStyle.NoBrush)
+                        for i, cur in enumerate(current):
+                            prev = previous[min(len(previous) - 1, i)]
+                            path = QPainterPath()
+                            path.moveTo(QPointF(prev[0], prev[1] + h * 0.017))
+                            mid_x = (prev[0] + cur[0]) * 0.5 + rnd.uniform(-w * 0.010, w * 0.010)
+                            path.cubicTo(QPointF(mid_x, prev[1] + h * 0.024), QPointF(mid_x, cur[1] - h * 0.022), QPointF(cur[0], cur[1] - h * 0.017))
+                            p.drawPath(path)
+                    previous = current
+                    terrace_y += step * rnd.uniform(0.95, 1.05)
+                    step *= 1.025
+
+            elif scene_id == "chichibugahama":
+                for i in range(26):
+                    x = left + rnd.random() * w; y = top + h * rnd.uniform(0.38, 0.92)
+                    a = int(rnd.uniform(24, 72))
+                    p.setPen(QPen(QColor(255, 255, 255, a), 1.0))
+                    p.drawLine(QPointF(x - 12, y), QPointF(x + 12, y + rnd.uniform(-1.5, 1.5)))
+
+            elif scene_id == "blue_hole":
+                cx, cy = left + w * 0.50, top + h * 0.54
+                for i in range(8):
+                    rr = min(w, h) * (0.12 + i * 0.045 + 0.01 * math.sin(now + i))
+                    p.setPen(QPen(QColor(185, 240, 255, 28), 1.0))
+                    p.drawEllipse(QRectF(cx - rr, cy - rr, rr * 2, rr * 2))
+
+            p.restore()
+        except Exception:
+            try: p.restore()
+            except Exception: pass
+
+    def _draw_soft_vignette(self, q: QPainter, w: int, h: int, color: QColor):
+        try:
+            grad = QRadialGradient(QPointF(w * 0.5, h * 0.48), max(w, h) * 0.76)
+            c0 = QColor(color); c0.setAlpha(0)
+            c1 = QColor(color)
+            grad.setColorAt(0.0, c0); grad.setColorAt(1.0, c1)
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(grad)); q.drawRect(QRectF(0, 0, w, h))
+        except Exception:
+            pass
+
     def _draw_sahara_desert_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         try:
             if not self._scenic_engine_flag("sahara_desert_engine_enabled", False):
@@ -7399,7 +8192,7 @@ class EffectsOverlayWidget(BaseWidget):
             w = int(max(1, r.width()))
             h = int(max(1, r.height()))
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("sahara_desert_static_no_cactus_v4_no_static_sun", w, h, sig)
+            key = ("sahara_desert_static_v14_ambient_air_layer", w, h, sig)
             cache = getattr(self, "_sahara_desert_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
@@ -7831,7 +8624,7 @@ class EffectsOverlayWidget(BaseWidget):
             w = int(max(1, r.width()))
             h = int(max(1, r.height()))
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("uyuni_static_v3", w, h, sig)
+            key = ("uyuni_static_v13_ambient_air_layer", w, h, sig)
             cache = getattr(self, "_scenic_engine_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
@@ -8337,6 +9130,13 @@ class EffectsOverlayWidget(BaseWidget):
 
         if self._scenic_engine_flag("antelope_canyon_engine_enabled"):
             self._draw_antelope_canyon_engine(p, r, settings, now)
+
+        if self._scenic_engine_flag("pamukkale_terrace_lake_engine_enabled"):
+            self._draw_pamukkale_terrace_lake_engine(p, r, settings, now)
+        if self._scenic_engine_flag("blue_hole_deep_lake_engine_enabled"):
+            self._draw_blue_hole_deep_lake_engine(p, r, settings, now)
+        if self._scenic_engine_flag("chichibugahama_mirror_engine_enabled"):
+            self._draw_chichibugahama_mirror_engine(p, r, settings, now)
 
         if (
             getattr(settings, "sunrise_enabled", False)
@@ -11251,7 +12051,7 @@ class EffectsOverlayWidget(BaseWidget):
         quality = max(0.25, min(1.0, float(getattr(settings, "cloud_cache_quality_scale", 0.62))))
         size_bucket = max(12, int(round(size * quality / 4.0) * 4))
         return (
-            "cloud-cache-v4-sildur-inspired",
+            "cloud-cache-v12-ambient-air",
             size_bucket,
             round(float(getattr(item, "seed", 0.0)), 3),
             str(getattr(settings, "cloud_color", "#F4FAFF")),
@@ -11471,6 +12271,10 @@ class EffectsOverlayWidget(BaseWidget):
         p.save()
         try:
             p.setOpacity(max(0.0, min(1.0, alpha / 255.0)))
+            try:
+                p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            except Exception:
+                pass
             target = QRectF(
                 float(getattr(item, "x", 0.0)) - image.width() * scale * 0.50,
                 float(getattr(item, "y", 0.0)) - image.height() * scale * 0.76,
@@ -14838,7 +15642,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -15007,7 +15811,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -15403,7 +16207,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1"))
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -16542,7 +17346,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v2.0.1 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v2.0.6 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -16768,6 +17572,12 @@ def _lds_detect_icon_scene_profile_from_effect_settings(settings) -> str:
             return "desert"
         if bool(raw.get("antelope_canyon_engine_enabled", False)):
             return "canyon"
+        if bool(raw.get("pamukkale_terrace_lake_engine_enabled", False)):
+            return "water"
+        if bool(raw.get("blue_hole_deep_lake_engine_enabled", False)):
+            return "water"
+        if bool(raw.get("chichibugahama_mirror_engine_enabled", False)):
+            return "water"
         if bool(getattr(settings, "ice_enabled", False)) or bool(getattr(settings, "water_mirror_enabled", False)):
             return "uyuni"
         if bool(getattr(settings, "water_surface_enabled", False)):
