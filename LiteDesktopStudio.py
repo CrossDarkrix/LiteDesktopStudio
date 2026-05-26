@@ -108,7 +108,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "Lite Desktop Studio v1.5.6"
+APP_NAME = "Lite Desktop Studio v2.0.1"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 
@@ -877,7 +877,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - エフェクト設定"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -5434,7 +5434,9 @@ def attach_background_effects_to_desktop_host(widget, prefer: str = "workerw") -
         user32 = ctypes.windll.user32
         hwnd = int(widget.winId())
 
-        screen = QApplication.primaryScreen().geometry()
+        screen = lds_safe_desktop_geometry()
+        x = int(screen.x())
+        y = int(screen.y())
         width = max(1, int(screen.width()))
         height = max(1, int(screen.height()))
 
@@ -5515,8 +5517,8 @@ def attach_background_effects_to_desktop_host(widget, prefer: str = "workerw") -
         user32.SetWindowPos(
             ctypes.c_void_p(hwnd),
             ctypes.c_void_p(HWND_TOP),
-            0,
-            0,
+            x,
+            y,
             width,
             height,
             SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW,
@@ -5524,7 +5526,7 @@ def attach_background_effects_to_desktop_host(widget, prefer: str = "workerw") -
 
         try:
             widget.resize(width, height)
-            widget.move(0, 0)
+            widget.move(x, y)
             widget.show()
             widget.update()
         except:
@@ -5555,6 +5557,249 @@ def attach_background_effects_to_desktop_host(widget, prefer: str = "workerw") -
         except:
             pass
         return False
+
+
+# -----------------------------------------------------------------------------
+# LiteDesktopStudio Windows taskbar / WorkerW safety helpers
+# -----------------------------------------------------------------------------
+# 背景エフェクトを WorkerW の子ウィンドウとしてホストした場合、終了時に
+# Qt の hide()/deleteLater() だけでは HWND の親子関係や Z-order が残り、
+# タスクバーを覆っているように見えることがあります。
+# そのため、終了・非表示時は Win32 API で明示的に
+#   1) 自ウィンドウを非表示
+#   2) WorkerW からデタッチ
+#   3) 最背面へ移動
+#   4) タスクバー HWND を再表示
+# を行います。Windows 以外では何もしません。
+
+def _lds_c_void_p(value):
+    """Return c_void_p that also accepts HWND insert-after negative constants."""
+    try:
+        return ctypes.c_void_p(value)
+    except OverflowError:
+        bits = ctypes.sizeof(ctypes.c_void_p) * 8
+        return ctypes.c_void_p(int(value) & ((1 << bits) - 1))
+    except Exception:
+        return ctypes.c_void_p(0)
+
+
+def lds_restore_windows_taskbar_visibility():
+    """Best-effort taskbar visibility/Z-order restore for Windows.
+
+    This does not change Windows taskbar settings. It only asks Explorer taskbar
+    windows to show again and nudges them above normal windows, which prevents
+    a detached desktop-background child window from visually masking them.
+    """
+    if not is_windows():
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        FindWindowW = user32.FindWindowW
+        FindWindowExW = user32.FindWindowExW
+        FindWindowW.restype = ctypes.c_void_p
+        FindWindowExW.restype = ctypes.c_void_p
+
+        SW_SHOW = 5
+        HWND_TOPMOST = -1
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOACTIVATE = 0x0010
+        SWP_SHOWWINDOW = 0x0040
+        SWP_FLAGS = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+
+        taskbars = []
+        main_taskbar = FindWindowW("Shell_TrayWnd", None)
+        if main_taskbar:
+            taskbars.append(int(main_taskbar))
+
+        previous = 0
+        for _ in range(16):
+            hwnd = FindWindowExW(0, previous, "Shell_SecondaryTrayWnd", None)
+            if not hwnd:
+                break
+            taskbars.append(int(hwnd))
+            previous = int(hwnd)
+
+        restored = False
+        for hwnd in taskbars:
+            try:
+                user32.ShowWindow(_lds_c_void_p(hwnd), SW_SHOW)
+                user32.SetWindowPos(
+                    _lds_c_void_p(hwnd),
+                    _lds_c_void_p(HWND_TOPMOST),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_FLAGS,
+                )
+                restored = True
+            except Exception:
+                pass
+        return restored
+    except Exception:
+        return False
+
+
+def lds_detach_window_from_desktop_host(widget, restore_taskbar=True):
+    """Detach a QWidget HWND from WorkerW/desktop host safely.
+
+    Returns True when the function reached the Win32 cleanup path. It is safe to
+    call multiple times and safe to call for non-attached widgets.
+    """
+    if widget is None or not is_windows():
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = int(widget.winId())
+        if not hwnd:
+            return False
+
+        SW_HIDE = 0
+        HWND_BOTTOM = 1
+        SWP_NOSIZE = 0x0001
+        SWP_NOMOVE = 0x0002
+        SWP_NOACTIVATE = 0x0010
+        SWP_NOOWNERZORDER = 0x0200
+        SWP_FRAMECHANGED = 0x0020
+        SWP_FLAGS = SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED
+
+        GWL_STYLE = -16
+        GWL_EXSTYLE = -20
+        WS_CHILD = 0x40000000
+        WS_POPUP = 0x80000000
+        WS_VISIBLE = 0x10000000
+        WS_EX_TOOLWINDOW = 0x00000080
+        WS_EX_APPWINDOW = 0x00040000
+        WS_EX_NOACTIVATE = 0x08000000
+
+        try:
+            user32.ShowWindow(_lds_c_void_p(hwnd), SW_HIDE)
+        except Exception:
+            pass
+
+        try:
+            user32.SetParent(_lds_c_void_p(hwnd), _lds_c_void_p(0))
+        except Exception:
+            pass
+
+        try:
+            if hasattr(user32, "GetWindowLongPtrW"):
+                get_long = user32.GetWindowLongPtrW
+                set_long = user32.SetWindowLongPtrW
+            else:
+                get_long = user32.GetWindowLongW
+                set_long = user32.SetWindowLongW
+            get_long.restype = ctypes.c_longlong
+
+            style = int(get_long(_lds_c_void_p(hwnd), GWL_STYLE))
+            style = (style & ~WS_CHILD & ~WS_VISIBLE) | WS_POPUP
+            set_long(_lds_c_void_p(hwnd), GWL_STYLE, _lds_c_void_p(style))
+
+            ex_style = int(get_long(_lds_c_void_p(hwnd), GWL_EXSTYLE))
+            ex_style = (ex_style | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_APPWINDOW
+            set_long(_lds_c_void_p(hwnd), GWL_EXSTYLE, _lds_c_void_p(ex_style))
+        except Exception:
+            pass
+
+        try:
+            user32.SetWindowPos(
+                _lds_c_void_p(hwnd),
+                _lds_c_void_p(HWND_BOTTOM),
+                0,
+                0,
+                0,
+                0,
+                SWP_FLAGS,
+            )
+        except Exception:
+            pass
+
+        for name, value in (
+            ("_lds_desktop_host", 0),
+            ("_lds_desktop_host_kind", ""),
+            ("_lds_desktop_host_attached", False),
+            ("_last_attach_ok", False),
+        ):
+            try:
+                setattr(widget, name, value)
+            except Exception:
+                pass
+
+        if restore_taskbar:
+            lds_restore_windows_taskbar_visibility()
+        return True
+    except Exception:
+        try:
+            if restore_taskbar:
+                lds_restore_windows_taskbar_visibility()
+        except Exception:
+            pass
+        return False
+
+
+def lds_cleanup_background_effects_canvas(canvas_owner):
+    """Cleanup owner.background_effects_canvas without leaving taskbar masked."""
+    try:
+        bg = getattr(canvas_owner, "background_effects_canvas", None)
+        if bg is None:
+            return False
+        try:
+            if hasattr(bg, "detach_from_workerw"):
+                bg.detach_from_workerw()
+            else:
+                lds_detach_window_from_desktop_host(bg, restore_taskbar=True)
+        except Exception:
+            pass
+        try:
+            bg.hide()
+        except Exception:
+            pass
+        try:
+            bg.deleteLater()
+        except Exception:
+            pass
+        try:
+            setattr(canvas_owner, "background_effects_canvas", None)
+        except Exception:
+            pass
+        lds_restore_windows_taskbar_visibility()
+        return True
+    except Exception:
+        try:
+            lds_restore_windows_taskbar_visibility()
+        except Exception:
+            pass
+        return False
+
+
+def lds_safe_desktop_geometry():
+    """Return the screen area LiteDesktopStudio should occupy.
+
+    By default this uses Qt's availableGeometry(), which excludes the Windows
+    taskbar/app bars. This is intentionally safer than primaryScreen().geometry()
+    for a frameless bottom/tool desktop window, because a full-screen transparent
+    Qt window can visually cover the taskbar even when it is not topmost.
+
+    Set LITEDESKTOPSTUDIO_ALLOW_TASKBAR_COVER=1 only if you intentionally want
+    LiteDesktopStudio to use the entire monitor including the taskbar area.
+    """
+    try:
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return QRect(0, 0, 1, 1)
+        allow_cover = str(os.environ.get("LITEDESKTOPSTUDIO_ALLOW_TASKBAR_COVER", "0")).strip().lower() in (
+            "1", "true", "on", "yes"
+        )
+        geom = screen.geometry() if allow_cover else screen.availableGeometry()
+        if geom is None or geom.width() <= 0 or geom.height() <= 0:
+            geom = screen.geometry()
+        return geom
+    except Exception:
+        try:
+            return QApplication.primaryScreen().geometry()
+        except Exception:
+            return QRect(0, 0, 1, 1)
 
 def is_windows_only_desktop_overlay_supported():
     return is_windows()
@@ -14266,7 +14511,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -14435,7 +14680,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -14831,7 +15076,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v1.5.6"))
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.1"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -15970,7 +16215,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v1.5.6 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v2.0.1 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -18697,6 +18942,38 @@ class BackgroundEffectsCanvas(QWidget):
         except:
             pass
 
+    def detach_from_workerw(self):
+        """Detach this background HWND from WorkerW and restore taskbar visibility."""
+        try:
+            return lds_detach_window_from_desktop_host(self, restore_taskbar=True)
+        except Exception:
+            try:
+                lds_restore_windows_taskbar_visibility()
+            except Exception:
+                pass
+            return False
+
+    def hideEvent(self, event):
+        try:
+            if is_windows() and bool(getattr(self, "_lds_desktop_host_attached", False)):
+                self.detach_from_workerw()
+        except Exception:
+            pass
+        try:
+            super().hideEvent(event)
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        try:
+            self.detach_from_workerw()
+        except Exception:
+            pass
+        try:
+            super().closeEvent(event)
+        except Exception:
+            pass
+
 class DesktopCanvas(QWidget):
     def __init__(self):
         super().__init__()
@@ -18712,8 +18989,7 @@ class DesktopCanvas(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
 
-        screen = QApplication.primaryScreen().geometry()
-        self.setGeometry(screen)
+        self.apply_safe_desktop_geometry()
         create_runtime_controllers(self)
         self.weather = WeatherEngine()
         self.weather.start()
@@ -18761,6 +19037,23 @@ class DesktopCanvas(QWidget):
         except:
             pass
         self.update_platform_hit_mask()
+
+    def apply_safe_desktop_geometry(self):
+        """Keep the frameless desktop canvas outside the taskbar area."""
+        try:
+            geom = lds_safe_desktop_geometry()
+            self.setGeometry(geom)
+            return geom
+        except Exception:
+            try:
+                screen = QApplication.primaryScreen()
+                if screen is not None:
+                    geom = screen.availableGeometry()
+                    self.setGeometry(geom)
+                    return geom
+            except Exception:
+                pass
+        return None
 
     def _effective_effect_frame_interval_ms(self) -> int:
         """Return the current canvas timer interval from enabled effect FPS settings.
@@ -18890,13 +19183,19 @@ class DesktopCanvas(QWidget):
         super().resizeEvent(event)
 
         try:
+            safe_geom = lds_safe_desktop_geometry()
+            if safe_geom is not None and self.geometry() != safe_geom:
+                QTimer.singleShot(0, self.apply_safe_desktop_geometry)
+        except Exception:
+            pass
+        try:
             if self.background_effects_canvas is not None:
                 self.background_effects_canvas.sync_to_foreground()
-        except:
+        except Exception:
             pass
         try:
             self.update_platform_hit_mask()
-        except:
+        except Exception:
             pass
 
     def widget_at_pos(self, pos: QPoint):
@@ -19071,15 +19370,16 @@ class DesktopCanvas(QWidget):
 
     def closeEvent(self, event):
         try:
-            if getattr(self, "background_effects_canvas", None) is not None:
-                self.background_effects_canvas.hide()
-                self.background_effects_canvas.deleteLater()
-                self.background_effects_canvas = None
-        except:
+            lds_cleanup_background_effects_canvas(self)
+        except Exception:
+            pass
+        try:
+            lds_restore_windows_taskbar_visibility()
+        except Exception:
             pass
         try:
             super().closeEvent(event)
-        except:
+        except Exception:
             pass
 
     def on_frame(self):
@@ -19580,8 +19880,8 @@ class DesktopCanvas(QWidget):
                 type="effects_overlay",
                 x=0,
                 y=0,
-                w=QApplication.primaryScreen().geometry().width(),
-                h=QApplication.primaryScreen().geometry().height(),
+                w=lds_safe_desktop_geometry().width(),
+                h=lds_safe_desktop_geometry().height(),
                 title="Overlay Widget",
                 color="#FF7AAE",
                 bg="#000000",
@@ -19837,9 +20137,26 @@ class DesktopCanvas(QWidget):
             self.widgets = []
 
     def closeEvent(self, event):
-        [thread.kill() for thread in THREADS]
-        stop_runtime_controllers(self)
-        self.save_config()
+        try:
+            lds_cleanup_background_effects_canvas(self)
+        except Exception:
+            pass
+        try:
+            [thread.kill() for thread in THREADS]
+        except Exception:
+            pass
+        try:
+            stop_runtime_controllers(self)
+        except Exception:
+            pass
+        try:
+            self.save_config()
+        except Exception:
+            pass
+        try:
+            lds_restore_windows_taskbar_visibility()
+        except Exception:
+            pass
         event.accept()
 
 def main():
