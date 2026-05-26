@@ -2430,6 +2430,8 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_disable_all_visual_effects()
             self._theme_apply_common_lightweight(fps=60, quality=0.50)
             self._theme_set_raw_extra("sahara_desert_engine_enabled", True)
+            self._theme_set_raw_extra("realtime_scenic_sky_enabled", True)
+            self._theme_set_raw_extra("realtime_scenic_sun_rays_enabled", False)
             self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
             self._theme_set_raw_extra("desktop_ui_mask_padding", 24)
             self._theme_set_raw_extra("desktop_ui_mask_blur", 37)
@@ -2780,6 +2782,8 @@ class EffectsOverlayEditorDialog(QDialog):
             # ウユニ塩湖: 反射背景に加えて、既存の水面・薄い氷/塩結晶エフェクトもONにする。
             self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=6)
             self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", True)
+            self._theme_set_raw_extra("realtime_scenic_sky_enabled", True)
+            self._theme_set_raw_extra("realtime_scenic_sun_rays_enabled", False)
             self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
             self._theme_set_raw_extra("desktop_ui_mask_padding", 24)
             self._theme_set_raw_extra("desktop_ui_mask_blur", 37)
@@ -7053,6 +7057,341 @@ class EffectsOverlayWidget(BaseWidget):
             pass
         return image
 
+
+    def _realtime_scenic_sky_enabled(self) -> bool:
+        """Whether scenic presets should react to the computer's real local time."""
+        try:
+            raw = json.loads(getattr(self.cfg, "effects_json", "") or "{}")
+            if isinstance(raw, dict) and "realtime_scenic_sky_enabled" in raw:
+                return bool(raw.get("realtime_scenic_sky_enabled"))
+        except Exception:
+            pass
+        try:
+            return bool(
+                self._scenic_engine_flag("sahara_desert_engine_enabled", False)
+                or self._scenic_engine_flag("uyuni_salt_flat_engine_enabled", False)
+            )
+        except Exception:
+            return True
+
+    def _realtime_sky_state(self, now: float = None) -> dict:
+        """Return a smooth real-local-time sky state for scenic presets.
+
+        Local clock ranges:
+          04:30-07:30 dawn, 07:30-16:30 day, 16:30-19:30 dusk, otherwise night.
+        """
+        try:
+            if now is None:
+                now = time.time()
+            lt = time.localtime(float(now))
+            hour = float(lt.tm_hour) + float(lt.tm_min) / 60.0 + float(lt.tm_sec) / 3600.0
+        except Exception:
+            hour = 12.0
+
+        def clamp01(v):
+            try:
+                return max(0.0, min(1.0, float(v)))
+            except Exception:
+                return 0.0
+
+        if 4.5 <= hour < 7.5:
+            return {"hour": hour, "phase": "dawn", "t": clamp01((hour - 4.5) / 3.0)}
+        if 7.5 <= hour < 16.5:
+            return {"hour": hour, "phase": "day", "t": clamp01((hour - 7.5) / 9.0)}
+        if 16.5 <= hour < 19.5:
+            return {"hour": hour, "phase": "dusk", "t": clamp01((hour - 16.5) / 3.0)}
+        if hour >= 19.5:
+            t = clamp01((hour - 19.5) / 9.0)
+        else:
+            t = clamp01((hour + 4.5) / 9.0)
+        return {"hour": hour, "phase": "night", "t": t}
+
+    def _draw_realtime_scenic_sky(self, p: QPainter, r: QRectF, now: float, scene: str = "desert"):
+        """Overlay real-time sky, sun glow, stars and shooting stars for scenic presets."""
+        try:
+            if not self._realtime_scenic_sky_enabled():
+                return
+            state = self._realtime_sky_state(now)
+            phase = state.get("phase", "day")
+            t = float(state.get("t", 0.0))
+            w = float(max(1.0, r.width()))
+            h = float(max(1.0, r.height()))
+            left = float(r.left())
+            top = float(r.top())
+            horizon = top + h * (0.50 if scene == "uyuni" else 0.44)
+            sky_rect = QRectF(left, top, w, max(1.0, horizon - top + 2.0))
+            full_rect = QRectF(left, top, w, h)
+
+            p.save()
+            try:
+                p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                try:
+                    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                except Exception:
+                    pass
+
+                if phase == "night":
+                    sky = QLinearGradient(QPointF(left, top), QPointF(left, horizon))
+                    sky.setColorAt(0.0, QColor(4, 8, 32, 214))
+                    sky.setColorAt(0.48, QColor(10, 18, 48, 196))
+                    sky.setColorAt(1.0, QColor(32, 24, 52, 148 if scene == "desert" else 118))
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(sky)); p.drawRect(sky_rect)
+
+                    ground = QLinearGradient(QPointF(left, horizon), QPointF(left, top + h))
+                    ground.setColorAt(0.0, QColor(12, 20, 42, 70 if scene == "uyuni" else 92))
+                    ground.setColorAt(1.0, QColor(2, 3, 12, 118 if scene == "uyuni" else 150))
+                    p.setBrush(QBrush(ground)); p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
+                    self._draw_realtime_stars(p, r, now, scene=scene)
+                    self._draw_realtime_shooting_star(p, r, now, scene=scene)
+
+                    moon_x = left + w * 0.78
+                    moon_y = top + h * 0.16
+                    moon_r = max(18.0, min(w, h) * 0.045)
+                    halo = QRadialGradient(QPointF(moon_x, moon_y), moon_r * 4.2)
+                    halo.setColorAt(0.0, QColor(210, 230, 255, 92))
+                    halo.setColorAt(0.36, QColor(120, 160, 255, 30))
+                    halo.setColorAt(1.0, QColor(80, 120, 220, 0))
+                    p.setBrush(QBrush(halo)); p.setPen(Qt.PenStyle.NoPen)
+                    p.drawEllipse(QRectF(moon_x - moon_r * 4.2, moon_y - moon_r * 4.2, moon_r * 8.4, moon_r * 8.4))
+                    p.setBrush(QBrush(QColor(238, 242, 255, 150)))
+                    p.drawEllipse(QRectF(moon_x - moon_r, moon_y - moon_r, moon_r * 2.0, moon_r * 2.0))
+
+                elif phase == "dawn":
+                    sky = QLinearGradient(QPointF(left, top), QPointF(left, horizon))
+                    sky.setColorAt(0.0, QColor(20, 30, 84, int(150 * (1.0 - t) + 40 * t)))
+                    sky.setColorAt(0.40, QColor(255, 116, 92, int(120 + 55 * t)))
+                    sky.setColorAt(0.74, QColor(255, 196, 112, int(150 + 50 * t)))
+                    sky.setColorAt(1.0, QColor(255, 236, 175, int(160 + 35 * t)))
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(sky)); p.drawRect(sky_rect)
+                    sun_x = left + w * (0.22 + 0.12 * t)
+                    sun_y = horizon - h * (0.03 + 0.18 * t)
+                    self._draw_realtime_sun_glow(
+                        p, sun_x, sun_y, max(44.0, min(w, h) * (0.075 + 0.025 * t)),
+                        strength=0.78 + 0.18 * t,
+                        hot=False,
+                        cool=(scene == "uyuni"),
+                        # 朝日は左側から昇るため、放射は少し右下へ向ける。
+                        ray_center=0.30,
+                        ray_spread=0.38,
+                        ray_alpha_scale=(0.26 if scene == "uyuni" else 0.36),
+                    )
+                    warm = QLinearGradient(QPointF(left, horizon), QPointF(left, top + h))
+                    warm.setColorAt(0.0, QColor(255, 174, 96, 58 if scene == "uyuni" else 74))
+                    warm.setColorAt(1.0, QColor(115, 54, 18, 24 if scene == "uyuni" else 52))
+                    p.setBrush(QBrush(warm)); p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
+
+                elif phase == "day":
+                    noon = max(0.0, min(1.0, 1.0 - abs(t - 0.5) * 2.0))
+                    sky = QLinearGradient(QPointF(left, top), QPointF(left, horizon))
+                    sky.setColorAt(0.0, QColor(64, 146, 232, int(62 + 36 * noon)))
+                    sky.setColorAt(0.58, QColor(180, 225, 255, int(48 + 30 * noon)))
+                    sky.setColorAt(1.0, QColor(255, 235, 174, int(74 + 36 * noon)))
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(sky)); p.drawRect(sky_rect)
+                    sun_x = left + w * (0.18 + 0.64 * t)
+                    sun_y = top + h * (0.12 + 0.08 * math.sin(t * math.pi))
+                    # Optional ray direction. In this no-ray build, line rays are disabled by default; gradients express heat/light.
+                    self._draw_realtime_sun_glow(
+                        p, sun_x, sun_y, max(54.0, min(w, h) * 0.105),
+                        strength=1.08 + 0.34 * noon,
+                        hot=True,
+                        cool=(scene == "uyuni"),
+                        # 太陽の位置に合わせ、午前は右下、午後は左下へ放射する。
+                        ray_center=(math.pi - 0.30 if sun_x > left + w * 0.52 else 0.30),
+                        ray_spread=0.48,
+                        ray_alpha_scale=(0.66 if scene == "uyuni" else 0.92),
+                    )
+                    glare = QRadialGradient(QPointF(sun_x, sun_y), max(w, h) * (0.70 if scene == "desert" else 0.54))
+                    if scene == "uyuni":
+                        glare.setColorAt(0.0, QColor(255, 255, 255, int(38 + 38 * noon)))
+                        glare.setColorAt(0.34, QColor(230, 248, 255, int(18 + 22 * noon)))
+                        glare.setColorAt(1.0, QColor(220, 245, 255, 0))
+                    else:
+                        glare.setColorAt(0.0, QColor(255, 244, 180, int(52 + 58 * noon)))
+                        glare.setColorAt(0.34, QColor(255, 202, 92, int(24 + 30 * noon)))
+                        glare.setColorAt(1.0, QColor(255, 160, 50, 0))
+                    p.setBrush(QBrush(glare)); p.drawRect(full_rect)
+
+                    if scene == "desert":
+                        heat = QLinearGradient(QPointF(left, horizon), QPointF(left, top + h))
+                        heat.setColorAt(0.0, QColor(255, 220, 130, int(42 + 30 * noon)))
+                        heat.setColorAt(0.46, QColor(255, 126, 28, int(26 + 26 * noon)))
+                        heat.setColorAt(1.0, QColor(110, 42, 8, int(36 + 34 * noon)))
+                        p.setBrush(QBrush(heat)); p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
+                    else:
+                        mirror = QLinearGradient(QPointF(left, horizon), QPointF(left, top + h))
+                        mirror.setColorAt(0.0, QColor(255, 255, 255, int(38 + 30 * noon)))
+                        mirror.setColorAt(0.55, QColor(218, 246, 255, int(22 + 18 * noon)))
+                        mirror.setColorAt(1.0, QColor(255, 255, 255, int(24 + 22 * noon)))
+                        p.setBrush(QBrush(mirror)); p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
+
+                else:  # dusk
+                    sky = QLinearGradient(QPointF(left, top), QPointF(left, horizon))
+                    sky.setColorAt(0.0, QColor(84, 112, 190, int(92 + 48 * t)))
+                    sky.setColorAt(0.44, QColor(255, 147, 86, int(105 + 58 * t)))
+                    sky.setColorAt(0.76, QColor(255, 194, 116, int(124 + 45 * t)))
+                    sky.setColorAt(1.0, QColor(178, 70, 40, int(78 + 74 * t)))
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(sky)); p.drawRect(sky_rect)
+                    sun_x = left + w * (0.78 - 0.08 * t)
+                    sun_y = horizon - h * (0.16 * (1.0 - t) + 0.015)
+                    # Optional evening ray direction. In this no-ray build, line rays are disabled by default.
+                    self._draw_realtime_sun_glow(
+                        p, sun_x, sun_y, max(42.0, min(w, h) * 0.082),
+                        strength=0.82,
+                        hot=False,
+                        cool=(scene == "uyuni"),
+                        # 夕方は太陽が右側にあるため、放射を左下へ傾ける。
+                        ray_center=math.pi - 0.38,
+                        ray_spread=0.42,
+                        ray_alpha_scale=(0.36 if scene == "uyuni" else 0.52),
+                    )
+                    amber = QLinearGradient(QPointF(left, horizon), QPointF(left, top + h))
+                    amber.setColorAt(0.0, QColor(255, 148, 70, 62 if scene == "uyuni" else 82))
+                    amber.setColorAt(0.54, QColor(198, 84, 36, 38 if scene == "uyuni" else 70))
+                    amber.setColorAt(1.0, QColor(70, 24, 10, 34 if scene == "uyuni" else 84))
+                    p.setBrush(QBrush(amber)); p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
+                    if t > 0.58:
+                        self._draw_realtime_stars(p, r, now, scene=scene, alpha_scale=(t - 0.58) / 0.42)
+            finally:
+                p.restore()
+        except Exception:
+            try:
+                p.restore()
+            except Exception:
+                pass
+
+
+    def _realtime_scenic_sun_rays_enabled(self) -> bool:
+        """Whether explicit sun ray line strokes are drawn for realtime scenic sky.
+
+        This no-ray build defaults to False. Heat and brightness are still shown
+        through radial/linear gradients in _draw_realtime_scenic_sky(), which is
+        more natural for Uyuni salt flat and softer desert scenes.
+        Set realtime_scenic_sun_rays_enabled=true in effects_json only if the
+        previous line-ray style is desired.
+        """
+        try:
+            raw = json.loads(getattr(self.cfg, "effects_json", "") or "{}")
+            if isinstance(raw, dict) and "realtime_scenic_sun_rays_enabled" in raw:
+                return bool(raw.get("realtime_scenic_sun_rays_enabled"))
+        except Exception:
+            pass
+        return False
+
+    def _draw_realtime_sun_glow(self, p: QPainter, x: float, y: float, radius: float, strength: float = 1.0, hot: bool = False, cool: bool = False, ray_center=None, ray_spread: float = 0.85, ray_alpha_scale: float = 1.0):
+        try:
+            outer = radius * (4.4 if hot else 3.5)
+            grad = QRadialGradient(QPointF(x, y), outer)
+            if cool:
+                # Uyuni salt flat palette: nearly white sun + faint blue-cyan halo.
+                grad.setColorAt(0.0, QColor(255, 255, 255, int(max(0, min(255, 190 * strength)))))
+                grad.setColorAt(0.16, QColor(246, 252, 255, int(max(0, min(255, 112 * strength)))))
+                grad.setColorAt(0.46, QColor(214, 238, 255, int(max(0, min(255, (42 if hot else 30) * strength)))))
+                grad.setColorAt(1.0, QColor(210, 235, 255, 0))
+            else:
+                grad.setColorAt(0.0, QColor(255, 255, 222, int(max(0, min(255, 210 * strength)))))
+                grad.setColorAt(0.13, QColor(255, 234, 130, int(max(0, min(255, 145 * strength)))))
+                grad.setColorAt(0.42, QColor(255, 176, 56, int(max(0, min(255, (70 if hot else 48) * strength)))))
+                grad.setColorAt(1.0, QColor(255, 132, 28, 0))
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad))
+            p.drawEllipse(QRectF(x - outer, y - outer, outer * 2.0, outer * 2.0))
+            if cool:
+                p.setBrush(QBrush(QColor(255, 255, 255, int(max(0, min(255, 210 * min(1.0, strength)))))))
+            else:
+                p.setBrush(QBrush(QColor(255, 248, 194, int(max(0, min(255, 232 * min(1.0, strength)))))))
+            p.drawEllipse(QRectF(x - radius, y - radius, radius * 2.0, radius * 2.0))
+
+            if (hot or ray_center is not None) and self._realtime_scenic_sun_rays_enabled():
+                if ray_center is None:
+                    ray_center = 0.0
+                try:
+                    ray_center = float(ray_center)
+                except Exception:
+                    ray_center = 0.0
+                try:
+                    ray_spread = max(0.05, min(2.40, float(ray_spread)))
+                except Exception:
+                    ray_spread = 0.85
+                try:
+                    ray_alpha_scale = max(0.0, min(2.0, float(ray_alpha_scale)))
+                except Exception:
+                    ray_alpha_scale = 1.0
+                base_alpha = 36 if cool else 54
+                base_width = radius * (0.020 if cool else 0.025)
+                if not hot:
+                    base_alpha *= 0.62
+                    base_width *= 0.78
+                ray_alpha = int(max(0, min(255, base_alpha * strength * ray_alpha_scale)))
+                if cool:
+                    pen = QPen(QColor(245, 252, 255, ray_alpha), max(1.0, base_width))
+                else:
+                    pen = QPen(QColor(255, 234, 155, ray_alpha), max(1.0, base_width))
+                p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+                ray_count = 18
+                ray_angles = [ray_center - ray_spread + (ray_spread * 2.0) * i / float(ray_count - 1) for i in range(ray_count)]
+                for a in ray_angles:
+                    p.drawLine(QPointF(x, y), QPointF(x + math.cos(a) * outer * 1.55, y + math.sin(a) * outer * 1.55))
+        except Exception:
+            pass
+
+    def _draw_realtime_stars(self, p: QPainter, r: QRectF, now: float, scene: str = "desert", alpha_scale: float = 1.0):
+        try:
+            w = float(max(1.0, r.width()))
+            h = float(max(1.0, r.height()))
+            left = float(r.left()); top = float(r.top())
+            horizon = top + h * (0.50 if scene == "uyuni" else 0.44)
+            rnd = random.Random((int(w) * 92821) ^ (int(h) * 68917) ^ 0x515459)
+            count = max(80, min(420, int(w * h / 5200)))
+            twinkle = 0.5 + 0.5 * math.sin(float(now) * 0.9)
+            for i in range(count):
+                x = left + rnd.random() * w
+                y = top + rnd.random() * max(1.0, horizon - top) * 0.92
+                base = rnd.randint(78, 190)
+                local = 0.65 + 0.35 * math.sin(float(now) * (0.35 + rnd.random() * 0.85) + rnd.random() * 6.283)
+                alpha = int(max(0, min(255, base * alpha_scale * (0.72 + 0.28 * twinkle) * local)))
+                if alpha <= 3:
+                    continue
+                col = QColor(245, 250, 255, alpha)
+                p.setPen(QPen(col, 1.0))
+                p.drawPoint(QPointF(x, y))
+                if rnd.random() < 0.028:
+                    p.setPen(QPen(QColor(210, 225, 255, max(8, alpha // 3)), 1.0))
+                    p.drawLine(QPointF(x - 2.0, y), QPointF(x + 2.0, y))
+                    p.drawLine(QPointF(x, y - 2.0), QPointF(x, y + 2.0))
+        except Exception:
+            pass
+
+    def _draw_realtime_shooting_star(self, p: QPainter, r: QRectF, now: float, scene: str = "desert"):
+        try:
+            period = 28.0
+            visible = 1.6
+            phase = float(now) % period
+            if phase > visible:
+                return
+            progress = max(0.0, min(1.0, phase / visible))
+            w = float(max(1.0, r.width()))
+            h = float(max(1.0, r.height()))
+            left = float(r.left()); top = float(r.top())
+            horizon = top + h * (0.50 if scene == "uyuni" else 0.44)
+            seed = int(float(now) // period) ^ int(w * 13) ^ int(h * 17)
+            rnd = random.Random(seed)
+            start_x = left + w * rnd.uniform(0.08, 0.62)
+            start_y = top + (horizon - top) * rnd.uniform(0.08, 0.38)
+            travel = w * rnd.uniform(0.22, 0.36)
+            drop = h * rnd.uniform(0.055, 0.12)
+            head_x = start_x + travel * progress
+            head_y = start_y + drop * progress
+            tail_x = head_x - travel * 0.42
+            tail_y = head_y - drop * 0.42
+            alpha = int(230 * math.sin(progress * math.pi))
+            if alpha <= 2:
+                return
+            p.setPen(QPen(QColor(230, 245, 255, alpha), 2.0))
+            p.drawLine(QPointF(tail_x, tail_y), QPointF(head_x, head_y))
+            p.setPen(QPen(QColor(255, 255, 255, min(255, alpha + 25)), 3.0))
+            p.drawPoint(QPointF(head_x, head_y))
+        except Exception:
+            pass
+
     def _draw_sahara_desert_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         try:
             if not self._scenic_engine_flag("sahara_desert_engine_enabled", False):
@@ -7060,13 +7399,14 @@ class EffectsOverlayWidget(BaseWidget):
             w = int(max(1, r.width()))
             h = int(max(1, r.height()))
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("sahara_desert_static_no_cactus_v3", w, h, sig)
+            key = ("sahara_desert_static_no_cactus_v4_no_static_sun", w, h, sig)
             cache = getattr(self, "_sahara_desert_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
                 img = self._render_sahara_desert_static(w, h)
                 self._sahara_cache_put(key, img)
             p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+            self._draw_realtime_scenic_sky(p, r, now, scene="desert")
             self._ensure_sahara_dry_grass(r, now)
             self._update_sahara_dry_grass(r, now)
             self._draw_sahara_dry_grass(p, r, now)
@@ -7088,22 +7428,8 @@ class EffectsOverlayWidget(BaseWidget):
             sky.setColorAt(1.0, QColor("#F9C27B"))
             q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(sky)); q.drawRect(QRectF(0, 0, w, horizon + 2))
 
-            sun_x = w * 0.78; sun_y = h * 0.17; sun_r = max(42.0, min(w, h) * 0.105)
-            sun_grad = QRadialGradient(QPointF(sun_x, sun_y), sun_r * 3.0)
-            sun_grad.setColorAt(0.0, QColor(255, 255, 225, 238))
-            sun_grad.setColorAt(0.16, QColor(255, 235, 145, 170))
-            sun_grad.setColorAt(0.52, QColor(255, 192, 85, 54))
-            sun_grad.setColorAt(1.0, QColor(255, 180, 80, 0))
-            q.setBrush(QBrush(sun_grad)); q.setPen(Qt.PenStyle.NoPen)
-            q.drawEllipse(QRectF(sun_x - sun_r * 3.0, sun_y - sun_r * 3.0, sun_r * 6.0, sun_r * 6.0))
-            q.setBrush(QBrush(QColor(255, 246, 196, 235)))
-            q.drawEllipse(QRectF(sun_x - sun_r, sun_y - sun_r, sun_r * 2.0, sun_r * 2.0))
-            for i in range(14):
-                angle = -0.65 + i * 0.10
-                ray = QPainterPath(); ray.moveTo(sun_x, sun_y)
-                ray.lineTo(sun_x + math.cos(angle) * w * 1.2, sun_y + math.sin(angle) * h * 1.8)
-                ray.lineTo(sun_x + math.cos(angle + 0.045) * w * 1.2, sun_y + math.sin(angle + 0.045) * h * 1.8)
-                ray.closeSubpath(); q.setBrush(QBrush(QColor(255, 229, 150, 16))); q.setPen(Qt.PenStyle.NoPen); q.drawPath(ray)
+            # Static Sahara sun removed. Realtime sky now draws the only sun,
+            # preventing double-sun interference and allowing correct ray direction.
 
             for i in range(16):
                 y = horizon + i * h * 0.012
@@ -7512,6 +7838,7 @@ class EffectsOverlayWidget(BaseWidget):
                 img = self._render_uyuni_salt_flat_static(w, h)
                 self._scenic_cache_put(key, img)
             p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+            self._draw_realtime_scenic_sky(p, r, now, scene="uyuni")
         except:
             pass
 
@@ -16481,6 +16808,13 @@ def _lds_set_icon_scene_active_profile_from_widget(widget):
     return profile
 
 def _lds_find_desktop_shell_windows():
+    """Return (desktop_host, SHELLDLL_DefView, SysListView32) for Explorer desktop.
+
+    Explorer can host desktop icons either under Progman or under a WorkerW.
+    This function checks Progman first, then enumerates top-level windows for a
+    WorkerW that owns SHELLDLL_DefView. That makes icon click/drag forwarding
+    work on more Windows desktop configurations.
+    """
     if not is_windows():
         return (0, 0, 0)
     try:
@@ -16491,11 +16825,36 @@ def _lds_find_desktop_shell_windows():
         FindWindowExW = user32.FindWindowExW
         FindWindowExW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p]
         FindWindowExW.restype = ctypes.c_void_p
+        def find_children(host):
+            try:
+                defview = int(FindWindowExW(ctypes.c_void_p(host), None, "SHELLDLL_DefView", None) or 0) if host else 0
+                listview = int(FindWindowExW(ctypes.c_void_p(defview), None, "SysListView32", None) or 0) if defview else 0
+                return defview, listview
+            except Exception:
+                return 0, 0
         progman = int(FindWindowW("Progman", None) or 0)
-        defview = int(FindWindowExW(ctypes.c_void_p(progman), None, "SHELLDLL_DefView", None) or 0) if progman else 0
-        listview = int(FindWindowExW(ctypes.c_void_p(defview), None, "SysListView32", None) or 0) if defview else 0
-        return (progman, defview, listview)
-    except:
+        defview, listview = find_children(progman)
+        if listview:
+            return (progman, defview, listview)
+        found = {"host": 0, "defview": 0, "listview": 0}
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def enum_proc(hwnd, lparam):
+            try:
+                dv, lv = find_children(int(hwnd))
+                if lv:
+                    found["host"] = int(hwnd)
+                    found["defview"] = int(dv)
+                    found["listview"] = int(lv)
+                    return False
+            except Exception:
+                pass
+            return True
+        try:
+            user32.EnumWindows(EnumWindowsProc(enum_proc), 0)
+        except Exception:
+            pass
+        return (int(found.get("host", 0)), int(found.get("defview", 0)), int(found.get("listview", 0)))
+    except Exception:
         return (0, 0, 0)
 
 
@@ -16530,6 +16889,199 @@ def _lds_icon_proxy_post_mouse(message: int, x: int, y: int, wparam: int = 0) ->
         except: pass
         return False
 
+
+
+
+def _lds_invalidate_icon_scene_cache():
+    try:
+        globals()["_LDS_ICON_SCENE_CACHE"] = {"time": 0.0, "items": [], "size": (0, 0), "listview": 0}
+        globals()["_LDS_ICON_SCENE_OVERLAY_CACHE"] = {"key": None, "image": None}
+        globals()["_LDS_ICON_FOREGROUND_LAYER_CACHE"] = {"key": None, "image": None}
+    except Exception:
+        pass
+
+
+def _lds_canvas_pos_to_desktop_listview_client(canvas, pos):
+    """Convert a LiteDesktopStudio canvas QPoint to Explorer desktop listview client coords."""
+    try:
+        x = int(pos.x()); y = int(pos.y())
+    except Exception:
+        try: x, y = int(pos[0]), int(pos[1])
+        except Exception: x, y = 0, 0
+    if not is_windows():
+        return (x, y)
+    try:
+        listview = _lds_get_desktop_listview_hwnd()
+        if not listview:
+            return (x, y)
+        try:
+            g = canvas.mapToGlobal(QPoint(x, y)) if canvas is not None else QPoint(x, y)
+            sx, sy = int(g.x()), int(g.y())
+        except Exception:
+            sx, sy = x, y
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+        pt = POINT(sx, sy)
+        try:
+            ctypes.windll.user32.ScreenToClient(ctypes.c_void_p(listview), ctypes.byref(pt))
+            return (int(pt.x), int(pt.y))
+        except Exception:
+            return (sx, sy)
+    except Exception:
+        return (x, y)
+
+
+def _lds_icon_proxy_post_mouse_from_canvas(canvas, message: int, pos, wparam: int = 0) -> bool:
+    try:
+        x, y = _lds_canvas_pos_to_desktop_listview_client(canvas, pos)
+        return _lds_icon_proxy_post_mouse(message, x, y, wparam)
+    except Exception:
+        return False
+
+
+def _lds_desktop_listview_clear_selection() -> bool:
+    """Clear Explorer desktop icon selection directly on the SysListView32."""
+    if not is_windows():
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        listview = _lds_get_desktop_listview_hwnd()
+        if not listview:
+            return False
+        LVM_FIRST = 0x1000
+        LVM_SETITEMSTATE = LVM_FIRST + 43
+        LVIS_SELECTED = 0x0002
+        LVIS_FOCUSED = 0x0001
+        PROCESS_VM_OPERATION = 0x0008
+        PROCESS_VM_READ = 0x0010
+        PROCESS_VM_WRITE = 0x0020
+        PROCESS_QUERY_INFORMATION = 0x0400
+        MEM_COMMIT = 0x1000
+        MEM_RESERVE = 0x2000
+        MEM_RELEASE = 0x8000
+        PAGE_READWRITE = 0x04
+        class LVITEMW(ctypes.Structure):
+            _fields_ = [
+                ("mask", ctypes.c_uint), ("iItem", ctypes.c_int), ("iSubItem", ctypes.c_int),
+                ("state", ctypes.c_uint), ("stateMask", ctypes.c_uint), ("pszText", ctypes.c_void_p),
+                ("cchTextMax", ctypes.c_int), ("iImage", ctypes.c_int), ("lParam", ctypes.c_void_p),
+                ("iIndent", ctypes.c_int), ("iGroupId", ctypes.c_int), ("cColumns", ctypes.c_uint),
+                ("puColumns", ctypes.c_void_p), ("piColFmt", ctypes.c_void_p), ("iGroup", ctypes.c_int)
+            ]
+        pid = ctypes.c_ulong(0)
+        user32.GetWindowThreadProcessId(ctypes.c_void_p(listview), ctypes.byref(pid))
+        process = kernel32.OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, False, int(pid.value))
+        if not process:
+            return False
+        remote = 0
+        try:
+            item = LVITEMW(); item.state = 0; item.stateMask = LVIS_SELECTED | LVIS_FOCUSED
+            remote = kernel32.VirtualAllocEx(process, None, ctypes.sizeof(item), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+            if not remote:
+                return False
+            written = ctypes.c_size_t(0)
+            kernel32.WriteProcessMemory(process, ctypes.c_void_p(remote), ctypes.byref(item), ctypes.sizeof(item), ctypes.byref(written))
+            user32.SendMessageW(ctypes.c_void_p(listview), LVM_SETITEMSTATE, ctypes.c_void_p(-1), ctypes.c_void_p(remote))
+            try:
+                user32.InvalidateRect(ctypes.c_void_p(listview), None, True)
+                user32.UpdateWindow(ctypes.c_void_p(listview))
+            except Exception:
+                pass
+            _lds_invalidate_icon_scene_cache()
+            return True
+        finally:
+            try:
+                if remote: kernel32.VirtualFreeEx(process, ctypes.c_void_p(remote), 0, MEM_RELEASE)
+            except Exception: pass
+            try: kernel32.CloseHandle(process)
+            except Exception: pass
+    except Exception as e:
+        try: print("[LiteDesktopStudio] clear desktop icon selection failed:", repr(e))
+        except Exception: pass
+        return False
+
+
+def _lds_desktop_listview_set_item_position(index: int, x: int, y: int) -> bool:
+    """Move one Explorer desktop icon by setting its listview item position."""
+    if not is_windows():
+        return False
+    try:
+        listview = _lds_get_desktop_listview_hwnd()
+        if not listview:
+            return False
+        LVM_FIRST = 0x1000
+        LVM_SETITEMPOSITION = LVM_FIRST + 15
+        ctypes.windll.user32.SendMessageW(ctypes.c_void_p(listview), LVM_SETITEMPOSITION, int(index), int(_lds_make_lparam(int(x), int(y))))
+        return True
+    except Exception as e:
+        try: print("[LiteDesktopStudio] move desktop icon failed:", repr(e))
+        except Exception: pass
+        return False
+
+
+def _lds_desktop_icon_drag_prepare(canvas, hit, items, start_pos):
+    """Prepare drag state for Explorer desktop icons."""
+    try:
+        sx, sy = _lds_canvas_pos_to_desktop_listview_client(canvas, start_pos)
+        selected_items = [it for it in list(items or []) if bool(it.get("selected"))]
+        if hit is not None and bool(hit.get("selected")) and selected_items:
+            drag_items = selected_items
+        elif hit is not None:
+            drag_items = [hit]
+        else:
+            drag_items = []
+        prepared = []
+        for it in drag_items:
+            try:
+                px, py = it.get("pos", it.get("center", (0, 0)))
+                prepared.append({"index": int(it.get("index", -1)), "pos": (int(px), int(py))})
+            except Exception:
+                pass
+        canvas._lds_icon_proxy_drag_start_client = (int(sx), int(sy))
+        canvas._lds_icon_proxy_drag_items = prepared
+        canvas._lds_icon_proxy_drag_moved = False
+        canvas._lds_icon_proxy_drag_hit = hit
+        return bool(prepared)
+    except Exception:
+        return False
+
+
+def _lds_desktop_icon_drag_update(canvas, pos) -> bool:
+    """Move prepared desktop icons according to mouse delta."""
+    try:
+        items = list(getattr(canvas, "_lds_icon_proxy_drag_items", []) or [])
+        if not items:
+            return False
+        sx, sy = getattr(canvas, "_lds_icon_proxy_drag_start_client", (0, 0))
+        cx, cy = _lds_canvas_pos_to_desktop_listview_client(canvas, pos)
+        dx = int(cx) - int(sx); dy = int(cy) - int(sy)
+        threshold = int(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_DRAG_THRESHOLD", "4"))
+        if abs(dx) + abs(dy) < max(1, threshold) and not bool(getattr(canvas, "_lds_icon_proxy_drag_moved", False)):
+            return True
+        moved_any = False
+        for it in items:
+            try:
+                index = int(it.get("index", -1)); px, py = it.get("pos", (0, 0))
+                if index >= 0:
+                    moved_any = _lds_desktop_listview_set_item_position(index, int(px) + dx, int(py) + dy) or moved_any
+            except Exception:
+                pass
+        if moved_any:
+            canvas._lds_icon_proxy_drag_moved = True
+            _lds_invalidate_icon_scene_cache()
+            try:
+                listview = _lds_get_desktop_listview_hwnd()
+                if listview:
+                    ctypes.windll.user32.InvalidateRect(ctypes.c_void_p(listview), None, True)
+                    ctypes.windll.user32.UpdateWindow(ctypes.c_void_p(listview))
+            except Exception:
+                pass
+        return moved_any
+    except Exception as e:
+        try: print("[LiteDesktopStudio] desktop icon drag update failed:", repr(e))
+        except Exception: pass
+        return False
 
 def _lds_icon_hit_test(items, x: int, y: int, padding: int = 10):
     try:
@@ -16567,7 +17119,8 @@ def _lds_icon_proxy_should_handle(canvas, pos, require_icon: bool = False):
         if _lds_point_hits_litedesktop_widget(canvas, pos):
             return (False, None, [])
         items = _lds_get_icon_scene_items(int(canvas.width()), int(canvas.height()))
-        hit = _lds_icon_hit_test(items, int(pos.x()), int(pos.y()), padding=12)
+        hx, hy = _lds_canvas_pos_to_desktop_listview_client(canvas, pos)
+        hit = _lds_icon_hit_test(items, int(hx), int(hy), padding=12)
         if hit is not None:
             return (True, hit, items)
         if require_icon:
@@ -19000,6 +19553,11 @@ class DesktopCanvas(QWidget):
         # Do not create the experimental desktop-child BackgroundEffectsCanvas.
         self.background_effects_canvas = None
         self._lds_icon_proxy_dragging = False
+        self._lds_icon_proxy_blank_press = False
+        self._lds_icon_proxy_drag_items = []
+        self._lds_icon_proxy_drag_start_client = (0, 0)
+        self._lds_icon_proxy_drag_moved = False
+        self._lds_icon_proxy_drag_hit = None
         self.selected: Optional[BaseWidget] = None
         self.dragging = False
         self.drag_offset = QPoint(0, 0)
@@ -19533,9 +20091,20 @@ class DesktopCanvas(QWidget):
                 pos = event.position().toPoint()
                 should_handle, hit, items = _lds_icon_proxy_should_handle(self, pos, require_icon=False)
                 if should_handle:
-                    self._lds_icon_proxy_dragging = True
-                    _lds_icon_proxy_post_mouse(0x0200, int(pos.x()), int(pos.y()), 0x0001)  # WM_MOUSEMOVE/MK_LBUTTON
-                    _lds_icon_proxy_post_mouse(0x0201, int(pos.x()), int(pos.y()), 0x0001)  # WM_LBUTTONDOWN
+                    if hit is None:
+                        # Blank desktop left click should clear Explorer desktop icon selection.
+                        self._lds_icon_proxy_blank_press = True
+                        self._lds_icon_proxy_dragging = False
+                        _lds_desktop_listview_clear_selection()
+                        _lds_icon_proxy_post_mouse_from_canvas(self, 0x0200, pos, 0)       # WM_MOUSEMOVE
+                        _lds_icon_proxy_post_mouse_from_canvas(self, 0x0201, pos, 0x0001)  # WM_LBUTTONDOWN
+                        _lds_icon_proxy_post_mouse_from_canvas(self, 0x0202, pos, 0)       # WM_LBUTTONUP
+                    else:
+                        self._lds_icon_proxy_blank_press = False
+                        self._lds_icon_proxy_dragging = True
+                        _lds_desktop_icon_drag_prepare(self, hit, items, pos)
+                        _lds_icon_proxy_post_mouse_from_canvas(self, 0x0200, pos, 0x0001)  # WM_MOUSEMOVE/MK_LBUTTON
+                        _lds_icon_proxy_post_mouse_from_canvas(self, 0x0201, pos, 0x0001)  # WM_LBUTTONDOWN
                     event.accept()
                     self.update()
                     return
@@ -19547,7 +20116,7 @@ class DesktopCanvas(QWidget):
                 pos = event.position().toPoint()
                 should_handle, hit, items = _lds_icon_proxy_should_handle(self, pos, require_icon=False)
                 if should_handle:
-                    _lds_icon_proxy_post_mouse(0x0204, int(pos.x()), int(pos.y()), 0x0002)  # WM_RBUTTONDOWN/MK_RBUTTON
+                    _lds_icon_proxy_post_mouse_from_canvas(self, 0x0204, pos, 0x0002)  # WM_RBUTTONDOWN/MK_RBUTTON
                     event.accept()
                     self.update()
                     return
@@ -19684,7 +20253,8 @@ class DesktopCanvas(QWidget):
             try:
                 pos = event.position().toPoint()
                 if getattr(self, "_lds_icon_proxy_dragging", False):
-                    _lds_icon_proxy_post_mouse(0x0200, int(pos.x()), int(pos.y()), 0x0001)  # WM_MOUSEMOVE/MK_LBUTTON
+                    if not _lds_desktop_icon_drag_update(self, pos):
+                        _lds_icon_proxy_post_mouse_from_canvas(self, 0x0200, pos, 0x0001)  # WM_MOUSEMOVE/MK_LBUTTON
                     event.accept()
                     self.update()
                     return
@@ -19696,7 +20266,7 @@ class DesktopCanvas(QWidget):
                         _dx = abs(int(pos.x()) - int(_last.get("x", -99999)))
                         _dy = abs(int(pos.y()) - int(_last.get("y", -99999)))
                         if (_now - float(_last.get("time", 0.0)) >= 1.0 / _hz) or _dx + _dy >= 18:
-                            _lds_icon_proxy_post_mouse(0x0200, int(pos.x()), int(pos.y()), 0)  # hover sync
+                            _lds_icon_proxy_post_mouse_from_canvas(self, 0x0200, pos, 0)  # hover sync
                             globals()["_LDS_ICON_PROXY_LAST_HOVER"] = {"time": _now, "x": int(pos.x()), "y": int(pos.y())}
                     except:
                         pass
@@ -19749,13 +20319,23 @@ class DesktopCanvas(QWidget):
         if not self.edit_mode and event.button() == Qt.MouseButton.LeftButton and getattr(self, "_lds_icon_proxy_dragging", False):
             try:
                 pos = event.position().toPoint()
-                _lds_icon_proxy_post_mouse(0x0202, int(pos.x()), int(pos.y()), 0)  # WM_LBUTTONUP
+                try:
+                    if getattr(self, "_lds_icon_proxy_drag_items", None):
+                        _lds_desktop_icon_drag_update(self, pos)
+                except Exception:
+                    pass
+                _lds_icon_proxy_post_mouse_from_canvas(self, 0x0202, pos, 0)  # WM_LBUTTONUP
                 self._lds_icon_proxy_dragging = False
+                self._lds_icon_proxy_drag_items = []
+                self._lds_icon_proxy_drag_hit = None
+                self._lds_icon_proxy_drag_moved = False
+                _lds_invalidate_icon_scene_cache()
                 event.accept()
                 self.update()
                 return
             except Exception as e:
                 self._lds_icon_proxy_dragging = False
+                self._lds_icon_proxy_drag_items = []
                 try: print("[LiteDesktopStudio] icon proxy release failed:", repr(e))
                 except: pass
         pos = event.position().toPoint()
@@ -19764,7 +20344,7 @@ class DesktopCanvas(QWidget):
             try:
                 pos = event.position().toPoint()
                 if not _lds_point_hits_litedesktop_widget(self, pos):
-                    _lds_icon_proxy_post_mouse(0x0205, int(pos.x()), int(pos.y()), 0)  # WM_RBUTTONUP
+                    _lds_icon_proxy_post_mouse_from_canvas(self, 0x0205, pos, 0)  # WM_RBUTTONUP
                     event.accept()
                     self.update()
                     return
@@ -19793,8 +20373,8 @@ class DesktopCanvas(QWidget):
                 items = _lds_get_icon_scene_items(int(self.width()), int(self.height()))
                 hit = _lds_icon_hit_test(items, int(pos.x()), int(pos.y()), padding=12)
                 if hit is not None:
-                    _lds_icon_proxy_post_mouse(0x0203, int(pos.x()), int(pos.y()), 0x0001)  # WM_LBUTTONDBLCLK
-                    _lds_icon_proxy_post_mouse(0x0202, int(pos.x()), int(pos.y()), 0)       # WM_LBUTTONUP
+                    _lds_icon_proxy_post_mouse_from_canvas(self, 0x0203, pos, 0x0001)  # WM_LBUTTONDBLCLK
+                    _lds_icon_proxy_post_mouse_from_canvas(self, 0x0202, pos, 0)       # WM_LBUTTONUP
                     event.accept()
                     self.update()
                     return
