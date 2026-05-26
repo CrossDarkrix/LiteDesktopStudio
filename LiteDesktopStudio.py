@@ -18890,7 +18890,7 @@ def _lds_icon_foreground_signature(canvas, items):
             if hit is not None:
                 hover_index = int(hit.get("index", -1))
         item_sig = tuple((int(it.get("index", -1)), tuple(int(v) for v in it.get("rect", (0,0,0,0))), tuple(int(v) for v in it.get("center", (0,0))), int(it.get("image_index", -1)), str(it.get("text", ""))[:96], bool(it.get("selected", False)), bool(it.get("focused", False))) for it in list(items or [])[:512])
-        env_sig = (str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS", "1")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_OPACITY", "0.96")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_LABELS", "1")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_SIZE", "48")))
+        env_sig = (str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS", "1")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_OPACITY", "0.96")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_LABELS", "1")), str(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_SIZE", "32")))
         try:
             profile_sig = _lds_icon_scene_current_profile()
         except:
@@ -18946,7 +18946,7 @@ def _lds_paint_desktop_icon_foreground_layer_cached(p, canvas, items):
             except:
                 pass
 
-            icon_size = int(float(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_SIZE", "48")))
+            icon_size = int(float(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_SIZE", "32")))
             icon_opacity = max(
                 0.05,
                 min(1.0, float(os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICON_OPACITY", "0.96")))
@@ -19066,9 +19066,13 @@ def _lds_paint_desktop_icon_foreground_layer_cached(p, canvas, items):
 
                 # Labels
                 if render_labels:
+                    if len(str(it.get("text", ""))) >= 16:
+                        _text = str(it.get("text", ""))[0:15] + "..."
+                    else:
+                        _text = str(it.get("text", ""))
                     try:
                         label_img = _lds_make_icon_label_image(
-                            str(it.get("text", "")),
+                            _text,
                             selected,
                             focused,
                         )
@@ -19078,7 +19082,7 @@ def _lds_paint_desktop_icon_foreground_layer_cached(p, canvas, items):
                     if label_img is not None and not label_img.isNull():
                         ip.drawImage(
                             int(cx - label_img.width() * 0.5),
-                            int(bottom + 4),
+                            int(bottom - 20),
                             label_img,
                         )
 
