@@ -17558,6 +17558,42 @@ def _lds_icon_scene_float_env(name: str, default_value: float, min_value: float,
         return _lds_float_env(name, default_value, min_value, max_value)
 
 
+def _lds_icon_scene_bool_env(name: str, default_value: bool = False, aliases=None) -> bool:
+    """Read an icon-scene boolean from environment/profile defaults."""
+    try:
+        names = [str(name)]
+        if aliases:
+            names.extend(str(x) for x in aliases)
+        for nm in names:
+            if nm in os.environ:
+                raw = str(os.environ.get(nm, "")).strip().lower()
+                if raw in ("1", "true", "on", "yes", "enable", "enabled"):
+                    return True
+                if raw in ("0", "false", "off", "no", "disable", "disabled", "none"):
+                    return False
+    except Exception:
+        pass
+    try:
+        profile = _lds_icon_scene_current_profile()
+        defaults = _lds_icon_scene_profile_defaults(profile)
+        names = [str(name)]
+        if aliases:
+            names.extend(str(x) for x in aliases)
+        for nm in names:
+            if nm in defaults:
+                raw = defaults.get(nm)
+                if isinstance(raw, bool):
+                    return bool(raw)
+                raw = str(raw).strip().lower()
+                if raw in ("1", "true", "on", "yes", "enable", "enabled"):
+                    return True
+                if raw in ("0", "false", "off", "no", "disable", "disabled", "none"):
+                    return False
+    except Exception:
+        pass
+    return bool(default_value)
+
+
 def _lds_detect_icon_scene_profile_from_effect_settings(settings) -> str:
     try:
         if settings is None:
@@ -18701,6 +18737,11 @@ def _lds_make_icon_label_image(text_value, selected=False, focused=False):
             "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_RADIUS",
             "8",
         ))
+        label_shadow_enabled = _lds_icon_scene_bool_env(
+            "LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_SHADOW",
+            True,
+            aliases=("LITEDESKTOPSTUDIO_ICON_SCENE_LABEL_GLOW",),
+        )
 
         key = (
             label,
@@ -18711,6 +18752,7 @@ def _lds_make_icon_label_image(text_value, selected=False, focused=False):
             label_text_glow_alpha,
             label_text_alpha,
             label_radius,
+            bool(label_shadow_enabled),
         )
 
         cache = globals().get("_LDS_ICON_LABEL_IMAGE_CACHE", {})
@@ -18764,6 +18806,8 @@ def _lds_make_icon_label_image(text_value, selected=False, focused=False):
         # 1. Soft outer glow / halo
         # ------------------------------------------------------------
         try:
+            if not label_shadow_enabled:
+                raise RuntimeError("label shadow disabled")
             glow = QRadialGradient(
                 QPointF(pad + w * 0.5, pad + h * 0.52),
                 max(w, h) * 0.70,
@@ -18788,13 +18832,14 @@ def _lds_make_icon_label_image(text_value, selected=False, focused=False):
         try:
             qp.setPen(Qt.PenStyle.NoPen)
 
-            # Outer soft wash.
-            qp.setBrush(QColor(8, 14, 24, max(0, min(255, int(label_bg_alpha * 0.58)))))
-            qp.drawRoundedRect(
-                bg_rect.adjusted(-0.5, -0.5, 0.5, 0.5),
-                label_radius + 1,
-                label_radius + 1,
-            )
+            # Outer soft wash / rounded label shadow.
+            if label_shadow_enabled:
+                qp.setBrush(QColor(8, 14, 24, max(0, min(255, int(label_bg_alpha * 0.58)))))
+                qp.drawRoundedRect(
+                    bg_rect.adjusted(-0.5, -0.5, 0.5, 0.5),
+                    label_radius + 1,
+                    label_radius + 1,
+                )
 
             # Inner backing.
             qp.setBrush(QColor(10, 18, 30, max(0, min(255, label_bg_alpha))))
@@ -19014,7 +19059,7 @@ def _lds_paint_desktop_icon_foreground_layer_cached(p, canvas, items):
                         shadow_enabled = str(
                             os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_ICON_SHADOW", "1")
                         ).strip().lower() in ("1", "true", "on", "yes")
-
+                        shadow_enabled = False
                         if shadow_enabled:
                             shadow_alpha = int(
                                 max(
