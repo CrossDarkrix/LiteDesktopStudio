@@ -3,12 +3,13 @@
 	<img width="150px" height="150px" alt="LiteDesktopStudio" src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/icon.png"></a>
 </div>
 <h2 align="center">Lite Desktop Studio</h2>
-<p align="center">This tool let you customize your desktop to your liking.</p>
+<p align="center">A Simple Desktop Gadet.</p>
 
-I develop Artifacter and LiteDesktopStudio, but I do not have much spare time for development.
-I am accepting donations. Your support encourages continued development.
+[日本語 README](README_ja.md)
 
-<a href="https://www.buymeacoffee.com/crossdarkrix"><img src="https://img.buymeacoffee.com/button-api/?text=BuyMeCoffie&emoji=%E2%98%95&slug=crossdarkrix&button_colour=FFDD00&font_colour=000000&font_family=Bree&outline_colour=000000&coffee_colour=ffffff"></a></div>
+LiteDesktopStudio is a lightweight desktop gadget studio built with Python and PySide6. It lets you place, edit, and customize desktop widgets such as music visualizers, system meters, network monitors, clocks, calendars, weather panels, media controls, HTML-style widgets, and JavaScript HTML widgets.
+
+I also develop Artifacter and LiteDesktopStudio, but I do not have much spare time for development. If you would like to support continued development, donations are welcome: [Buy me a coffee](https://www.buymeacoffee.com/crossdarkrix)
 
 ## Screenshots
 
@@ -18,60 +19,162 @@ I am accepting donations. Your support encourages continued development.
 <a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/screenshot4.png" width="300px" height="250px"></a>
 
 
-## Settings Screen
-
-<a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/SettingWindow.png" width="300px" height="250px"></a>
-
 ## Features
 
-LiteDesktopStudio is not just a desktop gadget. It is a lightweight desktop studio that lets you rebuild your desktop into a space that is easier to read, more enjoyable, and tailored to your own style.
+- **Freely place widgets on your desktop**  
+  Place widgets anywhere on your desktop and adjust their position and size.
 
-- **Freely place widgets on your desktop**
-  
-  Place widgets such as a music spectrum visualizer, system information, network status, volume controls, clock, calendar, weather, media controls, and HTML/CSS-style widgets anywhere on your desktop, with your preferred position and size.
+- **Intuitive edit mode**  
+  Open the settings screen by quickly right-clicking twice. Select a widget with the left mouse button and press `E` to toggle placement editing.
 
-- **Intuitive editing experience**
-  
-  Open the settings screen by quickly right-clicking twice. Select a widget with the left mouse button and press the `E` key to edit its placement. The app stays out of your way during normal use, while still letting you edit quickly when needed.
+- **Detailed visual customization**  
+  Customize opacity, background color, accent color, size, position, and other widget settings.
 
-- **Detailed visual customization**
-  
-  You can adjust opacity, background color, accent color, size, position, and other settings for each widget. Match your desktop wallpaper or theme, whether you prefer a calm layout or a more vivid presentation.
+- **Settings screen themes**  
+  Switch between styles such as Liquid Glass, Dark, Material, and Light.
 
-- **Settings screen themes such as Liquid Glass, Dark, Material, and Light**
-  
-  The settings screen can be switched between styles such as translucent designs and dark-themed designs. You can enjoy changing the overall look while editing your desktop.
+- **Music-reactive visualizer**  
+  Display spectrum bars that react to currently playing audio, with optional peak bars and glow effects.
 
-- **Music-reactive visualizer**
-  
-  The music spectrum widget displays bars that move in response to currently playing audio. With peak bars and glow effects, your desktop can become a visual space that moves with your music.
+- **System and network widgets**  
+  Display CPU, memory, disk, upload/download speeds, and network history graphs.
 
-- **Easy-to-read network status display**
-  
-  Display upload and download speeds as well as history graphs, making network activity easy to understand at a glance. Directional arrow icons and upload/download labels help make the traffic direction easier to read.
+- **Desktop effect overlays**  
+  Add visual overlays such as rain, particles, glow, ripples, rose petals, cherry blossoms, snow, water, fire, and shooting stars.
 
-- **Desktop effects with effect overlays**
-  
-  Add visual effects over your desktop, including rain, particles, glow, ripples, rose petals, cherry blossoms, snow, water, fire, and shooting stars. You can turn only the effects you need on or off, helping you balance appearance and performance.
+- **HTML/CSS-style widgets**  
+  Create simple custom panels for notes, links, decorations, or personal information displays.
 
-- **Extend flexibility with HTML/CSS-style widgets**
-  
-  Advanced users can create custom widgets using simple HTML/CSS-style content. Add your own notes, link collections, decorative panels, and other personalized displays.
+- **JavaScript HTML widgets**  
+  Use Qt WebEngine-based widgets for richer HTML, CSS, and JavaScript experiences.
 
-- **Easy to customize because it is built with PySide6**
-  
-  LiteDesktopStudio is implemented with Python and PySide6, making it easier for users who can read the source code to add widgets, modify drawing behavior, or extend the settings.
+- **Easy to customize**  
+  LiteDesktopStudio is implemented with Python and PySide6, so users who can read the source code can add widgets, modify behavior, or extend settings.
 
-- **A desktop tool designed to balance lightness and visual appeal**
-  
-  LiteDesktopStudio aims to provide practical information displays while also using transparency, glow, animation, and effects to turn the desktop from a place you simply use into a place you can enjoy looking at.
+## JavaScript HTML Widget Runtime
 
-## Configuration File Location
+LiteDesktopStudio includes an enhanced JavaScript HTML widget runtime. JSHTML widgets can run as quick inline HTML snippets or as ZIP-imported package widgets with their own directory, assets, persistent settings, and JavaScript API bridge.
+
+### JSHTML modes
+
+| Mode | Description |
+|---|---|
+| `inline` | Uses the HTML stored directly in the widget text field. Good for quick experiments and small custom panels. |
+| `package` | Loads a ZIP-imported widget package from a dedicated per-widget directory. Packages can include `widget.json`, `index.html`, CSS, JavaScript, and assets. |
+
+### Package structure
+
+A minimal JSHTML package ZIP can look like this:
+
+```text
+my-widget.zip
+├─ widget.json
+├─ index.html
+├─ style.css
+├─ main.js
+└─ assets/
+   └─ image.svg
+```
+
+Example `widget.json`:
+
+```json
+{
+  "id": "anime-sidebar-sample",
+  "name": "Anime Sidebar Sample",
+  "version": "1.1.0",
+  "entry": "index.html",
+  "permissions": {
+    "readAssets": true,
+    "writeConfig": true,
+    "systemInfo": true,
+    "openUrl": true,
+    "readTextFile": true
+  },
+  "size": {
+    "width": 300,
+    "height": 620
+  }
+}
+```
+
+### JavaScript API
+
+JSHTML widgets can access LiteDesktopStudio through `window.LDSReady` and `window.LDS`.
+
+```javascript
+await window.LDSReady;
+
+const info = await LDS.getWidgetInfo();
+const sys = await LDS.getSystemInfo();
+const assets = await LDS.listAssets("assets");
+
+await LDS.writeConfig("theme", "sakura");
+const theme = await LDS.readConfig("theme");
+```
+
+Available API methods:
+
+- `LDS.ping()`
+- `LDS.getWidgetInfo()`
+- `LDS.getWidgetRect()`
+- `LDS.getSystemInfo()`
+- `LDS.readConfig(key)`
+- `LDS.writeConfig(key, value)`
+- `LDS.openUrl(url)`
+- `LDS.getLocalAssetUrl(path)`
+- `LDS.listAssets(path)`
+- `LDS.readTextFile(path)`
+
+A lightweight asynchronous compatibility shim is also provided:
+
+```javascript
+await System.Gadget.settings.write("key", "value");
+const value = await System.Gadget.settings.read("key");
+```
+
+> Note: this is not a full Windows Gadget API implementation. It is an asynchronous helper for settings-style migration because the runtime uses Qt WebChannel.
+
+### JSHTML package management UI
+
+When a JavaScript HTML widget is selected, the property panel can show package controls such as:
+
+- package status display
+- ZIP package import
+- open JSHTML widget folder
+- reload JSHTML widget
+- return to inline mode
+
+### Security notes
+
+- Widget file access is limited to each widget's dedicated directory.
+- ZIP extraction validates paths to reduce traversal risks.
+- URL opening is restricted to `http://` and `https://`.
+- Arbitrary command execution is not exposed.
+
+## Sample package
+
+The Anime Sidebar sample package demonstrates:
+
+- `widget.json` metadata
+- split `index.html` / `style.css` / `main.js` structure
+- relative asset loading
+- `window.LDSReady` / `window.LDS`
+- persistent widget configuration with `readConfig` / `writeConfig`
+- CPU, RAM, and disk usage display through `getSystemInfo`
+- theme persistence
+- asset listing and `widget.json` reading
+
+## Configuration file location
 
 - On Windows, the configuration file is generated directly under `%PROFILES%`.
 - On non-Windows systems, the configuration file is placed in the user directory.
 
-## Planned Features
+## Planned features
 
 - Multilingual support
 - Implement as many features as possible within the range supported by PySide6
+
+## License
+
+See the repository license file.

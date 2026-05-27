@@ -5,6 +5,7 @@ import json
 import math
 import random
 import os
+import shutil
 import queue
 import sys
 import threading
@@ -12,6 +13,9 @@ import time
 import urllib.parse
 import urllib.request
 import warnings
+import uuid
+import webbrowser
+import zipfile
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional
 from pathlib import Path
@@ -20,6 +24,9 @@ import numpy as np
 import psutil
 import soundcard as sc
 from PySide6.QtCore import (QFileInfo,
+    QObject,
+    Signal,
+    Slot,
     Qt,
     QRectF,
     QPoint,
@@ -51,6 +58,7 @@ from PySide6.QtGui import (
     QOpenGLContext,
     QOffscreenSurface,
     QFontMetrics,
+    QDesktopServices,
 )
 from PySide6.QtWidgets import (QStyle, QFileIconProvider,
     QApplication,
@@ -108,7 +116,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "Lite Desktop Studio v2.0.7"
+APP_NAME = "Lite Desktop Studio v2.1.0"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 
@@ -880,7 +888,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7 - エフェクト設定"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -1460,12 +1468,12 @@ class EffectsOverlayEditorDialog(QDialog):
         self.effect_frame_rate_enabled = QCheckBox(lds_tr("エフェクトFPS制限を使う"))
         self.effect_frame_rate_enabled.setChecked(bool(getattr(self.settings, "effect_frame_rate_enabled", True)))
         set_beginner_tooltip(self.effect_frame_rate_enabled, lds_tr("動きの上限を決めて、パソコンへの負荷を抑えます。"))
-        self.effect_frame_rate = self._int_spin(1, 240, getattr(self.settings, "effect_frame_rate", 60))
+        self.effect_frame_rate = self._int_spin(1, 240, getattr(self.settings, "effect_frame_rate", 40))
         self.vector_image_cache_enabled = QCheckBox(lds_tr("ベクター描画を画像キャッシュ化"))
         self.vector_image_cache_enabled.setChecked(bool(getattr(self.settings, "vector_image_cache_enabled", True)))
         set_beginner_tooltip(self.vector_image_cache_enabled, lds_tr("水面・花びら・雨などのベクター描画を一度QImageに描いてからdrawImageで表示します。FPS優先ならON推奨です。"))
         self.vector_image_cache_fps = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps", 24))
-        self.vector_image_cache_fps_extra = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_extra", 60))
+        self.vector_image_cache_fps_extra = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_extra", 40))
         self.vector_image_cache_fps_rain = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_rain", 24))
         self.vector_image_cache_fps_ripples = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_ripples", 18))
         self.vector_image_cache_fps_particles = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_particles", 18))
@@ -2497,7 +2505,7 @@ class EffectsOverlayEditorDialog(QDialog):
         elif theme_id in ("sahara_desert_sun", "sahara_desert", "dry_desert_sun"):
             # サハラ砂漠風: 静的QImageで砂丘と灼熱太陽を描き、枯草だけを低数でゆっくり流す。
             self._theme_disable_all_visual_effects()
-            self._theme_apply_common_lightweight(fps=60, quality=0.50)
+            self._theme_apply_common_lightweight(fps=45, quality=0.50)
             self._theme_clear_scenic_engine_flags()
             self._theme_set_raw_extra("sahara_desert_engine_enabled", True)
             self._theme_set_raw_extra("realtime_scenic_sky_enabled", True)
@@ -2515,7 +2523,7 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("vector_image_cache_fps", 8)
             self._theme_set_value("vector_image_cache_fps_extra", 120)
             self._theme_set_value("vector_image_cache_fps_particles", 8)
-            self._theme_set_value("effect_frame_rate", 60)
+            self._theme_set_value("effect_frame_rate", 40)
             self._theme_set_value("background_alpha", 0)
             self._theme_set_value("intensity", 0.96)
             self._theme_set_checked("sun_enabled", False)
@@ -2850,7 +2858,7 @@ class EffectsOverlayEditorDialog(QDialog):
                 pass
         elif theme_id in ("uyuni_salt_flat_reflection", "uyuni_salt_flat", "salar_de_uyuni"):
             # ウユニ塩湖: 反射背景に加えて、既存の水面・薄い氷/塩結晶エフェクトもONにする。
-            self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=60)
+            self._theme_apply_60fps_scenic_foundation(fps=45, cache_fps=45)
             self._theme_clear_scenic_engine_flags()
             self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", True)
             self._theme_set_raw_extra("realtime_scenic_sky_enabled", True)
@@ -2967,7 +2975,8 @@ class EffectsOverlayEditorDialog(QDialog):
         elif theme_id in ("blue_hole_deep_lake", "blue_hole", "deep_blue_hole"):
             self._theme_select_fullscreen_scenic_engine("blue_hole_deep_lake_engine_enabled", fps=60, cache_fps=8, intensity=0.92)
         elif theme_id in ("chichibugahama_mirror", "chichibugahama", "mirror_beach"):
-            self._theme_select_fullscreen_scenic_engine("chichibugahama_mirror_engine_enabled", fps=60, cache_fps=60, intensity=0.84)
+            self._theme_select_fullscreen_scenic_engine("chichibugahama_mirror_engine_enabled", fps=45, cache_fps=45, intensity=0.84)
+            self._theme_set_raw_extra("scenic_atmosphere_enhancement_enabled", True)
             self._theme_set_extra("cloud", enabled=True, count=5, speed=0.8650, size=104.0, alpha=158)
             self._theme_set_checked("water_mirror_reflect_cloud", True)
         elif theme_id == "fire_and_water":
@@ -4273,7 +4282,7 @@ def get_effect_overlay_settings(cfg) -> EffectOverlaySettings:
         gpu_acceleration_prefer_opengl=bool(defaults.get("gpu_acceleration_prefer_opengl", True)),
         gpu_acceleration_smooth_pixmaps=bool(defaults.get("gpu_acceleration_smooth_pixmaps", True)),
         effect_frame_rate_enabled=bool(defaults.get("effect_frame_rate_enabled", True)),
-        effect_frame_rate=max(1, min(240, int(defaults.get("effect_frame_rate", 60)))),
+        effect_frame_rate=max(1, min(240, int(defaults.get("effect_frame_rate", 40)))),
         vector_image_cache_enabled=bool(defaults.get("vector_image_cache_enabled", True)),
         vector_image_cache_fps=max(1, min(60, int(defaults.get("vector_image_cache_fps", 24)))),
         vector_image_cache_fps_extra=max(1, min(60, int(defaults.get("vector_image_cache_fps_extra", 12)))),
@@ -6863,6 +6872,16 @@ class WidgetConfig:
     text: str = ""
     font_size: int = 14
 
+    # JavaScript HTML widget runtime fields.
+    # inline: cfg.text をそのまま WebEngine に流し込む従来モード。
+    # package: ウィジェット専用ディレクトリ内の entry HTML を読み込むモード。
+    jshtml_mode: str = "inline"
+    jshtml_instance_id: str = ""
+    jshtml_entry: str = "index.html"
+    jshtml_package_name: str = ""
+    jshtml_package_version: str = ""
+    jshtml_permissions_json: str = "{}"
+
     bg_alpha: int = 155
     mirror_reflect_enabled: bool = True
     """
@@ -7807,6 +7826,7 @@ class EffectsOverlayWidget(BaseWidget):
                 p.drawImage(QPointF(r.left(), r.top()), img)
             if str(scene_id) == "chichibugahama":
                 self._draw_realtime_scenic_sky(p, r, now, scene="chichibugahama")
+                self._draw_scenic_atmosphere_enhancement(p, r, settings, now, scene="chichibugahama")
             self._draw_fullscreen_scenic_dynamic_overlay(p, r, now, str(scene_id), tick)
         except Exception:
             try:
@@ -8708,6 +8728,171 @@ class EffectsOverlayWidget(BaseWidget):
             pass
         return image
 
+    def _scenic_atmosphere_enhancement_enabled(self) -> bool:
+        try:
+            raw = json.loads(getattr(self.cfg, "effects_json", "") or "{}")
+            if isinstance(raw, dict) and "scenic_atmosphere_enhancement_enabled" in raw:
+                return bool(raw.get("scenic_atmosphere_enhancement_enabled"))
+        except Exception:
+            pass
+        return True
+
+    def _scenic_atmosphere_cache_put(self, key, image: QImage):
+        try:
+            cache = getattr(self, "_scenic_atmosphere_cache", None)
+            order = getattr(self, "_scenic_atmosphere_cache_order", None)
+            if not isinstance(cache, dict):
+                cache = {}; order = []
+                self._scenic_atmosphere_cache = cache
+                self._scenic_atmosphere_cache_order = order
+            if not isinstance(order, list):
+                order = []
+                self._scenic_atmosphere_cache_order = order
+            if key not in cache:
+                order.append(key)
+            cache[key] = image
+            limit = 18
+            while len(order) > limit:
+                old = order.pop(0)
+                cache.pop(old, None)
+        except Exception:
+            pass
+        return image
+
+    def _render_thin_mist_and_humidity_image(self, w: int, h: int, scene: str) -> QImage:
+        try:
+            fmt = QImage.Format.Format_ARGB32_Premultiplied
+        except Exception:
+            fmt = QImage.Format_ARGB32_Premultiplied
+        img = QImage(max(1, int(w)), max(1, int(h)), fmt)
+        img.fill(Qt.GlobalColor.transparent)
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            scene = str(scene or "uyuni")
+            horizon_ratio = 0.50 if scene == "uyuni" else 0.48
+            horizon = h * horizon_ratio
+            mist_alpha = 24 if scene == "uyuni" else 20
+            mist = QLinearGradient(QPointF(0, horizon - h * 0.12), QPointF(0, horizon + h * 0.34))
+            mist.setColorAt(0.0, QColor(255, 255, 255, 0))
+            mist.setColorAt(0.38, QColor(232, 248, 250, mist_alpha))
+            mist.setColorAt(0.70, QColor(214, 238, 240, int(mist_alpha * 0.55)))
+            mist.setColorAt(1.0, QColor(255, 255, 255, 0))
+            q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(mist)); q.drawRect(QRectF(0, horizon - h * 0.12, w, h * 0.46))
+            for i in range(5):
+                cx = w * (0.12 + i * 0.20)
+                cy = horizon + h * (0.04 + 0.020 * math.sin(i))
+                rad = w * (0.18 + 0.03 * i)
+                g = QRadialGradient(QPointF(cx, cy), rad)
+                g.setColorAt(0.0, QColor(235, 250, 250, 9))
+                g.setColorAt(1.0, QColor(235, 250, 250, 0))
+                q.setBrush(QBrush(g)); q.drawEllipse(QRectF(cx - rad, cy - rad * 0.35, rad * 2.0, rad * 0.70))
+        except Exception:
+            pass
+        finally:
+            try: q.end()
+            except Exception: pass
+        return img
+
+    def _draw_cached_thin_mist_and_humidity(self, p: QPainter, r: QRectF, now: float, scene: str = "uyuni"):
+        try:
+            if not self._scenic_atmosphere_enhancement_enabled():
+                return
+            w = int(max(1, r.width())); h = int(max(1, r.height()))
+            scene = str(scene or "uyuni")
+            key = ("scenic_atmosphere_mist_v3", scene, w, h)
+            cache = getattr(self, "_scenic_atmosphere_cache", {})
+            img = cache.get(key) if isinstance(cache, dict) else None
+            if img is None or img.isNull():
+                img = self._render_thin_mist_and_humidity_image(w, h, scene)
+                self._scenic_atmosphere_cache_put(key, img)
+            p.save()
+            try:
+                breath = 0.78 + 0.22 * math.sin(float(now) * 0.028)
+                p.setOpacity(max(0.58, min(1.0, breath)))
+                p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+            finally:
+                p.restore()
+        except Exception:
+            try: p.restore()
+            except Exception: pass
+
+    def _render_slow_refractive_water_wobble_image(self, w: int, h: int, scene: str, bucket: int) -> QImage:
+        try:
+            fmt = QImage.Format.Format_ARGB32_Premultiplied
+        except Exception:
+            fmt = QImage.Format_ARGB32_Premultiplied
+        img = QImage(max(1, int(w)), max(1, int(h)), fmt)
+        img.fill(Qt.GlobalColor.transparent)
+        q = QPainter(img)
+        try:
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            scene = str(scene or "uyuni")
+            horizon_ratio = 0.50 if scene == "uyuni" else 0.48
+            horizon = h * horizon_ratio
+            water_h = max(1.0, h - horizon)
+            seed = int(w * 977) ^ int(h * 1319) ^ int(bucket * 811) ^ (0x554E49 if scene == "uyuni" else 0x434849)
+            rnd = random.Random(seed)
+            count = 30 if scene == "uyuni" else 22
+            phase_base = float(bucket) * 0.32
+            q.setBrush(Qt.BrushStyle.NoBrush)
+            for i in range(count):
+                y = horizon + water_h * ((i + 1) / float(count + 2)) ** (1.35 if scene == "uyuni" else 1.18)
+                length = w * rnd.uniform(0.10, 0.34)
+                cx = w * rnd.uniform(0.08, 0.92)
+                amp = h * rnd.uniform(0.0008, 0.0024)
+                phase = phase_base * rnd.uniform(0.55, 0.95) + i * 0.63
+                path = QPainterPath(); path.moveTo(QPointF(cx - length * 0.5, y))
+                for k in range(1, 9):
+                    t = k / 8.0
+                    x = cx - length * 0.5 + length * t
+                    yy = y + math.sin(t * math.tau + phase) * amp
+                    path.lineTo(QPointF(x, yy))
+                alpha = int(rnd.uniform(9, 24) * (1.0 - min(0.72, (y - horizon) / water_h * 0.55)))
+                q.setPen(QPen(QColor(245, 255, 255, alpha), max(1.0, h * 0.0012)))
+                q.drawPath(path)
+        except Exception:
+            pass
+        finally:
+            try: q.end()
+            except Exception: pass
+        return img
+
+    def _draw_cached_slow_refractive_water_wobble(self, p: QPainter, r: QRectF, now: float, scene: str = "uyuni"):
+        try:
+            if not self._scenic_atmosphere_enhancement_enabled():
+                return
+            w = int(max(1, r.width())); h = int(max(1, r.height()))
+            scene = str(scene or "uyuni")
+            # アプリ全体のFPSは変えず、揺らぎ画像だけを低頻度で再生成する。
+            bucket = int(float(now) * 5.0)
+            key = ("scenic_atmosphere_wobble_v3", scene, w, h, bucket)
+            cache = getattr(self, "_scenic_atmosphere_cache", {})
+            img = cache.get(key) if isinstance(cache, dict) else None
+            if img is None or img.isNull():
+                img = self._render_slow_refractive_water_wobble_image(w, h, scene, bucket)
+                self._scenic_atmosphere_cache_put(key, img)
+            p.save()
+            try:
+                try:
+                    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+                except Exception:
+                    pass
+                p.drawImage(QRectF(r.left(), r.top(), w, h), img)
+            finally:
+                p.restore()
+        except Exception:
+            try: p.restore()
+            except Exception: pass
+
+    def _draw_scenic_atmosphere_enhancement(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float, scene: str = "uyuni"):
+        try:
+            if not self._scenic_atmosphere_enhancement_enabled():
+                return
+            self._draw_cached_thin_mist_and_humidity(p, r, now, scene)
+            self._draw_cached_slow_refractive_water_wobble(p, r, now, scene)
+        except Exception:
+            pass
     def _draw_uyuni_salt_flat_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
         try:
             w = int(max(1, r.width()))
@@ -8721,6 +8906,7 @@ class EffectsOverlayWidget(BaseWidget):
                 self._scenic_cache_put(key, img)
             p.drawImage(QRectF(r.left(), r.top(), w, h), img)
             self._draw_realtime_scenic_sky(p, r, now, scene="uyuni")
+            self._draw_scenic_atmosphere_enhancement(p, r, settings, now, scene="uyuni")
         except:
             pass
 
@@ -13810,7 +13996,7 @@ class VisualizerWidget(BaseWidget):
         if not bool(getattr(self.cfg, "visualizer_frame_rate_enabled", True)):
             return 0.0
         try:
-            fps = int(getattr(self.cfg, "visualizer_frame_rate", 60))
+            fps = int(getattr(self.cfg, "visualizer_frame_rate", 40))
         except:
             fps = 60
         fps = max(1, min(240, fps))
@@ -15152,13 +15338,225 @@ button {
 }""" + __htmls
 
 
+JSHTML_WIDGETS_DIR = Path(CONFIG_PATH).with_name("LiteDesktopStudio_jshtml_widgets")
+
+
+class JSHtmlPackageError(Exception):
+    pass
+
+
+def _jshtml_safe_identifier(value: str) -> str:
+    value = str(value or "").strip()
+    safe = "".join(ch for ch in value if ch.isalnum() or ch in ("-", "_"))
+    return safe or str(uuid.uuid4())
+
+
+def ensure_jshtml_widget_fields(cfg):
+    if not getattr(cfg, "jshtml_mode", ""):
+        cfg.jshtml_mode = "inline"
+    if not getattr(cfg, "jshtml_entry", ""):
+        cfg.jshtml_entry = "index.html"
+    if not getattr(cfg, "jshtml_permissions_json", ""):
+        cfg.jshtml_permissions_json = "{}"
+    if not getattr(cfg, "jshtml_instance_id", ""):
+        cfg.jshtml_instance_id = str(uuid.uuid4())
+    cfg.jshtml_instance_id = _jshtml_safe_identifier(cfg.jshtml_instance_id)
+    return cfg
+
+
+def get_jshtml_widget_dir(cfg) -> Path:
+    ensure_jshtml_widget_fields(cfg)
+    base_dir = JSHTML_WIDGETS_DIR.resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    widget_dir = (base_dir / cfg.jshtml_instance_id).resolve()
+    if base_dir != widget_dir and base_dir not in widget_dir.parents:
+        raise JSHtmlPackageError("Invalid JSHTML widget directory")
+    widget_dir.mkdir(parents=True, exist_ok=True)
+    (widget_dir / "assets").mkdir(exist_ok=True)
+    (widget_dir / "data").mkdir(exist_ok=True)
+    return widget_dir
+
+
+def _jshtml_safe_path(root: Path, relative_path: str) -> Optional[Path]:
+    try:
+        root = Path(root).resolve()
+        rel = str(relative_path or "").replace("\\", "/").lstrip("/")
+        if ":" in rel:
+            return None
+        target = (root / rel).resolve()
+        if target == root or root in target.parents:
+            return target
+    except:
+        pass
+    return None
+
+
+def _is_safe_zip_member_name(name: str) -> bool:
+    if not name:
+        return False
+    normalized = str(name).replace("\\", "/")
+    if normalized.startswith("/") or ":" in normalized:
+        return False
+    for part in normalized.split("/"):
+        if part == "..":
+            return False
+    return True
+
+
+def safe_extract_jshtml_widget_zip(zip_path: str, destination_dir: Path, max_total_size: int = 50 * 1024 * 1024, max_file_size: int = 20 * 1024 * 1024, max_file_count: int = 1000) -> None:
+    zip_path = Path(zip_path).resolve()
+    destination_dir = Path(destination_dir).resolve()
+    if not zip_path.exists() or not zip_path.is_file():
+        raise JSHtmlPackageError("ZIPファイルが存在しません。")
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    total_size = 0
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        infos = archive.infolist()
+        if len(infos) > max_file_count:
+            raise JSHtmlPackageError("ZIP内のファイル数が多すぎます。")
+        for info in infos:
+            member = info.filename
+            if not _is_safe_zip_member_name(member):
+                raise JSHtmlPackageError(f"危険なパスが含まれています: {member}")
+            if info.file_size > max_file_size:
+                raise JSHtmlPackageError(f"ファイルサイズが大きすぎます: {member}")
+            total_size += int(info.file_size or 0)
+            if total_size > max_total_size:
+                raise JSHtmlPackageError("ZIPの総展開サイズが大きすぎます。")
+        for info in infos:
+            member = info.filename.replace("\\", "/")
+            target = (destination_dir / member).resolve()
+            if destination_dir != target and destination_dir not in target.parents:
+                raise JSHtmlPackageError(f"展開先が範囲外です: {member}")
+            if member.endswith("/"):
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(info, "r") as source, target.open("wb") as dest:
+                shutil.copyfileobj(source, dest)
+
+
+def import_jshtml_widget_package_to_config(cfg, zip_path: str) -> Path:
+    ensure_jshtml_widget_fields(cfg)
+    widget_dir = get_jshtml_widget_dir(cfg)
+    if widget_dir.exists():
+        for child in list(widget_dir.iterdir()):
+            if child.name == "data":
+                continue
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                try:
+                    child.unlink()
+                except:
+                    pass
+    safe_extract_jshtml_widget_zip(zip_path, widget_dir)
+
+    manifest_path = widget_dir / "widget.json"
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(manifest, dict):
+                entry = str(manifest.get("entry") or "index.html")
+                if _jshtml_safe_path(widget_dir, entry) is not None:
+                    cfg.jshtml_entry = entry
+                cfg.jshtml_package_name = str(manifest.get("name") or manifest.get("id") or cfg.jshtml_package_name or "")
+                cfg.jshtml_package_version = str(manifest.get("version") or cfg.jshtml_package_version or "")
+                permissions = manifest.get("permissions")
+                if isinstance(permissions, dict):
+                    cfg.jshtml_permissions_json = json.dumps(permissions, ensure_ascii=False)
+        except Exception as e:
+            raise JSHtmlPackageError(f"widget.json を読み込めません: {e}")
+
+    entry_path = _jshtml_safe_path(widget_dir, getattr(cfg, "jshtml_entry", "index.html"))
+    if entry_path is None or not entry_path.exists() or not entry_path.is_file():
+        fallback = widget_dir / "index.html"
+        if fallback.exists() and fallback.is_file():
+            cfg.jshtml_entry = "index.html"
+            entry_path = fallback
+        else:
+            raise JSHtmlPackageError("index.html または widget.json の entry が見つかりません。")
+
+    cfg.jshtml_mode = "package"
+    return widget_dir
+
+
+def _jshtml_api_bootstrap() -> str:
+    return r"""<!-- LiteDesktopStudio JSHTML API bootstrap -->
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script>
+(function () {
+  if (window.__LDS_JSHTML_API_BOOTSTRAPPED__) return;
+  window.__LDS_JSHTML_API_BOOTSTRAPPED__ = true;
+
+  function parseJson(text) {
+    try { return JSON.parse(text); }
+    catch (error) { return { ok: false, error: String(error), raw: text }; }
+  }
+
+  window.LDSReady = new Promise(function (resolve, reject) {
+    function fail(message) { reject(new Error(message)); }
+    if (typeof QWebChannel === "undefined") { fail("QWebChannel is not available"); return; }
+    if (typeof qt === "undefined" || !qt.webChannelTransport) { fail("qt.webChannelTransport is not available"); return; }
+
+    new QWebChannel(qt.webChannelTransport, function (channel) {
+      var raw = channel.objects.LDSApi;
+      if (!raw) { fail("LDSApi is not available"); return; }
+
+      window.LDS = {
+        ping: async function () { return parseJson(await raw.ping()); },
+        getWidgetInfo: async function () { return parseJson(await raw.getWidgetInfo()); },
+        getWidgetRect: async function () { return parseJson(await raw.getWidgetRect()); },
+        getSystemInfo: async function () { return parseJson(await raw.getSystemInfo()); },
+        readConfig: async function (key) { return parseJson(await raw.readConfig(String(key))); },
+        writeConfig: async function (key, value) { return parseJson(await raw.writeConfig(String(key), JSON.stringify(value))); },
+        openUrl: async function (url) { return parseJson(await raw.openUrl(String(url))); },
+        getLocalAssetUrl: async function (path) { return parseJson(await raw.getLocalAssetUrl(String(path))); },
+        listAssets: async function (path) { return parseJson(await raw.listAssets(String(path || "assets"))); },
+        readTextFile: async function (path) { return parseJson(await raw.readTextFile(String(path))); }
+      };
+
+      window.System = window.System || {};
+      window.System.Gadget = window.System.Gadget || {};
+      window.System.Gadget.version = "LiteDesktopStudio-compat";
+      window.System.Gadget.settings = window.System.Gadget.settings || {};
+      window.System.Gadget.settings.read = async function (key) {
+        var result = await window.LDS.readConfig(key);
+        return result ? result.value : null;
+      };
+      window.System.Gadget.settings.write = async function (key, value) {
+        return await window.LDS.writeConfig(key, value);
+      };
+      resolve(window.LDS);
+    });
+  });
+})();
+</script>
+"""
+
+
+def inject_jshtml_api_bootstrap(html: str) -> str:
+    html = html or ""
+    if "__LDS_JSHTML_API_BOOTSTRAPPED__" in html:
+        return html
+    bootstrap = _jshtml_api_bootstrap()
+    lower = html.lower()
+    head_pos = lower.find("</head>")
+    if head_pos >= 0:
+        return html[:head_pos] + bootstrap + html[head_pos:]
+    body_pos = lower.find("<body")
+    if body_pos >= 0:
+        body_end = html.find(">", body_pos)
+        if body_end >= 0:
+            return html[:body_end + 1] + bootstrap + html[body_end + 1:]
+    return bootstrap + html
+
+
 def build_js_html_document(html: str) -> str:
     html = html or ""
-
     if "<html" in html.lower() or "<!doctype" in html.lower():
-        return html
-
-    return f"""<!doctype html>
+        return inject_jshtml_api_bootstrap(html)
+    document = f"""<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -15182,6 +15580,7 @@ body {{
 {html}
 </body>
 </html>"""
+    return inject_jshtml_api_bootstrap(document)
 
 
 class JSHtmlWidget(BaseWidget):
@@ -15198,16 +15597,171 @@ class JSHtmlWidget(BaseWidget):
         p.drawRoundedRect(self.rect, 16, 16)
 
 
+class JSHtmlWidgetApi(QObject):
+    configChanged = Signal(str, str)
+
+    def __init__(self, canvas=None, view=None, parent=None):
+        super().__init__(parent)
+        self.canvas = canvas
+        self.view = view
+        self.widget = None
+        self.widget_dir = None
+        self.config_path = None
+        self.config_store = {}
+
+    def bind_widget(self, widget):
+        self.widget = widget
+        ensure_jshtml_widget_fields(widget.cfg)
+        self.widget_dir = get_jshtml_widget_dir(widget.cfg)
+        data_dir = self.widget_dir / "data"
+        data_dir.mkdir(exist_ok=True)
+        self.config_path = data_dir / "config.json"
+        self.config_store = self._load_config_store()
+
+    def _result(self, ok: bool, **kwargs) -> str:
+        data = {"ok": bool(ok)}
+        data.update(kwargs)
+        return json.dumps(data, ensure_ascii=False)
+
+    def _load_config_store(self) -> dict:
+        try:
+            if self.config_path and self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+        except:
+            pass
+        return {}
+
+    def _save_config_store(self) -> bool:
+        try:
+            if not self.config_path:
+                return False
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            self.config_path.write_text(json.dumps(self.config_store, ensure_ascii=False, indent=2), encoding="utf-8")
+            return True
+        except:
+            return False
+
+    def _safe_path(self, relative_path: str) -> Optional[Path]:
+        if self.widget_dir is None:
+            return None
+        return _jshtml_safe_path(self.widget_dir, relative_path)
+
+    @Slot(result=str)
+    def ping(self) -> str:
+        return self._result(True, message="pong", runtime="LiteDesktopStudio.JSHTML")
+
+    @Slot(result=str)
+    def getWidgetInfo(self) -> str:
+        cfg = getattr(getattr(self, "widget", None), "cfg", None)
+        if cfg is None:
+            return self._result(False, error="widget is not bound")
+        return self._result(True, title=getattr(cfg, "title", ""), mode=getattr(cfg, "jshtml_mode", "inline"), instanceId=getattr(cfg, "jshtml_instance_id", ""), entry=getattr(cfg, "jshtml_entry", "index.html"), packageName=getattr(cfg, "jshtml_package_name", ""), packageVersion=getattr(cfg, "jshtml_package_version", ""), widgetDir=str(self.widget_dir) if self.widget_dir else "")
+
+    @Slot(result=str)
+    def getWidgetRect(self) -> str:
+        try:
+            r = self.widget.rect
+            return self._result(True, x=int(r.left()), y=int(r.top()), width=int(r.width()), height=int(r.height()))
+        except Exception as e:
+            return self._result(False, error=repr(e))
+
+    @Slot(result=str)
+    def getSystemInfo(self) -> str:
+        try:
+            battery = None
+            try:
+                b = psutil.sensors_battery()
+                if b is not None:
+                    battery = {"percent": b.percent, "powerPlugged": b.power_plugged}
+            except:
+                battery = None
+            return self._result(True, cpuPercent=psutil.cpu_percent(interval=0.0), memoryPercent=psutil.virtual_memory().percent, diskPercent=psutil.disk_usage(os.path.expanduser("~")).percent, battery=battery, platform=sys.platform)
+        except Exception as e:
+            return self._result(False, error=repr(e))
+
+    @Slot(str, result=str)
+    def readConfig(self, key: str) -> str:
+        return self._result(True, key=key, value=self.config_store.get(key))
+
+    @Slot(str, str, result=str)
+    def writeConfig(self, key: str, value_json: str) -> str:
+        try:
+            value = json.loads(value_json)
+        except:
+            value = value_json
+        self.config_store[str(key)] = value
+        saved = self._save_config_store()
+        if saved:
+            self.configChanged.emit(str(key), json.dumps(value, ensure_ascii=False))
+        return self._result(saved, key=str(key), value=value)
+
+    @Slot(str, result=str)
+    def openUrl(self, url: str) -> str:
+        url = str(url or "")
+        if not (url.startswith("https://") or url.startswith("http://")):
+            return self._result(False, error="Only http:// and https:// URLs are allowed")
+        try:
+            webbrowser.open(url)
+            return self._result(True)
+        except Exception as e:
+            return self._result(False, error=repr(e))
+
+    @Slot(str, result=str)
+    def getLocalAssetUrl(self, relative_path: str) -> str:
+        target = self._safe_path(relative_path)
+        if target is None:
+            return self._result(False, error="Path is outside widget directory")
+        if not target.exists():
+            return self._result(False, error="Asset not found")
+        return self._result(True, path=str(target), url=QUrl.fromLocalFile(str(target)).toString())
+
+    @Slot(str, result=str)
+    def listAssets(self, relative_dir: str) -> str:
+        target = self._safe_path(relative_dir or "assets")
+        if target is None:
+            return self._result(False, error="Path is outside widget directory")
+        if not target.exists() or not target.is_dir():
+            return self._result(False, error="Directory not found", items=[])
+        items = []
+        try:
+            for child in sorted(target.iterdir(), key=lambda x: x.name.lower()):
+                if child.is_file():
+                    items.append({"name": child.name, "relativePath": str(child.relative_to(self.widget_dir)).replace("\\", "/"), "url": QUrl.fromLocalFile(str(child)).toString(), "size": child.stat().st_size})
+            return self._result(True, items=items)
+        except Exception as e:
+            return self._result(False, error=repr(e), items=[])
+
+    @Slot(str, result=str)
+    def readTextFile(self, relative_path: str) -> str:
+        target = self._safe_path(relative_path)
+        if target is None:
+            return self._result(False, error="Path is outside widget directory")
+        if not target.exists() or not target.is_file():
+            return self._result(False, error="File not found")
+        try:
+            if target.stat().st_size > 2 * 1024 * 1024:
+                return self._result(False, error="File is too large")
+            return self._result(True, text=target.read_text(encoding="utf-8"))
+        except Exception as e:
+            return self._result(False, error=repr(e))
+
+
 class JSHtmlViewManager:
     def __init__(self, canvas):
         self.canvas = canvas
         self.views = {}
+        self.channels = {}
+        self.apis = {}
         self.last_html = {}
+        self.last_source = {}
         self.available = True
         self.error = ""
 
         try:
-            from PySide6.QtWebEngineWidgets import QWebEngineView  
+            from PySide6.QtWebEngineWidgets import QWebEngineView
+            from PySide6.QtWebChannel import QWebChannel
         except Exception as e:
             self.available = False
             self.error = repr(e)
@@ -15222,57 +15776,68 @@ class JSHtmlViewManager:
     def sync(self, widgets):
         if not self.available:
             return
-
         active_ids = set()
-
         for widget in widgets:
             if not isinstance(widget, JSHtmlWidget):
                 continue
-
             key = id(widget)
             active_ids.add(key)
-
             view = self.views.get(key)
             if view is None:
-                view = self._create_view()
+                view = self._create_view(key)
                 self.views[key] = view
-
+            api = self.apis.get(key)
+            if api is not None:
+                try:
+                    api.bind_widget(widget)
+                except Exception as e:
+                    self.error = repr(e)
             self._sync_view(widget, view)
-
         stale_ids = [key for key in self.views.keys() if key not in active_ids]
         for key in stale_ids:
             view = self.views.pop(key)
+            self.channels.pop(key, None)
+            self.apis.pop(key, None)
             self.last_html.pop(key, None)
+            self.last_source.pop(key, None)
             try:
-                view.hide()
-                view.deleteLater()
+                view.hide(); view.deleteLater()
             except:
                 pass
 
     def clear(self):
         for view in list(self.views.values()):
             try:
-                view.hide()
-                view.deleteLater()
+                view.hide(); view.deleteLater()
             except:
                 pass
+        self.views.clear(); self.channels.clear(); self.apis.clear(); self.last_html.clear(); self.last_source.clear()
 
-        self.views.clear()
-        self.last_html.clear()
+    def reload_widget(self, widget) -> bool:
+        try:
+            if widget is None:
+                return False
+            key = id(widget)
+            self.last_html.pop(key, None)
+            self.last_source.pop(key, None)
+            view = self.views.get(key)
+            if view is not None:
+                self._sync_view(widget, view)
+            return True
+        except Exception as e:
+            self.error = repr(e)
+            return False
 
-    def _create_view(self):
+    def _create_view(self, key):
         from PySide6.QtWebEngineWidgets import QWebEngineView
-
+        from PySide6.QtWebChannel import QWebChannel
         view = QWebEngineView(self.canvas)
         view.setAttribute(Qt.WA_TranslucentBackground, True)
         view.setStyleSheet("background: transparent;")
-
         try:
-            page = view.page()
-            page.setBackgroundColor(Qt.transparent)
+            page = view.page(); page.setBackgroundColor(Qt.transparent)
         except:
             pass
-
         try:
             settings = view.settings()
             try:
@@ -15284,43 +15849,76 @@ class JSHtmlViewManager:
                 pass
         except:
             pass
-        thread = Thread()
-        thread.set_func(view.show)
-        thread.start()
-        THREADS.append(thread)
+        try:
+            channel = QWebChannel(view)
+            api = JSHtmlWidgetApi(self.canvas, view, view)
+            channel.registerObject("LDSApi", api)
+            view.page().setWebChannel(channel)
+            self.channels[key] = channel
+            self.apis[key] = api
+        except Exception as e:
+            self.error = repr(e)
+        try:
+            QTimer.singleShot(0, view.show)
+        except:
+            try: view.show()
+            except: pass
         return view
+
+    def _package_html_and_source(self, widget):
+        cfg = widget.cfg
+        widget_dir = get_jshtml_widget_dir(cfg)
+        entry = getattr(cfg, "jshtml_entry", "index.html") or "index.html"
+        entry_path = _jshtml_safe_path(widget_dir, entry)
+        if entry_path is None or not entry_path.exists() or not entry_path.is_file():
+            return None, None, widget_dir
+        try:
+            raw_html = entry_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raw_html = entry_path.read_text(encoding="utf-8", errors="replace")
+        html = build_js_html_document(raw_html)
+        try:
+            source = f"package:{entry_path}:{entry_path.stat().st_mtime_ns}:{entry_path.stat().st_size}"
+        except:
+            source = f"package:{entry_path}:{time.time()}"
+        return html, source, widget_dir
 
     def _sync_view(self, widget, view):
         cfg = widget.cfg
+        ensure_jshtml_widget_fields(cfg)
         r = widget.rect
-
-        view.setGeometry(
-            int(r.left()),
-            int(r.top()),
-            max(1, int(r.width())),
-            max(1, int(r.height()))
-        )
-
+        view.setGeometry(int(r.left()), int(r.top()), max(1, int(r.width())), max(1, int(r.height())))
         edit_mode = bool(getattr(self.canvas, "edit_mode", True))
         view.setAttribute(Qt.WA_TransparentForMouseEvents, edit_mode)
-
-        html = get_js_html_from_config(cfg)
-        html = build_js_html_document(html)
-
         key = id(widget)
-        if self.last_html.get(key) != html:
+        mode = str(getattr(cfg, "jshtml_mode", "inline") or "inline").lower()
+        if mode == "package":
+            html, source_key, widget_dir = self._package_html_and_source(widget)
+            if html is None:
+                html = build_js_html_document(f"""<div style='padding:14px;border:1px solid rgba(255,255,255,.2);border-radius:14px;background:rgba(20,24,32,.72);color:white;font-family:Segoe UI,sans-serif;'><h3 style='margin:0 0 8px;color:#FFCC66;'>JSHTML Package Error</h3><div>entry HTML が見つかりません: {getattr(cfg, 'jshtml_entry', 'index.html')}</div></div>""")
+                source_key = "package-error:" + str(time.time())
+                widget_dir = get_jshtml_widget_dir(cfg)
+            base_url = QUrl.fromLocalFile(str(widget_dir) + os.sep)
+        else:
+            raw_html = get_js_html_from_config(cfg)
+            html = build_js_html_document(raw_html)
+            widget_dir = get_jshtml_widget_dir(cfg)
+            base_url = QUrl.fromLocalFile(str(widget_dir) + os.sep)
+            source_key = "inline:" + html
+        if self.last_source.get(key) != source_key:
+            self.last_source[key] = source_key
             self.last_html[key] = html
             try:
-                view.setHtml(html, QUrl("about:blank"))
+                view.setHtml(html, base_url)
             except:
-                view.setHtml(html)
-
+                try: view.setHtml(html)
+                except Exception as e: self.error = repr(e)
         if not view.isVisible():
-            thread = Thread()
-            thread.set_func(view.show)
-            thread.start()
-            THREADS.append(thread)
-
+            try:
+                QTimer.singleShot(0, view.show)
+            except:
+                try: view.show()
+                except: pass
 
 def get_js_html_from_config(cfg):
     
@@ -15731,7 +16329,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -15762,6 +16360,15 @@ class WidgetEditor(QDialog):
         btns.addWidget(save)
         btns.addWidget(cancel)
 
+        self.jshtml_import_btn = None
+        self.jshtml_open_dir_btn = None
+        if getattr(widget.cfg, "type", "") == "html_js":
+            ensure_jshtml_widget_fields(widget.cfg)
+            self.jshtml_import_btn = QPushButton(lds_tr("📦 JSHTML ZIPをインポート"))
+            self.jshtml_open_dir_btn = QPushButton(lds_tr("📁 JSHTMLフォルダを開く"))
+            self.jshtml_import_btn.clicked.connect(self.import_jshtml_package)
+            self.jshtml_open_dir_btn.clicked.connect(self.open_jshtml_folder)
+
         layout.addRow(lds_tr("タイトル"), self.title)
         layout.addRow(lds_tr("アクセント色"), self.color)
         layout.addRow("", color_btn)
@@ -15769,6 +16376,9 @@ class WidgetEditor(QDialog):
         layout.addRow("", bg_btn)
         layout.addRow(lds_tr("フォントサイズ"), self.font_size)
         layout.addRow(lds_tr("鏡面反射"), self.mirror_reflect_enabled)
+        if self.jshtml_import_btn is not None:
+            layout.addRow("", self.jshtml_import_btn)
+            layout.addRow("", self.jshtml_open_dir_btn)
         layout.addRow("HTML / Text", self.text)
         layout.addRow(btns)
 
@@ -15781,6 +16391,49 @@ class WidgetEditor(QDialog):
         c = QColorDialog.getColor(QColor(self.bg.text()), self)
         if c.isValid():
             self.bg.setText(c.name())
+
+    def import_jshtml_package(self):
+        if getattr(self, "importing_jshtml_package", False):
+            return
+
+        self.importing_jshtml_package = True
+
+        try:
+            dialog = QFileDialog(self, lds_tr("JSHTML ZIPウィジェットを選択"))
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+            dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+            dialog.setNameFilter("ZIP Files (*.zip)")
+            dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+            try:
+                dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+            except AttributeError:
+                dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            files = dialog.selectedFiles()
+            if not files:
+                return
+
+            path = files[0]
+            if not path:
+                return
+
+            import_jshtml_widget_package_to_config(self.widget.cfg, path)
+            QMessageBox.information(self, lds_tr("完了"), lds_tr("JSHTMLウィジェットをインポートしました。"))
+        except Exception as e:
+            QMessageBox.warning(self, lds_tr("インポート失敗"), str(e))
+        finally:
+            self.importing_jshtml_package = False
+
+    def open_jshtml_folder(self):
+        try:
+            folder = get_jshtml_widget_dir(self.widget.cfg)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        except Exception as e:
+            QMessageBox.warning(self, lds_tr("フォルダを開けません"), str(e))
 
     def apply(self):
         self.widget.cfg.title = self.title.text()
@@ -15900,7 +16553,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -15918,9 +16571,9 @@ class LiteDeskStudio(QMainWindow):
         The previous default size was compact. This screen-aware sizing keeps the
         editor comfortable on large monitors and still safe on smaller displays.
         """
-        min_w = 1180
+        min_w = 1320
         min_h = 780
-        fallback_w = 1280
+        fallback_w = 1440
         fallback_h = 840
         try:
             self.setMinimumSize(min_w, min_h)
@@ -15931,7 +16584,7 @@ class LiteDeskStudio(QMainWindow):
             if screen is None:
                 raise RuntimeError("primary screen is unavailable")
             geom = screen.availableGeometry()
-            target_w = min(1440, max(min_w, int(geom.width() * 0.88)))
+            target_w = min(1600, max(min_w, int(geom.width() * 0.92)))
             target_h = min(940, max(min_h, int(geom.height() * 0.88)))
             target_w = min(target_w, max(min_w, geom.width() - 40))
             target_h = min(target_h, max(min_h, geom.height() - 40))
@@ -16296,7 +16949,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7"))
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -16525,7 +17178,7 @@ class LiteDeskStudio(QMainWindow):
         scroll = QScrollArea()
         scroll.setObjectName("PropertyScrollArea")
         scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(440)
+        scroll.setFixedWidth(560)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         panel = QWidget()
@@ -16715,6 +17368,34 @@ class LiteDeskStudio(QMainWindow):
         html_label.setObjectName("SectionTitle")
         layout.addWidget(html_label)
 
+        self.jshtml_status_label = QLabel(lds_tr("JSHTML package status"))
+        self.jshtml_status_label.setObjectName("SubText")
+        self.jshtml_status_label.setWordWrap(True)
+        try:
+            self.jshtml_status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        except:
+            pass
+        self.btn_jshtml_import_zip = QPushButton(lds_tr("📦 JSHTML ZIPをインポート"))
+        self.btn_jshtml_open_folder = QPushButton(lds_tr("📁 JSHTMLフォルダを開く"))
+        self.btn_jshtml_reload = QPushButton(lds_tr("🔄 JSHTMLを再読み込み"))
+        self.btn_jshtml_inline = QPushButton(lds_tr("↩ inlineモードに戻す"))
+        self.btn_jshtml_import_zip.clicked.connect(self.import_selected_jshtml_package)
+        self.btn_jshtml_open_folder.clicked.connect(self.open_selected_jshtml_folder)
+        self.btn_jshtml_reload.clicked.connect(self.reload_selected_jshtml_widget)
+        self.btn_jshtml_inline.clicked.connect(self.reset_selected_jshtml_to_inline)
+        layout.addWidget(self.jshtml_status_label)
+        layout.addWidget(self.btn_jshtml_import_zip)
+        layout.addWidget(self.btn_jshtml_open_folder)
+        layout.addWidget(self.btn_jshtml_reload)
+        layout.addWidget(self.btn_jshtml_inline)
+        self.jshtml_only_property_widgets = [
+            self.jshtml_status_label,
+            self.btn_jshtml_import_zip,
+            self.btn_jshtml_open_folder,
+            self.btn_jshtml_reload,
+            self.btn_jshtml_inline,
+        ]
+
         self.prop_text = QTextEdit()
         self.prop_text.setPlaceholderText(
             "<h2 style='color:#5BE7FF;'>Custom Widget</h2>\n"
@@ -16858,6 +17539,144 @@ class LiteDeskStudio(QMainWindow):
         self.canvas.save_config()
         self.canvas.update()
 
+    def set_jshtml_controls_visible(self, visible: bool):
+        widgets = getattr(self, "jshtml_only_property_widgets", [])
+
+        for widget in widgets:
+            try:
+                widget.setVisible(visible)
+            except:
+                pass
+
+    def update_jshtml_package_status(self, cfg=None):
+        try:
+            label = getattr(self, "jshtml_status_label", None)
+            if label is None:
+                return
+            if cfg is None:
+                widget = getattr(self.canvas, "selected", None)
+                cfg = getattr(widget, "cfg", None)
+            if cfg is None or getattr(cfg, "type", "") != "html_js":
+                label.setText(lds_tr("JSHTMLウィジェットを選択してください。"))
+                return
+            ensure_jshtml_widget_fields(cfg)
+            mode = getattr(cfg, "jshtml_mode", "inline") or "inline"
+            package_name = getattr(cfg, "jshtml_package_name", "") or "-"
+            package_version = getattr(cfg, "jshtml_package_version", "") or "-"
+            entry = getattr(cfg, "jshtml_entry", "index.html") or "index.html"
+            instance_id = getattr(cfg, "jshtml_instance_id", "") or "-"
+            try:
+                widget_dir = str(get_jshtml_widget_dir(cfg))
+            except Exception as e:
+                widget_dir = "error: " + repr(e)
+            label.setText(
+                "JSHTML Package\n"
+                f"Mode: {mode}\n"
+                f"Package: {package_name}\n"
+                f"Version: {package_version}\n"
+                f"Entry: {entry}\n"
+                f"Instance: {instance_id}\n"
+                f"Folder: {widget_dir}"
+            )
+        except Exception as e:
+            try:
+                self.jshtml_status_label.setText("JSHTML status error: " + repr(e))
+            except:
+                pass
+
+    def reload_selected_jshtml_widget(self):
+        widget = getattr(self.canvas, "selected", None)
+        if widget is None or getattr(widget.cfg, "type", "") != "html_js":
+            QMessageBox.information(self, lds_tr("JSHTML"), lds_tr("JavaScript HTML ウィジェットを選択してください。"))
+            return
+        try:
+            manager = getattr(self.canvas, "js_html_views", None)
+            if manager is not None and hasattr(manager, "reload_widget"):
+                manager.reload_widget(widget)
+            self.canvas.update()
+            self.update_jshtml_package_status(widget.cfg)
+        except Exception as e:
+            QMessageBox.warning(self, lds_tr("JSHTML再読み込み失敗"), str(e))
+
+    def reset_selected_jshtml_to_inline(self):
+        widget = getattr(self.canvas, "selected", None)
+        if widget is None or getattr(widget.cfg, "type", "") != "html_js":
+            QMessageBox.information(self, lds_tr("JSHTML"), lds_tr("JavaScript HTML ウィジェットを選択してください。"))
+            return
+        try:
+            ensure_jshtml_widget_fields(widget.cfg)
+            widget.cfg.jshtml_mode = "inline"
+            if not getattr(widget.cfg, "text", ""):
+                widget.cfg.text = DEFAULT_JS_HTML
+            manager = getattr(self.canvas, "js_html_views", None)
+            if manager is not None and hasattr(manager, "reload_widget"):
+                manager.reload_widget(widget)
+            self.canvas.save_config()
+            self.canvas.update()
+            self.load_selected_to_editor()
+        except Exception as e:
+            QMessageBox.warning(self, lds_tr("inlineモードに戻せません"), str(e))
+
+    def import_selected_jshtml_package(self):
+        if getattr(self, "importing_jshtml_package", False):
+            return
+
+        widget = getattr(self.canvas, "selected", None)
+        if widget is None or getattr(widget.cfg, "type", "") != "html_js":
+            QMessageBox.information(self, lds_tr("JSHTML"), lds_tr("JavaScript HTML ウィジェットを選択してください。"))
+            return
+
+        self.importing_jshtml_package = True
+
+        try:
+            dialog = QFileDialog(self, lds_tr("JSHTML ZIPウィジェットを選択"))
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+            dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+            dialog.setNameFilter("ZIP Files (*.zip)")
+            dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+            try:
+                dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+            except AttributeError:
+                dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            files = dialog.selectedFiles()
+            if not files:
+                return
+
+            path = files[0]
+            if not path:
+                return
+
+            import_jshtml_widget_package_to_config(widget.cfg, path)
+            try:
+                self.prop_text.setPlainText(widget.cfg.text or "")
+            except:
+                pass
+            self.canvas.save_config()
+            self.canvas.update()
+            self.update_jshtml_package_status(widget.cfg)
+            QMessageBox.information(self, lds_tr("完了"), lds_tr("JSHTMLウィジェットをインポートしました。"))
+        except Exception as e:
+            QMessageBox.warning(self, lds_tr("インポート失敗"), str(e))
+        finally:
+            self.importing_jshtml_package = False
+
+    def open_selected_jshtml_folder(self):
+        widget = getattr(self.canvas, "selected", None)
+        if widget is None or getattr(widget.cfg, "type", "") != "html_js":
+            QMessageBox.information(self, lds_tr("JSHTML"), lds_tr("JavaScript HTML ウィジェットを選択してください。"))
+            return
+
+        try:
+            folder = get_jshtml_widget_dir(widget.cfg)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        except Exception as e:
+            QMessageBox.warning(self, lds_tr("フォルダを開けません"), str(e))
+
     def set_system_color_controls_visible(self, visible: bool):
         widgets = getattr(self, "system_only_property_widgets", [])
 
@@ -16972,6 +17791,7 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_network_down_color.setText("")
                 self.prop_network_up_color.setText("")
                 self.set_network_controls_visible(False)
+                self.set_jshtml_controls_visible(False)
 
                 return
 
@@ -17000,6 +17820,8 @@ class LiteDeskStudio(QMainWindow):
             self.set_weather_controls_visible(cfg.type == "weather")
             is_network_widget = cfg.type == "network"
             self.set_network_controls_visible(is_network_widget)
+            self.set_jshtml_controls_visible(cfg.type == "html_js")
+            self.update_jshtml_package_status(cfg)
 
             if cfg.type == "network":
                 self.prop_network_down_color.setText(getattr(cfg, "network_down_color", "#5BE7FF"))
@@ -17031,7 +17853,7 @@ class LiteDeskStudio(QMainWindow):
                 idx = self.prop_visualizer_orientation.findData("vertical" if orientation == "vertical" else "horizontal")
                 self.prop_visualizer_orientation.setCurrentIndex(max(0, idx))
                 self.prop_visualizer_frame_rate_enabled.setChecked(bool(getattr(cfg, "visualizer_frame_rate_enabled", True)))
-                self.prop_visualizer_frame_rate.setValue(max(1, min(240, int(getattr(cfg, "visualizer_frame_rate", 60)))))
+                self.prop_visualizer_frame_rate.setValue(max(1, min(240, int(getattr(cfg, "visualizer_frame_rate", 40)))))
             else:
                 self.prop_visualizer_flip_vertical.setChecked(False)
                 self.prop_visualizer_peak_bar_enabled.setChecked(True)
@@ -17435,7 +18257,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v2.0.7 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v2.1.0 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -20575,10 +21397,10 @@ class DesktopCanvas(QWidget):
                 if isinstance(widget, EffectsOverlayWidget):
                     settings = get_effect_overlay_settings(widget.cfg)
                     if bool(getattr(settings, "effect_frame_rate_enabled", True)):
-                        fps_values.append(max(1, min(240, int(getattr(settings, "effect_frame_rate", 60)))))
+                        fps_values.append(max(1, min(240, int(getattr(settings, "effect_frame_rate", 40)))))
                 elif isinstance(widget, VisualizerWidget):
                     if bool(getattr(widget.cfg, "visualizer_frame_rate_enabled", True)):
-                        fps_values.append(max(1, min(240, int(getattr(widget.cfg, "visualizer_frame_rate", 60)))))
+                        fps_values.append(max(1, min(240, int(getattr(widget.cfg, "visualizer_frame_rate", 40)))))
         except:
             fps_values = []
         fps = min(fps_values) if fps_values else 60
@@ -21506,6 +22328,7 @@ class DesktopCanvas(QWidget):
                 color="#80FF9F",
                 bg="#10141C",
                 text=DEFAULT_JS_HTML,
+                jshtml_mode="inline",
             )
         else:
             cfg = WidgetConfig(
@@ -21536,7 +22359,7 @@ class DesktopCanvas(QWidget):
                 self.cfg["icon_scene_render_icons"] = "off"
         except:
             pass
-        if not os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"]:
+        if not os.getenv("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"):
             os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "off"
         data = {
             "studio_theme": get_canvas_studio_theme(self),

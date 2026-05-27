@@ -5,64 +5,176 @@
 <h2 align="center">Lite Desktop Studio</h2>
 <p align="center">A Simple Desktop Gadet.</p>
 
-<div>ArtifacterやLiteDesktopStudioを作っていますが開発に余裕がありません。<br>
-私は寄付を募っています。開発の励みになりますので寄付をお願いします。
-<br><a href="https://www.buymeacoffee.com/crossdarkrix"><img src="https://img.buymeacoffee.com/button-api/?text=BuyMeCoffie&emoji=%E2%98%95&slug=crossdarkrix&button_colour=FFDD00&font_colour=000000&font_family=Bree&outline_colour=000000&coffee_colour=ffffff"></a></div>
+[English README](README.md)
 
+LiteDesktopStudio は、Python / PySide6 で作られた軽量デスクトップガジェットスタジオです。音楽ビジュアライザー、システム情報、通信状況、時計、カレンダー、天気、メディア操作、HTML/CSS風ウィジェット、JavaScript HTML ウィジェットなどをデスクトップ上に配置・編集・カスタマイズできます。
 
-<h2>ScreenShot</h2>
+Artifacter や LiteDesktopStudio を作っていますが、開発に十分な余裕がありません。開発の励みになりますので、よろしければ支援をお願いします: [Buy me a coffee](https://www.buymeacoffee.com/crossdarkrix)
+
+## スクリーンショット
+
 <a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/screenshot1.png" width="300px" height="250px"></a>
 <a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/screenshot2.png" width="300px" height="250px"></a>
 <a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/screenshot3.png" width="300px" height="250px"></a>
 <a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/screenshot4.png" width="300px" height="250px"></a>
 
-<h2>設定画面</h2>
-<a href="https://github.com/CrossDarkrix/LiteDesktopStudio"><img src="https://raw.githubusercontent.com/CrossDarkrix/LiteDesktopStudio/refs/heads/main/Images/SettingWindow.png" width="300px" height="250px"></a>
 
-## ★特徴
-
-LiteDesktopStudio は、ただのデスクトップガジェットではなく、**自分のデスクトップを“見やすく・楽しく・自分好みに”作り替えるための軽量デスクトップスタジオ**です。
+## 特徴
 
 - **デスクトップ上にウィジェットを自由配置**  
-  音楽スペクトル、システム情報、通信状況、音量操作、時計、カレンダー、天気、メディア操作、HTML/CSS風ウィジェットなどを、デスクトップ上に好きな位置・サイズで配置できます。
+  ウィジェットを好きな位置・サイズでデスクトップ上に配置できます。
 
-- **直感的に編集できる操作感**  
-  設定画面へは右クリックを素早く2回、ウィジェットの配置編集は左クリックで選択して `E` キー。普段は邪魔になりにくく、編集したい時だけすぐ編集できます。
+- **直感的な編集モード**  
+  設定画面へは右クリックを素早く2回。ウィジェットを左クリックで選択し、`E` キーで配置編集を切り替えられます。
 
-- **見た目を細かくカスタマイズ可能**  
-  各ウィジェットごとに透明度、背景色、アクセントカラー、サイズ、位置などを変更できます。デスクトップの壁紙やテーマに合わせて、落ち着いた表示にも派手な演出にも調整できます。
+- **見た目を細かくカスタマイズ**  
+  ウィジェットごとに透明度、背景色、アクセントカラー、サイズ、位置などを調整できます。
 
-- **リキッドグラス風・ダーク・マテリアル・ライトなどの設定画面テーマ**  
-  設定画面は半透明感のあるデザインや黒基調のデザインなど、好みに合わせて切り替えられます。見た目の雰囲気を変えながら、編集作業そのものも楽しめます。
+- **設定画面テーマ**  
+  Liquid Glass、Dark、Material、Light などの設定画面テーマを切り替えられます。
 
 - **音楽に反応するビジュアライザー**  
-  音楽スペクトルウィジェットでは、再生中の音に合わせてバーが動きます。ピークバー表示や発光演出を使うことで、デスクトップを音楽に合わせて動くビジュアル空間にできます。
+  再生中の音に合わせてスペクトルバーを表示できます。ピークバーや発光演出も利用できます。
 
-- **通信状況を分かりやすく表示**  
-  上り・下りの通信速度や履歴グラフを表示できるため、ネットワークの動きがひと目で分かります。通信の方向は描画された矢印アイコンと「上り」「下り」表示で視認しやすくしています。
+- **システム・ネットワーク表示**  
+  CPU、メモリ、ディスク使用率、上り/下り通信速度、通信履歴グラフなどを表示できます。
 
-- **エフェクトオーバーレイでデスクトップを演出**  
-  雨、粒子、グロー、波紋、バラ花びら、桜、雪、水、炎、流れ星など、デスクトップに重ねる演出を設定できます。必要な効果だけをON/OFFできるので、見た目と軽さのバランスも調整できます。
+- **エフェクトオーバーレイ**  
+  雨、粒子、グロー、波紋、バラ花びら、桜、雪、水、炎、流れ星などの演出をデスクトップに重ねられます。
 
-- **HTML/CSS風ウィジェットで自由度を拡張**  
-  上級者向けに、簡単なHTML/CSS風の内容を使ったカスタムウィジェットも作れます。メモ、リンク集、装飾パネルなど、自分専用の表示を追加できます。
+- **HTML/CSS風ウィジェット**  
+  メモ、リンク集、装飾パネルなど、簡単なカスタム表示を作れます。
 
-- **PySide6製なので改造しやすい**  
-  Python / PySide6 で実装されているため、ソースコードを読める方ならウィジェット追加、描画変更、設定項目追加などのカスタマイズがしやすい構成です。
+- **JavaScript HTML ウィジェット**  
+  Qt WebEngine ベースのウィジェットで、HTML / CSS / JavaScript を使ったよりリッチな表示を作れます。
 
-- **軽量さと見た目の両立を目指したデスクトップツール**  
-  実用的な情報表示だけでなく、透明感・発光・アニメーション・エフェクトなど、デスクトップを“使う場所”から“眺めて楽しい場所”に変えることを目指しています。
+- **改造しやすい構成**  
+  Python / PySide6 実装なので、ソースコードを読める方であれば、ウィジェット追加、描画変更、設定項目追加などを行いやすい構成です。
 
+## JavaScript HTML ウィジェットランタイム
 
-<h2>設定ファイルの場所</h2>
-<ul>
-	<li>Windowsなら%PROFILES%直下に生成されます</li>
-	<li>Windows以外はユーザーディレクトリに配置されるようになっています。</li>
-</ul>
+LiteDesktopStudio には、強化された JavaScript HTML ウィジェットランタイムがあります。JSHTML ウィジェットは、簡単な inline HTML として動かすことも、ZIP インポート型の package ウィジェットとして動かすこともできます。package ウィジェットは、専用ディレクトリ、assets、永続設定、JavaScript API ブリッジを持てます。
 
-<h2>今後の予定</h2>
-<ul>
-	<li>多言語化</li>
-	<li>PySide6で実装できる範囲で可能な限り機能を実装</li>
-</ul>
+### JSHTML モード
 
+| モード | 説明 |
+|---|---|
+| `inline` | ウィジェットのテキスト欄に保存された HTML を直接表示します。小さなカスタムパネルや実験向けです。 |
+| `package` | ZIP インポートしたウィジェットパッケージを、ウィジェット専用ディレクトリから読み込みます。`widget.json`、`index.html`、CSS、JavaScript、assets を含められます。 |
+
+### パッケージ構成
+
+最小構成の JSHTML パッケージ ZIP は次のような形です。
+
+```text
+my-widget.zip
+├─ widget.json
+├─ index.html
+├─ style.css
+├─ main.js
+└─ assets/
+   └─ image.svg
+```
+
+`widget.json` の例:
+
+```json
+{
+  "id": "anime-sidebar-sample",
+  "name": "Anime Sidebar Sample",
+  "version": "1.1.0",
+  "entry": "index.html",
+  "permissions": {
+    "readAssets": true,
+    "writeConfig": true,
+    "systemInfo": true,
+    "openUrl": true,
+    "readTextFile": true
+  },
+  "size": {
+    "width": 300,
+    "height": 620
+  }
+}
+```
+
+### JavaScript API
+
+JSHTML ウィジェットからは `window.LDSReady` と `window.LDS` を使って LiteDesktopStudio の API にアクセスできます。
+
+```javascript
+await window.LDSReady;
+
+const info = await LDS.getWidgetInfo();
+const sys = await LDS.getSystemInfo();
+const assets = await LDS.listAssets("assets");
+
+await LDS.writeConfig("theme", "sakura");
+const theme = await LDS.readConfig("theme");
+```
+
+利用できる API:
+
+- `LDS.ping()`
+- `LDS.getWidgetInfo()`
+- `LDS.getWidgetRect()`
+- `LDS.getSystemInfo()`
+- `LDS.readConfig(key)`
+- `LDS.writeConfig(key, value)`
+- `LDS.openUrl(url)`
+- `LDS.getLocalAssetUrl(path)`
+- `LDS.listAssets(path)`
+- `LDS.readTextFile(path)`
+
+設定読み書き系の移植補助として、非同期の互換 shim も用意しています。
+
+```javascript
+await System.Gadget.settings.write("key", "value");
+const value = await System.Gadget.settings.read("key");
+```
+
+> 注意: これは Windows Gadget API の完全互換ではありません。Qt WebChannel を使うため、非同期の設定読み書き補助として提供しています。
+
+### JSHTML package 管理 UI
+
+JavaScript HTML ウィジェットを選択すると、プロパティパネルで次のような package 管理操作ができます。
+
+- package 状態表示
+- ZIP package インポート
+- JSHTML ウィジェットフォルダを開く
+- JSHTML ウィジェット再読み込み
+- inline モードに戻す
+
+### セキュリティについて
+
+- ウィジェットのファイルアクセスは、各ウィジェット専用ディレクトリ内に制限されます。
+- ZIP 展開時には、パストラバーサルを避けるためのチェックを行います。
+- URL を開く機能は `http://` と `https://` に制限されます。
+- 任意コマンド実行 API は公開していません。
+
+## サンプルパッケージ
+
+Anime Sidebar サンプルパッケージでは、次の内容を確認できます。
+
+- `widget.json` メタデータ
+- `index.html` / `style.css` / `main.js` 分離構成
+- 相対パスでの assets 読み込み
+- `window.LDSReady` / `window.LDS`
+- `readConfig` / `writeConfig` による永続設定
+- `getSystemInfo` による CPU / RAM / DISK 表示
+- テーマ設定の永続化
+- assets 一覧取得と `widget.json` 読み取り
+
+## 設定ファイルの場所
+
+- Windows では `%PROFILES%` 直下に生成されます。
+- Windows 以外ではユーザーディレクトリに配置されます。
+
+## 今後の予定
+
+- 多言語化
+- PySide6 で実装できる範囲で可能な限り機能を実装
+
+## ライセンス
+
+リポジトリ内のライセンスファイルを確認してください。
