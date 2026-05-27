@@ -108,7 +108,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "Lite Desktop Studio v2.0.6"
+APP_NAME = "Lite Desktop Studio v2.0.7"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 
@@ -495,7 +495,7 @@ LIGHTWEIGHT_ROSE_PETAL_DEFAULT_SETTINGS = {
     "effect_frame_rate": 60,
     "vector_image_cache_enabled": True,
     "vector_image_cache_fps": 24,
-    "vector_image_cache_fps_extra": 12,
+    "vector_image_cache_fps_extra": 45,
     "vector_image_cache_fps_rain": 24,
     "vector_image_cache_fps_ripples": 18,
     "vector_image_cache_fps_particles": 18,
@@ -880,7 +880,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6 - エフェクト設定"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -1465,7 +1465,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self.vector_image_cache_enabled.setChecked(bool(getattr(self.settings, "vector_image_cache_enabled", True)))
         set_beginner_tooltip(self.vector_image_cache_enabled, lds_tr("水面・花びら・雨などのベクター描画を一度QImageに描いてからdrawImageで表示します。FPS優先ならON推奨です。"))
         self.vector_image_cache_fps = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps", 24))
-        self.vector_image_cache_fps_extra = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_extra", 12))
+        self.vector_image_cache_fps_extra = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_extra", 60))
         self.vector_image_cache_fps_rain = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_rain", 24))
         self.vector_image_cache_fps_ripples = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_ripples", 18))
         self.vector_image_cache_fps_particles = self._int_spin(1, 60, getattr(self.settings, "vector_image_cache_fps_particles", 18))
@@ -2513,7 +2513,7 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
             self._theme_set_checked("vector_image_cache_enabled", True)
             self._theme_set_value("vector_image_cache_fps", 8)
-            self._theme_set_value("vector_image_cache_fps_extra", 8)
+            self._theme_set_value("vector_image_cache_fps_extra", 120)
             self._theme_set_value("vector_image_cache_fps_particles", 8)
             self._theme_set_value("effect_frame_rate", 60)
             self._theme_set_value("background_alpha", 0)
@@ -2522,7 +2522,7 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_checked("sunlight_enabled", False)
             self._theme_set_checked("lens_flare_enabled", False)
             self._theme_set_checked("noise_enabled", False)
-            self._theme_set_extra("cloud", enabled=False, count=0)
+            self._theme_set_extra("cloud", enabled=True, count=5)
             self._theme_set_extra("star_sky", False, count=0)
             self._theme_set_extra("shooting_star", False, count=0)
             self._theme_set_extra("meteor_shower", False, count=0)
@@ -2577,7 +2577,7 @@ class EffectsOverlayEditorDialog(QDialog):
         elif theme_id == "cloud_drift":
             self._theme_disable_all_visual_effects()
             self._theme_apply_common_lightweight()
-            self._theme_set_extra("cloud", enabled=True, count=12, speed=0.08, size=105.0, alpha=190)
+            self._theme_set_extra("cloud", enabled=True, count=12, speed=0.8650, size=105.0, alpha=190)
             self._theme_set_text("cloud_color", "#F4FAFF")
             self._theme_set_text("cloud_shadow_color", "#AEBED2")
             self._theme_set_text("cloud_highlight_color", "#FFFFFF")
@@ -2630,7 +2630,7 @@ class EffectsOverlayEditorDialog(QDialog):
             # 拙政園のようなゆったり感: 開けた水辺、淡い雲、薄い朝もや、少数の花びら。
             self._theme_disable_all_visual_effects()
             self._theme_apply_common_lightweight(fps=36, quality=0.82)
-            self._theme_set_extra("cloud", enabled=True, count=10, speed=0.045, size=124.0, alpha=118)
+            self._theme_set_extra("cloud", enabled=True, count=10, speed=0.8650, size=124.0, alpha=118)
             self._theme_set_text("cloud_color", "#EEF7F4")
             self._theme_set_text("cloud_shadow_color", "#C8D9D4")
             self._theme_set_text("cloud_highlight_color", "#FFFFFF")
@@ -2850,7 +2850,7 @@ class EffectsOverlayEditorDialog(QDialog):
                 pass
         elif theme_id in ("uyuni_salt_flat_reflection", "uyuni_salt_flat", "salar_de_uyuni"):
             # ウユニ塩湖: 反射背景に加えて、既存の水面・薄い氷/塩結晶エフェクトもONにする。
-            self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=6)
+            self._theme_apply_60fps_scenic_foundation(fps=60, cache_fps=60)
             self._theme_clear_scenic_engine_flags()
             self._theme_set_raw_extra("uyuni_salt_flat_engine_enabled", True)
             self._theme_set_raw_extra("realtime_scenic_sky_enabled", True)
@@ -2865,7 +2865,7 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_raw_extra("antelope_canyon_engine_enabled", False)
             self._theme_set_value("intensity", 0.82)
             self._theme_set_value("vector_image_cache_fps", 6)
-            self._theme_set_value("vector_image_cache_fps_extra", 6)
+            self._theme_set_value("vector_image_cache_fps_extra", 120)
             self._theme_set_checked("water_surface_enabled", True)
             self._theme_set_checked("puddle_enabled", False)
             self._theme_set_value("water_surface_alpha", 52)
@@ -2910,6 +2910,8 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_value("ice_glacier_roughness", 0.12)
             self._theme_set_checked("ice_mirror_enabled", False)
             self._theme_set_checked("ice_fog_enabled", False)
+            self._theme_set_extra("cloud", enabled=True, count=6, speed=0.8650, size=112.0, alpha=176)
+            self._theme_set_checked("water_mirror_reflect_cloud", True)
             try:
                 os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "1"
             except:
@@ -2942,7 +2944,7 @@ class EffectsOverlayEditorDialog(QDialog):
             self._theme_set_raw_extra("desktop_ui_fallback_width_ratio", 0.22)
             self._theme_set_value("intensity", 0.94)
             self._theme_set_value("vector_image_cache_fps", 8)
-            self._theme_set_value("vector_image_cache_fps_extra", 8)
+            self._theme_set_value("vector_image_cache_fps_extra", 120)
             try:
                 os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "1"
             except:
@@ -2965,7 +2967,9 @@ class EffectsOverlayEditorDialog(QDialog):
         elif theme_id in ("blue_hole_deep_lake", "blue_hole", "deep_blue_hole"):
             self._theme_select_fullscreen_scenic_engine("blue_hole_deep_lake_engine_enabled", fps=60, cache_fps=8, intensity=0.92)
         elif theme_id in ("chichibugahama_mirror", "chichibugahama", "mirror_beach"):
-            self._theme_select_fullscreen_scenic_engine("chichibugahama_mirror_engine_enabled", fps=60, cache_fps=8, intensity=0.78)
+            self._theme_select_fullscreen_scenic_engine("chichibugahama_mirror_engine_enabled", fps=60, cache_fps=60, intensity=0.84)
+            self._theme_set_extra("cloud", enabled=True, count=5, speed=0.8650, size=104.0, alpha=158)
+            self._theme_set_checked("water_mirror_reflect_cloud", True)
         elif theme_id == "fire_and_water":
             self._theme_set_extra("flame", True, count=54, speed=0.55, size=21.0, alpha=205)
             self._theme_set_extra("fireball", True, count=8, speed=0.32, size=18.0, alpha=220)
@@ -7382,44 +7386,108 @@ class EffectsOverlayWidget(BaseWidget):
             pass
 
     def _draw_chichibugahama_time_light_accents(self, p: QPainter, r: QRectF, now: float, phase: str, t: float):
-        """Very lightweight time-of-day light accents for Chichibugahama mirror shore."""
+        """Subtle non-rectangular time-of-day accents for Chichibugahama mirror shore.
+
+        Important: avoid localized rectangular reflection blocks.  Reflections are
+        expressed as horizon-wide gradients and thin horizontal water lines so the
+        shore reads as a shallow mirror, not a separate square effect.
+        """
         try:
             w = float(max(1.0, r.width()))
             h = float(max(1.0, r.height()))
             left = float(r.left())
             top = float(r.top())
             horizon = top + h * 0.48
+            water_h = max(1.0, top + h - horizon)
             p.setPen(Qt.PenStyle.NoPen)
+
             if phase == "day":
-                # Glittering midday sunlight: cheap short rect strokes, updated slowly.
-                rnd = random.Random(int(float(now) / 3.0) ^ 0x43484943)
-                for _ in range(28):
-                    x = left + rnd.random() * w
-                    y = horizon + h * rnd.uniform(0.04, 0.46)
-                    ww = w * rnd.uniform(0.018, 0.060)
-                    p.setBrush(QBrush(QColor(255, 255, 225, rnd.randint(24, 58))))
-                    p.drawRect(QRectF(x, y, ww, max(1.0, h * 0.0012)))
+                # Horizontal shimmer only.  Rectangles are avoided because they can
+                # read as square artifacts on the wet flat.
+                rnd = random.Random(int(float(now) / 5.0) ^ 0x43484943)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                for i in range(20):
+                    y = horizon + water_h * rnd.uniform(0.05, 0.62)
+                    x0 = left + w * rnd.uniform(0.06, 0.78)
+                    x1 = min(left + w * 0.96, x0 + w * rnd.uniform(0.05, 0.18))
+                    alpha = rnd.randint(20, 46)
+                    p.setPen(QPen(QColor(255, 255, 224, alpha), 1.0))
+                    p.drawLine(QPointF(x0, y), QPointF(x1, y + math.sin(i * 0.9) * 0.8))
+
             elif phase == "dusk":
+                # Wide, horizon-aligned warmth.  Full-width gradient is safe because
+                # it has no local square edge.
                 warm = QLinearGradient(QPointF(left, horizon), QPointF(left, top + h))
-                warm.setColorAt(0.0, QColor(255, 176, 104, 44))
-                warm.setColorAt(0.42, QColor(255, 128, 84, 36))
-                warm.setColorAt(1.0, QColor(130, 76, 92, 18))
+                warm.setColorAt(0.0, QColor(255, 176, 104, 34))
+                warm.setColorAt(0.34, QColor(255, 128, 84, 22))
+                warm.setColorAt(1.0, QColor(130, 76, 92, 0))
                 p.setBrush(QBrush(warm))
-                p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRect(QRectF(left, horizon, w, water_h))
+
             elif phase == "dawn":
-                glow = QLinearGradient(QPointF(left, horizon - h * 0.08), QPointF(left, horizon + h * 0.30))
-                glow.setColorAt(0.0, QColor(255, 190, 128, 40))
+                glow = QLinearGradient(QPointF(left, horizon - h * 0.06), QPointF(left, horizon + h * 0.26))
+                glow.setColorAt(0.0, QColor(255, 190, 128, 34))
+                glow.setColorAt(0.42, QColor(255, 214, 172, 16))
                 glow.setColorAt(1.0, QColor(255, 255, 255, 0))
                 p.setBrush(QBrush(glow))
-                p.drawRect(QRectF(left, horizon - h * 0.08, w, h * 0.40))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRect(QRectF(left, horizon - h * 0.06, w, h * 0.32))
+
             elif phase == "night":
-                # Very soft moon reflection stripe on the wet flat.
-                moon_reflect = QLinearGradient(QPointF(left + w * 0.70, horizon), QPointF(left + w * 0.78, top + h))
-                moon_reflect.setColorAt(0.0, QColor(210, 230, 255, 24))
-                moon_reflect.setColorAt(0.40, QColor(180, 210, 255, 14))
-                moon_reflect.setColorAt(1.0, QColor(180, 210, 255, 0))
-                p.setBrush(QBrush(moon_reflect))
-                p.drawRect(QRectF(left + w * 0.58, horizon, w * 0.32, top + h - horizon))
+                # Replace the previous right-side rectangular moon-reflection block
+                # with a few thin, fading horizontal strokes.
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                for i in range(7):
+                    y = horizon + water_h * (0.10 + i * 0.070)
+                    span = w * (0.16 + i * 0.018)
+                    cx = left + w * (0.73 + math.sin(i * 0.8) * 0.015)
+                    alpha = max(3, 14 - i * 2)
+                    p.setPen(QPen(QColor(205, 226, 255, alpha), 1.0))
+                    p.drawLine(QPointF(cx - span * 0.50, y), QPointF(cx + span * 0.50, y + math.sin(i) * 0.7))
+        except Exception:
+            pass
+
+    def _draw_scenic_cloud_reflection_on_mirror(self, p: QPainter, r: QRectF, now: float, scene: str):
+        """Reflect the existing cloud effect into mirror-style scenic presets.
+
+        This intentionally reuses the normal cloud effect particles stored in
+        self._extra_effects["cloud"].  It does not create a separate static cloud
+        layer and does not generate new clouds.  If the cloud effect is off, this
+        returns immediately.
+        """
+        try:
+            scene = str(scene or "")
+            if scene not in ("uyuni", "chichibugahama"):
+                return
+            extra = getattr(self, "_extra_effects", {}) if hasattr(self, "_extra_effects") else {}
+            clouds = list(extra.get("cloud", []))
+            if not clouds:
+                return
+            w = float(max(1.0, r.width()))
+            h = float(max(1.0, r.height()))
+            left = float(r.left())
+            top = float(r.top())
+            horizon_ratio = 0.50 if scene == "uyuni" else 0.48
+            water_rect = QRectF(left, top + h * horizon_ratio, w, max(1.0, h * (1.0 - horizon_ratio)))
+            settings = getattr(self, "settings", None)
+            if settings is None:
+                settings = EffectOverlaySettings()
+            # Keep Chichibugahama softer than Uyuni, but make both visibly reflect clouds.
+            alpha_base = 150 if scene == "uyuni" else 118
+            p.save()
+            try:
+                p.setClipRect(water_rect)
+                self._draw_reflected_clouds_on_water(p, water_rect, settings, now, alpha_base)
+                # A few horizontal blending lines integrate the reflected clouds into the wet flat.
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                line_alpha = 14 if scene == "uyuni" else 10
+                for i in range(8 if scene == "uyuni" else 6):
+                    y = water_rect.top() + water_rect.height() * (0.10 + i * 0.075)
+                    p.setPen(QPen(QColor(255, 255, 255, max(2, line_alpha - i)), 1.0))
+                    p.drawLine(QPointF(left + w * 0.04, y), QPointF(left + w * 0.96, y + math.sin(i * 0.7) * 0.7))
+            finally:
+                p.restore()
         except Exception:
             pass
 
@@ -7568,7 +7636,8 @@ class EffectsOverlayWidget(BaseWidget):
                     p.setBrush(QBrush(amber)); p.drawRect(QRectF(left, horizon, w, max(1.0, top + h - horizon)))
                     if t > 0.58:
                         self._draw_realtime_stars(p, r, now, scene=scene, alpha_scale=(t - 0.58) / 0.42)
-                self._draw_realtime_lightweight_clouds(p, r, now, scene, phase, t)
+                if scene in ("uyuni", "chichibugahama"):
+                    self._draw_scenic_cloud_reflection_on_mirror(p, r, now, scene)
                 if scene == "chichibugahama":
                     self._draw_chichibugahama_time_light_accents(p, r, now, phase, t)
 
@@ -7722,7 +7791,7 @@ class EffectsOverlayWidget(BaseWidget):
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
             tick = int(float(now) / 2.0)
             # Static scene cache; dynamic shimmer is drawn separately to avoid re-rendering complex artwork.
-            key = ("fullscreen_scenic_static_v23_ambient_air_layer", str(scene_id), w, h, sig)
+            key = ("fullscreen_scenic_static_v25_reflect_existing_clouds", str(scene_id), w, h, sig)
             cache = getattr(self, "_scenic_engine_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
@@ -8090,34 +8159,54 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _render_chichibugahama_static(self, q: QPainter, w: int, h: int):
-        """Lightweight neutral mirror-shore base for real-time sky overlays."""
+        """Neutral Chichibugahama mirror-shore base without local square artifacts.
+
+        The base keeps Chichibugahama weaker than Uyuni, but makes the reflection
+        broad and horizon-aligned.  No puddle/square reflection block is drawn.
+        """
         horizon = h * 0.48
+        q.setPen(Qt.PenStyle.NoPen)
+
         sky = QLinearGradient(QPointF(0, 0), QPointF(0, horizon))
         sky.setColorAt(0.0, QColor("#BFE9FF"))
-        sky.setColorAt(0.62, QColor("#F8FDFF"))
+        sky.setColorAt(0.50, QColor("#F2FBFF"))
         sky.setColorAt(1.0, QColor("#FFF8E8"))
-        q.setPen(Qt.PenStyle.NoPen)
         q.setBrush(QBrush(sky))
         q.drawRect(QRectF(0, 0, w, horizon + 2))
 
+        # Broader mirror base: sky color is reflected into the wet flat rather than
+        # being a separate blue panel.  This strengthens the mirror feeling while
+        # staying softer than the Uyuni preset.
         water = QLinearGradient(QPointF(0, horizon), QPointF(0, h))
-        water.setColorAt(0.0, QColor("#F7FBFF"))
-        water.setColorAt(0.42, QColor("#D8F0F7"))
-        water.setColorAt(1.0, QColor("#8DB4CB"))
+        water.setColorAt(0.0, QColor("#FFF8EA"))
+        water.setColorAt(0.18, QColor("#F0FAFF"))
+        water.setColorAt(0.54, QColor("#CFEAF5"))
+        water.setColorAt(1.0, QColor("#89AFC8"))
         q.setBrush(QBrush(water))
         q.drawRect(QRectF(0, horizon, w, h - horizon))
 
+        # Soft horizon bloom and inverse-sky reflection; full-width only, no local rectangles.
+        bloom = QLinearGradient(QPointF(0, horizon - h * 0.035), QPointF(0, horizon + h * 0.16))
+        bloom.setColorAt(0.0, QColor(255, 255, 255, 0))
+        bloom.setColorAt(0.34, QColor(255, 250, 230, 70))
+        bloom.setColorAt(1.0, QColor(255, 255, 255, 0))
+        q.setBrush(QBrush(bloom))
+        q.drawRect(QRectF(0, horizon - h * 0.035, w, h * 0.20))
+
+        # Thin tidal mirror lines. These give reflection without creating visible boxes.
         q.setBrush(Qt.BrushStyle.NoBrush)
-        for i in range(16):
-            y = horizon + (h - horizon) * (i + 1) / 18.0
-            alpha = max(12, 44 - i * 2)
+        for i in range(18):
+            y = horizon + (h - horizon) * (i + 1) / 21.0
+            alpha = max(10, 52 - i * 2)
             q.setPen(QPen(QColor(255, 255, 255, alpha), 1.0))
-            q.drawLine(QPointF(w * 0.05, y), QPointF(w * 0.95, y + math.sin(i * 0.7) * 1.4))
-        q.setPen(QPen(QColor(115, 122, 122, 42), max(1.0, h * 0.0014)))
+            q.drawLine(QPointF(w * 0.035, y), QPointF(w * 0.965, y + math.sin(i * 0.7) * 1.1))
+
+        # Distant sandbar silhouettes, deliberately low contrast.
+        q.setPen(QPen(QColor(105, 116, 118, 34), max(1.0, h * 0.0013)))
         q.drawLine(QPointF(0, horizon + h * 0.012), QPointF(w, horizon + h * 0.006))
-        q.setPen(QPen(QColor(255, 255, 255, 30), 1.0))
-        q.drawLine(QPointF(0, horizon + h * 0.020), QPointF(w, horizon + h * 0.018))
-        self._draw_soft_vignette(q, w, h, QColor(20, 46, 90, 26))
+        q.setPen(QPen(QColor(255, 255, 255, 34), 1.0))
+        q.drawLine(QPointF(0, horizon + h * 0.021), QPointF(w, horizon + h * 0.018))
+        self._draw_soft_vignette(q, w, h, QColor(20, 46, 90, 22))
 
     def _draw_fullscreen_scenic_dynamic_overlay(self, p: QPainter, r: QRectF, now: float, scene_id: str, tick: int = 0):
         try:
@@ -8192,7 +8281,7 @@ class EffectsOverlayWidget(BaseWidget):
             w = int(max(1, r.width()))
             h = int(max(1, r.height()))
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("sahara_desert_static_v14_ambient_air_layer", w, h, sig)
+            key = ("sahara_desert_static_v16_reflect_existing_clouds", w, h, sig)
             cache = getattr(self, "_sahara_desert_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
@@ -8624,7 +8713,7 @@ class EffectsOverlayWidget(BaseWidget):
             w = int(max(1, r.width()))
             h = int(max(1, r.height()))
             sig = self._vector_settings_signature() if hasattr(self, "_vector_settings_signature") else hash(getattr(self.cfg, "effects_json", ""))
-            key = ("uyuni_static_v13_ambient_air_layer", w, h, sig)
+            key = ("uyuni_static_v15_reflect_existing_clouds", w, h, sig)
             cache = getattr(self, "_scenic_engine_cache", {})
             img = cache.get(key)
             if img is None or img.isNull():
@@ -15642,7 +15731,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -15811,7 +15900,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -16207,7 +16296,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.6"))
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.0.7"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -17346,7 +17435,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v2.0.6 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v2.0.7 を使用しています。"
         )
 
         self.performance_text.setPlainText(
@@ -21701,3 +21790,9 @@ DesktopCanvas.keyPressEvent = _lds_alt_r_keyPressEvent
 
 if __name__ == "__main__":
     main()
+
+def _lds_safe_clamp(val, mn, mx):
+    try:
+        return max(mn, min(mx, val))
+    except Exception:
+        return mn
