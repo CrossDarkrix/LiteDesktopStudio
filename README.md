@@ -246,3 +246,9 @@ LiteDesktopStudio includes JSHTML sample packages that demonstrate package widge
 ## License
 
 See the repository license file.
+
+### Desktop priority mode
+
+v2.1.2 also adds a small desktop operation priority mode. Press `Alt + D` to toggle it. When enabled, LiteDesktopStudio tries to keep widgets visible while passing mouse operations through to the desktop as much as possible.
+
+This is useful when overlay effects or transparent widgets are visible but you want to temporarily prioritize normal desktop interaction. A small Windows native hotkey fix is included so `Alt + D` can be used to exit the mode even after mouse input has been made transparent. The Windows hotkey code explicitly imports `ctypes.wintypes` to avoid startup log noise from `ctypes.wintypes.MSG` access.

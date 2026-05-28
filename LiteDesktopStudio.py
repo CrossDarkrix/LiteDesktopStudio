@@ -1,6 +1,7 @@
 import asyncio
 import calendar as py_calendar
 import ctypes
+import ctypes.wintypes
 import json
 import math
 import random
@@ -38,6 +39,7 @@ from PySide6.QtCore import (QFileInfo,
     QRect,
     QCoreApplication,
     QTranslator,
+    QAbstractNativeEventFilter,
     QLocale,
 
 )
@@ -186,6 +188,10 @@ LDS_BUILTIN_TRANSLATIONS = {
         "🧰 その他のツールを開く": "🧰 Open Other Tools",
         "Lite Desktop Studio v2.1.1 - その他のツール": "Lite Desktop Studio v2.1.1 - Other Tools",
         "JSHTML package、画像変換、HTML/JSON/JavaScript編集、診断などの補助機能を開きます。\n\n右側のプロパティに詰め込みすぎず、今後ツールが増えてもこの画面から管理できるようにします。": "Open helper tools such as JSHTML package utilities, image conversion, HTML/JSON/JavaScript editing, and diagnostics.\n\nInstead of packing too much into the right-side properties panel, this screen keeps future tools organized in one place.",
+
+        "デスクトップ操作優先モード": "Desktop priority mode",
+        "デスクトップ操作優先モードをONにしました。LiteDesktopStudioは表示を優先し、マウス操作をできるだけデスクトップへ通します。": "Desktop priority mode is ON. LiteDesktopStudio prioritizes display and tries to pass mouse operations to the desktop.",
+        "デスクトップ操作優先モードをOFFにしました。": "Desktop priority mode is OFF.",
     },
     "ja": {},
 }
@@ -16265,7 +16271,8 @@ class JSHtmlViewManager:
         r = widget.rect
         view.setGeometry(int(r.left()), int(r.top()), max(1, int(r.width())), max(1, int(r.height())))
         edit_mode = bool(getattr(self.canvas, "edit_mode", True))
-        view.setAttribute(Qt.WA_TransparentForMouseEvents, edit_mode)
+        desktop_priority = bool(getattr(self.canvas, "desktop_priority_mode", False))
+        view.setAttribute(Qt.WA_TransparentForMouseEvents, edit_mode or desktop_priority)
         key = id(widget)
         mode = str(getattr(cfg, "jshtml_mode", "inline") or "inline").lower()
         if mode == "package":
@@ -22626,6 +22633,79 @@ class BackgroundEffectsCanvas(QWidget):
         except Exception:
             pass
 
+
+class DesktopPriorityHotkeyFilter(QAbstractNativeEventFilter):
+    """Windows native Alt+D hotkey so desktop priority mode can be turned off
+    even when the main transparent canvas is no longer receiving mouse/key focus.
+    """
+    WM_HOTKEY = 0x0312
+    MOD_ALT = 0x0001
+    VK_D = 0x44
+    HOTKEY_ID = 0x4C445344  # LDSD
+
+    def __init__(self, canvas):
+        super().__init__()
+        self.canvas = canvas
+        self.registered = False
+
+    def register(self) -> bool:
+        if not is_windows():
+            return False
+        try:
+            user32 = ctypes.windll.user32
+            # Clean up a stale registration for the same process/id first.
+            try:
+                user32.UnregisterHotKey(None, self.HOTKEY_ID)
+            except Exception:
+                pass
+            self.registered = bool(user32.RegisterHotKey(None, self.HOTKEY_ID, self.MOD_ALT, self.VK_D))
+            if not self.registered:
+                try:
+                    print("[LiteDesktopStudio] RegisterHotKey Alt+D failed")
+                except:
+                    pass
+            return self.registered
+        except Exception as e:
+            try:
+                print("[LiteDesktopStudio] RegisterHotKey Alt+D error:", repr(e))
+            except:
+                pass
+            self.registered = False
+            return False
+
+    def unregister(self):
+        if not is_windows() or not self.registered:
+            return
+        try:
+            ctypes.windll.user32.UnregisterHotKey(None, self.HOTKEY_ID)
+        except Exception as e:
+            try:
+                print("[LiteDesktopStudio] UnregisterHotKey Alt+D error:", repr(e))
+            except:
+                pass
+        self.registered = False
+
+    def nativeEventFilter(self, eventType, message):
+        try:
+            if not self.registered:
+                return False, 0
+            try:
+                address = int(message)
+            except Exception:
+                address = message.__int__()
+            msg = ctypes.wintypes.MSG.from_address(address)
+            if msg.message == self.WM_HOTKEY and int(msg.wParam) == self.HOTKEY_ID:
+                canvas = self.canvas
+                if canvas is not None:
+                    QTimer.singleShot(0, canvas.toggle_desktop_priority_mode)
+                return True, 0
+        except Exception as e:
+            try:
+                print("[LiteDesktopStudio] native Alt+D hotkey failed:", repr(e))
+            except:
+                pass
+        return False, 0
+
 class DesktopCanvas(QWidget):
     def __init__(self):
         super().__init__()
@@ -22667,6 +22747,8 @@ class DesktopCanvas(QWidget):
         self.effect_sun_drag_offset = QPointF(0.0, 0.0)
         self.effect_sun_drag_kind = "sun"
         self.edit_mode = False
+        self.desktop_priority_mode = False
+        self.desktop_priority_hotkey_filter = None
         self.last_right_click_time = 0.0
         self.last_right_click_widget = None
         self.right_double_click_interval = QApplication.doubleClickInterval() / 1000.0
@@ -22681,6 +22763,7 @@ class DesktopCanvas(QWidget):
         self.dark_mode = WindowsTheme.is_dark_mode()
 
         self.load_config()
+        self.install_desktop_priority_hotkey()
         try:
             if self.background_effects_canvas is not None:
                 self.background_effects_canvas.sync_to_foreground()
@@ -22766,6 +22849,15 @@ class DesktopCanvas(QWidget):
             return False
 
     def update_platform_hit_mask(self):
+        if bool(getattr(self, "desktop_priority_mode", False)):
+            try:
+                self.setMask(QRegion(QRect(0, 0, 1, 1)))
+            except:
+                try:
+                    self.clearMask()
+                except:
+                    pass
+            return
         if is_windows():
             try:
                 self.clearMask()
@@ -22805,6 +22897,140 @@ class DesktopCanvas(QWidget):
 
         except Exception as e:
             print("[DesktopCanvas] update_platform_hit_mask failed:", repr(e))
+
+    def install_desktop_priority_hotkey(self):
+        if not is_windows():
+            return False
+        try:
+            if self.desktop_priority_hotkey_filter is not None:
+                return True
+            hotkey_filter = DesktopPriorityHotkeyFilter(self)
+            if hotkey_filter.register():
+                app = QApplication.instance()
+                if app is not None:
+                    app.installNativeEventFilter(hotkey_filter)
+                    self.desktop_priority_hotkey_filter = hotkey_filter
+                    return True
+            return False
+        except Exception as e:
+            try:
+                print("[LiteDesktopStudio] install_desktop_priority_hotkey failed:", repr(e))
+            except:
+                pass
+            return False
+
+    def uninstall_desktop_priority_hotkey(self):
+        try:
+            hotkey_filter = getattr(self, "desktop_priority_hotkey_filter", None)
+            if hotkey_filter is None:
+                return
+            app = QApplication.instance()
+            if app is not None:
+                try:
+                    app.removeNativeEventFilter(hotkey_filter)
+                except:
+                    pass
+            try:
+                hotkey_filter.unregister()
+            except:
+                pass
+            self.desktop_priority_hotkey_filter = None
+        except Exception as e:
+            try:
+                print("[LiteDesktopStudio] uninstall_desktop_priority_hotkey failed:", repr(e))
+            except:
+                pass
+
+    def reset_input_interaction_state(self):
+        try:
+            self.dragging = False
+            self.dragging_effect_moon = False
+            self.dragging_effect_sun = False
+            self.dragging_effect_ice = False
+            self.dragging_effect_puddle = False
+            self.dragging_effect_puddle_resize = False
+            self.effect_puddle_drag_index = None
+            self.effect_puddle_resize_kind = "corner"
+            self.effect_sun_drag_kind = "sun"
+            self.volume_sliding = False
+            self._lds_icon_proxy_dragging = False
+            self._lds_icon_proxy_blank_press = False
+            self._lds_icon_proxy_drag_items = []
+            self._lds_icon_proxy_drag_moved = False
+            self._lds_icon_proxy_drag_hit = None
+        except Exception as e:
+            try: print("[LiteDesktopStudio] reset_input_interaction_state failed:", repr(e))
+            except: pass
+
+    def set_desktop_priority_mode(self, enabled: bool, show_message: bool = False):
+        enabled = bool(enabled)
+        if bool(getattr(self, "desktop_priority_mode", False)) == enabled:
+            return
+        self.desktop_priority_mode = enabled
+        self.reset_input_interaction_state()
+        if enabled:
+            try:
+                self.edit_mode = False
+            except:
+                pass
+            try:
+                for widget in self.widgets:
+                    widget.selected = False
+                self.selected = None
+            except:
+                pass
+        try:
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, enabled)
+        except:
+            try:
+                self.setAttribute(Qt.WA_TransparentForMouseEvents, enabled)
+            except:
+                pass
+        try:
+            if hasattr(self, "js_html_views"):
+                for view in list(getattr(self.js_html_views, "views", {}).values()):
+                    try:
+                        view.setAttribute(Qt.WA_TransparentForMouseEvents, enabled or bool(getattr(self, "edit_mode", False)))
+                    except:
+                        pass
+        except:
+            pass
+        try:
+            self.update_platform_hit_mask()
+            self.update()
+        except:
+            pass
+        try:
+            self.notify_studio_selection_changed()
+        except:
+            pass
+        if show_message:
+            try:
+                title = lds_tr("デスクトップ操作優先モード")
+                if enabled:
+                    msg = lds_tr("デスクトップ操作優先モードをONにしました。LiteDesktopStudioは表示を優先し、マウス操作をできるだけデスクトップへ通します。")
+                else:
+                    msg = lds_tr("デスクトップ操作優先モードをOFFにしました。")
+                QMessageBox.information(self, title, msg)
+            except:
+                pass
+
+    def toggle_desktop_priority_mode(self):
+        self.set_desktop_priority_mode(not bool(getattr(self, "desktop_priority_mode", False)), show_message=False)
+        try:
+            print("[LiteDesktopStudio] desktop priority mode:", bool(getattr(self, "desktop_priority_mode", False)))
+        except:
+            pass
+
+    def should_yield_keyboard_to_desktop(self, event) -> bool:
+        try:
+            if bool(getattr(self, "desktop_priority_mode", False)):
+                return True
+            if event.key() == Qt.Key.Key_Delete and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                return True
+        except:
+            pass
+        return False
 
     def hide_canvas_for_studio_if_needed(self):
         if is_windows():
@@ -23027,6 +23253,10 @@ class DesktopCanvas(QWidget):
 
     def closeEvent(self, event):
         try:
+            self.uninstall_desktop_priority_hotkey()
+        except Exception:
+            pass
+        try:
             lds_cleanup_background_effects_canvas(self)
         except Exception:
             pass
@@ -23185,6 +23415,12 @@ class DesktopCanvas(QWidget):
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
     def mousePressEvent(self, event):
+        if bool(getattr(self, "desktop_priority_mode", False)):
+            try:
+                event.ignore()
+            except:
+                pass
+            return
         if not self.edit_mode and event.button() == Qt.MouseButton.LeftButton:
             try:
                 pos = event.position().toPoint()
@@ -23348,6 +23584,12 @@ class DesktopCanvas(QWidget):
             return
 
     def mouseMoveEvent(self, event):
+        if bool(getattr(self, "desktop_priority_mode", False)):
+            try:
+                event.ignore()
+            except:
+                pass
+            return
         if not self.edit_mode:
             try:
                 pos = event.position().toPoint()
@@ -23415,6 +23657,12 @@ class DesktopCanvas(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event):
+        if bool(getattr(self, "desktop_priority_mode", False)):
+            try:
+                event.ignore()
+            except:
+                pass
+            return
         if not self.edit_mode and event.button() == Qt.MouseButton.LeftButton and getattr(self, "_lds_icon_proxy_dragging", False):
             try:
                 pos = event.position().toPoint()
@@ -23516,6 +23764,12 @@ class DesktopCanvas(QWidget):
             self.open_studio_for_point(pos)
 
     def wheelEvent(self, event):
+        if bool(getattr(self, "desktop_priority_mode", False)):
+            try:
+                event.ignore()
+            except:
+                pass
+            return
         pos = event.position().toPoint()
 
         target = None
@@ -23542,6 +23796,14 @@ class DesktopCanvas(QWidget):
         super().wheelEvent(event)
 
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_D and (event.modifiers() & Qt.KeyboardModifier.AltModifier):
+            self.toggle_desktop_priority_mode()
+            event.accept()
+            return
+
+        if self.should_yield_keyboard_to_desktop(event):
+            event.ignore()
+            return
 
         if event.key() == Qt.Key.Key_Delete and self.selected:
             self.widgets.remove(self.selected)
@@ -23549,17 +23811,31 @@ class DesktopCanvas(QWidget):
             self.update_platform_hit_mask()
             self.save_config()
             self.update()
+            event.accept()
+            return
 
         elif event.key() == Qt.Key.Key_E:
+            if bool(getattr(self, "desktop_priority_mode", False)):
+                event.ignore()
+                return
             self.edit_mode = not self.edit_mode
             self.update_platform_hit_mask()
             self.update()
+            event.accept()
+            return
 
         elif event.key() == Qt.Key.Key_Escape:
             self.selected = None
             for w in self.widgets:
                 w.selected = False
             self.update()
+            event.accept()
+            return
+
+        try:
+            event.ignore()
+        except:
+            pass
 
     def add_widget(self, kind: str):
         if kind == "visualizer":
@@ -23946,6 +24222,19 @@ _lds_original_desktop_canvas_keyPressEvent = DesktopCanvas.keyPressEvent
 
 
 def _lds_alt_r_keyPressEvent(self, event):
+    if event.key() == Qt.Key.Key_D and (event.modifiers() & Qt.KeyboardModifier.AltModifier):
+        try:
+            self.toggle_desktop_priority_mode()
+            event.accept()
+            return
+        except Exception:
+            pass
+    try:
+        if hasattr(self, "should_yield_keyboard_to_desktop") and self.should_yield_keyboard_to_desktop(event):
+            event.ignore()
+            return
+    except:
+        pass
     if event.key() == Qt.Key.Key_R and (event.modifiers() & Qt.KeyboardModifier.AltModifier):
         self.restore_default_layout(show_message=True)
         event.accept()
