@@ -48,6 +48,9 @@ I also develop Artifacter and LiteDesktopStudio, but I do not have much spare ti
 - **JavaScript HTML widgets**  
   Use Qt WebEngine-based widgets for richer HTML, CSS, and JavaScript experiences.
 
+- **JSHTML Audio API**  
+  JSHTML package widgets can build audio-reactive interfaces using LiteDesktopStudio's cached audio spectrum data.
+
 - **Easy to customize**  
   LiteDesktopStudio is implemented with Python and PySide6, so users who can read the source code can add widgets, modify behavior, or extend settings.
 
@@ -126,6 +129,28 @@ Available API methods:
 - `LDS.listAssets(path)`
 - `LDS.readTextFile(path)`
 
+### JSHTML Audio API
+
+v2.1.1 adds audio-reactive APIs for JSHTML widgets.
+
+```javascript
+await window.LDSReady;
+
+const info = await LDS.getAudioInfo();
+const level = await LDS.getAudioLevel();
+const spectrum = await LDS.getAudioSpectrum();
+```
+
+Available audio API methods:
+
+- `LDS.getAudioInfo()`
+- `LDS.getAudioLevel()`
+- `LDS.getAudioSpectrum()`
+
+The audio API reads LiteDesktopStudio's cached `AudioEngine` spectrum data. JSHTML widgets do not open the audio device directly, which helps avoid device conflicts when multiple widgets are running.
+
+### Compatibility shim
+
 A lightweight asynchronous compatibility shim is also provided:
 
 ```javascript
@@ -151,19 +176,16 @@ When a JavaScript HTML widget is selected, the property panel can show package c
 - ZIP extraction validates paths to reduce traversal risks.
 - URL opening is restricted to `http://` and `https://`.
 - Arbitrary command execution is not exposed.
+- JSHTML Audio API exposes normalized level and spectrum data, not raw recording data.
 
-## Sample package
+## Sample packages
 
-The Anime Sidebar sample package demonstrates:
+LiteDesktopStudio includes JSHTML sample packages that demonstrate package widgets and APIs.
 
-- `widget.json` metadata
-- split `index.html` / `style.css` / `main.js` structure
-- relative asset loading
-- `window.LDSReady` / `window.LDS`
-- persistent widget configuration with `readConfig` / `writeConfig`
-- CPU, RAM, and disk usage display through `getSystemInfo`
-- theme persistence
-- asset listing and `widget.json` reading
+| Sample | Purpose |
+|---|---|
+| Anime Sidebar Sample | Visual package demo with `widget.json`, assets, theme persistence, and CPU/RAM/DISK display. |
+| Audio Reactive Bars | Audio-reactive bar visualizer using `LDS.getAudioInfo()`, `LDS.getAudioLevel()`, and `LDS.getAudioSpectrum()`. |
 
 ## Configuration file location
 
@@ -174,6 +196,7 @@ The Anime Sidebar sample package demonstrates:
 
 - Multilingual support
 - Implement as many features as possible within the range supported by PySide6
+- More JSHTML sample packages and API examples
 
 ## License
 
