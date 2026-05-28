@@ -51,6 +51,9 @@ I also develop Artifacter and LiteDesktopStudio, but I do not have much spare ti
 - **JSHTML Audio API**  
   JSHTML package widgets can build audio-reactive interfaces using LiteDesktopStudio's cached audio spectrum data.
 
+- **Other Tools window**  
+  v2.1.2 adds a dedicated tools window for JSHTML package building, image conversion, HTML/JSON/JavaScript editing, and diagnostics.
+
 - **Easy to customize**  
   LiteDesktopStudio is implemented with Python and PySide6, so users who can read the source code can add widgets, modify behavior, or extend settings.
 
@@ -131,7 +134,7 @@ Available API methods:
 
 ### JSHTML Audio API
 
-v2.1.1 adds audio-reactive APIs for JSHTML widgets.
+v2.1.1 added audio-reactive APIs for JSHTML widgets.
 
 ```javascript
 await window.LDSReady;
@@ -170,13 +173,43 @@ When a JavaScript HTML widget is selected, the property panel can show package c
 - reload JSHTML widget
 - return to inline mode
 
-### Security notes
+### JSHTML right-click behavior
 
-- Widget file access is limited to each widget's dedicated directory.
-- ZIP extraction validates paths to reduce traversal risks.
-- URL opening is restricted to `http://` and `https://`.
-- Arbitrary command execution is not exposed.
-- JSHTML Audio API exposes normalized level and spectrum data, not raw recording data.
+v2.1.2 improves the JSHTML widget right-click behavior. The WebEngine default context menu is suppressed, and right-click twice on a JSHTML widget opens the LiteDesktopStudio settings panel instead of showing browser-style actions such as reload.
+
+## Other Tools
+
+v2.1.2 replaces the old performance information area with a dedicated **Other Tools** window. The goal is to keep the main properties panel clean while providing a place for future utilities.
+
+Current tool groups:
+
+| Tool group | Purpose |
+|---|---|
+| Package | Validate a JSHTML package folder and pack real files into a ZIP package. |
+| Image | Convert SVG to PNG and convert PNG frame folders into SVG frame sequences. |
+| Editors | Edit HTML, JSON / `widget.json`, and JavaScript files with open/save dialogs. |
+| Diagnostics | Show basic JSHTML, WebEngine, selected widget, and audio backend information. |
+
+### Image tools
+
+The Image tab includes:
+
+- **SVG → PNG** conversion
+- **PNG → SVG frames** conversion for `frame_000.svg`, `frame_001.svg`, ... style animation packages
+- Worker-thread based conversion for heavier image operations
+- Cancel support for PNG frame conversion
+
+The PNG-to-SVG frame tool is intended for low-resolution, limited-color frame images such as pixel art, icons, and simple sidebar-style animation frames. Large photos or highly detailed gradients may generate heavy SVG files.
+
+### Editors
+
+The Editors tab includes:
+
+- HTML Editor
+- JSON / `widget.json` Editor with formatting and validation
+- JavaScript Editor
+
+These editors are meant as lightweight helper tools for JSHTML package development.
 
 ## Sample packages
 
@@ -186,6 +219,17 @@ LiteDesktopStudio includes JSHTML sample packages that demonstrate package widge
 |---|---|
 | Anime Sidebar Sample | Visual package demo with `widget.json`, assets, theme persistence, and CPU/RAM/DISK display. |
 | Audio Reactive Bars | Audio-reactive bar visualizer using `LDS.getAudioInfo()`, `LDS.getAudioLevel()`, and `LDS.getAudioSpectrum()`. |
+| Sequential Image Animator | Numbered-frame animation sample using `LDS.listAssets()` and image swapping. |
+| Sequential Image Animator Transparent | Transparent-background version designed for videos and sidebar-style demos. Supports SVG/PNG/JPG/WebP frames. |
+
+## Security notes
+
+- Widget file access is limited to each widget's dedicated directory.
+- ZIP extraction validates paths to reduce traversal risks.
+- URL opening is restricted to `http://` and `https://`.
+- Arbitrary command execution is not exposed.
+- JSHTML Audio API exposes normalized level and spectrum data, not raw recording data.
+- Package ZIP Builder ignores symlinks by default to avoid unintentionally packing files outside the package folder.
 
 ## Configuration file location
 
@@ -197,6 +241,7 @@ LiteDesktopStudio includes JSHTML sample packages that demonstrate package widge
 - Multilingual support
 - Implement as many features as possible within the range supported by PySide6
 - More JSHTML sample packages and API examples
+- More tools in the Other Tools window
 
 ## License
 
