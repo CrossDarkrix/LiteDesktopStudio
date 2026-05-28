@@ -116,7 +116,7 @@ warnings.filterwarnings(
     category=Warning
 )
 
-APP_NAME = "Lite Desktop Studio v2.1.0"
+APP_NAME = "Lite Desktop Studio v2.1.1"
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
 
 
@@ -888,7 +888,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0 - エフェクト設定"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.1 - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)
@@ -6252,6 +6252,61 @@ class AudioEngine:
     def get_spectrum(self) -> np.ndarray:
         with self.lock:
             return self.spectrum.copy()
+
+    def get_audio_snapshot(self) -> dict:
+        """Return a normalized audio snapshot for visualizers and JSHTML widgets.
+
+        The audio capture thread owns the soundcard recorder. Consumers should read
+        this cached snapshot instead of opening another recorder, so multiple
+        widgets do not compete for the same audio device.
+        """
+        try:
+            spectrum = self.get_spectrum()
+            arr = np.asarray(spectrum, dtype=np.float32)
+
+            if arr.size <= 0:
+                return {
+                    "ok": True,
+                    "bands": [],
+                    "bandCount": 0,
+                    "level": 0.0,
+                    "peak": 0.0,
+                    "rms": 0.0,
+                    "backend": self.backend_name,
+                    "useFake": bool(self.use_fake),
+                    "running": bool(self.running),
+                    "timestamp": time.time(),
+                }
+
+            arr = np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0)
+            arr = np.clip(arr, 0.0, 1.0)
+
+            return {
+                "ok": True,
+                "bands": arr.tolist(),
+                "bandCount": int(arr.size),
+                "level": float(np.mean(arr)),
+                "peak": float(np.max(arr)),
+                "rms": float(np.sqrt(np.mean(arr * arr))),
+                "backend": self.backend_name,
+                "useFake": bool(self.use_fake),
+                "running": bool(self.running),
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "bands": [],
+                "bandCount": 0,
+                "level": 0.0,
+                "peak": 0.0,
+                "rms": 0.0,
+                "backend": self.backend_name,
+                "useFake": bool(self.use_fake),
+                "running": bool(self.running),
+                "timestamp": time.time(),
+                "error": repr(e),
+            }
 
     def _run(self):
         try:
@@ -15513,7 +15568,10 @@ def _jshtml_api_bootstrap() -> str:
         openUrl: async function (url) { return parseJson(await raw.openUrl(String(url))); },
         getLocalAssetUrl: async function (path) { return parseJson(await raw.getLocalAssetUrl(String(path))); },
         listAssets: async function (path) { return parseJson(await raw.listAssets(String(path || "assets"))); },
-        readTextFile: async function (path) { return parseJson(await raw.readTextFile(String(path))); }
+        readTextFile: async function (path) { return parseJson(await raw.readTextFile(String(path))); },
+        getAudioInfo: async function () { return parseJson(await raw.getAudioInfo()); },
+        getAudioLevel: async function () { return parseJson(await raw.getAudioLevel()); },
+        getAudioSpectrum: async function () { return parseJson(await raw.getAudioSpectrum()); }
       };
 
       window.System = window.System || {};
@@ -15732,6 +15790,148 @@ class JSHtmlWidgetApi(QObject):
             return self._result(True, items=items)
         except Exception as e:
             return self._result(False, error=repr(e), items=[])
+
+    def _get_audio_engine(self):
+        try:
+            audio = getattr(self.canvas, "audio", None)
+            if audio is not None:
+                return audio
+        except:
+            pass
+        return None
+
+    def _get_audio_snapshot(self) -> dict:
+        audio = self._get_audio_engine()
+        if audio is None:
+            return {
+                "ok": False,
+                "available": False,
+                "bands": [],
+                "bandCount": 0,
+                "level": 0.0,
+                "peak": 0.0,
+                "rms": 0.0,
+                "backend": "unavailable",
+                "useFake": False,
+                "running": False,
+                "timestamp": time.time(),
+                "error": "audio engine is not available",
+            }
+
+        try:
+            if hasattr(audio, "get_audio_snapshot"):
+                snapshot = audio.get_audio_snapshot()
+                if isinstance(snapshot, dict):
+                    return snapshot
+        except Exception as e:
+            return {
+                "ok": False,
+                "available": True,
+                "bands": [],
+                "bandCount": 0,
+                "level": 0.0,
+                "peak": 0.0,
+                "rms": 0.0,
+                "backend": getattr(audio, "backend_name", "unknown"),
+                "useFake": bool(getattr(audio, "use_fake", False)),
+                "running": bool(getattr(audio, "running", False)),
+                "timestamp": time.time(),
+                "error": repr(e),
+            }
+
+        try:
+            spectrum = audio.get_spectrum()
+            arr = np.asarray(spectrum, dtype=np.float32)
+            arr = np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0)
+            arr = np.clip(arr, 0.0, 1.0)
+            if arr.size <= 0:
+                bands = []
+                level = peak = rms = 0.0
+            else:
+                bands = arr.tolist()
+                level = float(np.mean(arr))
+                peak = float(np.max(arr))
+                rms = float(np.sqrt(np.mean(arr * arr)))
+            return {
+                "ok": True,
+                "available": True,
+                "bands": bands,
+                "bandCount": int(len(bands)),
+                "level": level,
+                "peak": peak,
+                "rms": rms,
+                "backend": getattr(audio, "backend_name", "unknown"),
+                "useFake": bool(getattr(audio, "use_fake", False)),
+                "running": bool(getattr(audio, "running", False)),
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "available": True,
+                "bands": [],
+                "bandCount": 0,
+                "level": 0.0,
+                "peak": 0.0,
+                "rms": 0.0,
+                "backend": getattr(audio, "backend_name", "unknown"),
+                "useFake": bool(getattr(audio, "use_fake", False)),
+                "running": bool(getattr(audio, "running", False)),
+                "timestamp": time.time(),
+                "error": repr(e),
+            }
+
+    @Slot(result=str)
+    def getAudioInfo(self) -> str:
+        snapshot = self._get_audio_snapshot()
+        return self._result(
+            bool(snapshot.get("ok", False)),
+            available=bool(snapshot.get("available", snapshot.get("ok", False))),
+            backend=snapshot.get("backend", "unknown"),
+            useFake=bool(snapshot.get("useFake", False)),
+            running=bool(snapshot.get("running", False)),
+            bars=int(snapshot.get("bandCount", 0) or 0),
+            timestamp=float(snapshot.get("timestamp", 0.0) or 0.0),
+            error=snapshot.get("error", "")
+        )
+
+    @Slot(result=str)
+    def getAudioLevel(self) -> str:
+        snapshot = self._get_audio_snapshot()
+        return self._result(
+            bool(snapshot.get("ok", False)),
+            available=bool(snapshot.get("available", snapshot.get("ok", False))),
+            level=float(snapshot.get("level", 0.0) or 0.0),
+            peak=float(snapshot.get("peak", 0.0) or 0.0),
+            rms=float(snapshot.get("rms", 0.0) or 0.0),
+            bars=int(snapshot.get("bandCount", 0) or 0),
+            backend=snapshot.get("backend", "unknown"),
+            useFake=bool(snapshot.get("useFake", False)),
+            running=bool(snapshot.get("running", False)),
+            timestamp=float(snapshot.get("timestamp", 0.0) or 0.0),
+            error=snapshot.get("error", "")
+        )
+
+    @Slot(result=str)
+    def getAudioSpectrum(self) -> str:
+        snapshot = self._get_audio_snapshot()
+        bands = snapshot.get("bands", [])
+        if not isinstance(bands, list):
+            bands = []
+        return self._result(
+            bool(snapshot.get("ok", False)),
+            available=bool(snapshot.get("available", snapshot.get("ok", False))),
+            bands=bands,
+            bandCount=int(snapshot.get("bandCount", len(bands)) or 0),
+            level=float(snapshot.get("level", 0.0) or 0.0),
+            peak=float(snapshot.get("peak", 0.0) or 0.0),
+            rms=float(snapshot.get("rms", 0.0) or 0.0),
+            backend=snapshot.get("backend", "unknown"),
+            useFake=bool(snapshot.get("useFake", False)),
+            running=bool(snapshot.get("running", False)),
+            timestamp=float(snapshot.get("timestamp", 0.0) or 0.0),
+            error=snapshot.get("error", "")
+        )
 
     @Slot(str, result=str)
     def readTextFile(self, relative_path: str) -> str:
@@ -16329,7 +16529,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.1 - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)
@@ -16553,7 +16753,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0"))
+        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.1"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -16949,7 +17149,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.0"))
+            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.1"))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -18257,7 +18457,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v2.1.0 を使用しています。"
+            f"Theme: {theme} | Lite Desktop Studio v2.1.1 を使用しています。"
         )
 
         self.performance_text.setPlainText(
