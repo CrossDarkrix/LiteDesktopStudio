@@ -99,6 +99,7 @@ from PySide6.QtWebChannel import QWebChannel
 
 from litedesktopstudio.core import *
 from litedesktopstudio.effects import *
+from litedesktopstudio.version import APP_NAME
 
 
 class EffectsOverlayEditorDialog(QDialog):
@@ -120,7 +121,7 @@ class EffectsOverlayEditorDialog(QDialog):
         ensure_effect_overlay_fields(self.cfg)
         self.settings = get_effect_overlay_settings(self.cfg)
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.3 - エフェクト設定"))
+        self.setWindowTitle(lds_tr(f"{APP_NAME} - エフェクト設定"))
         self.resize(760, 760)
 
         outer = QVBoxLayout(self)

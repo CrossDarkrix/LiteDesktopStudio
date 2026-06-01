@@ -102,6 +102,7 @@ from litedesktopstudio.effects import *
 from litedesktopstudio.runtime import *
 from litedesktopstudio.widgets import *
 from litedesktopstudio.jshtml import *
+from litedesktopstudio.version import APP_NAME
 
 
 def _lds_set_non_native_file_dialog(dialog):
@@ -1024,7 +1025,7 @@ class OtherToolsDialog(QDialog):
             self.setWindowOpacity(get_studio_window_opacity(theme))
         except:
             pass
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.2 - その他のツール"))
+        self.setWindowTitle(lds_tr(f"{APP_NAME} - その他のツール"))
         self.resize(860, 720)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -1050,7 +1051,7 @@ class WidgetEditor(QDialog):
     def __init__(self, widget: BaseWidget, parent=None):
         super().__init__(parent)
         self.widget = widget
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.2 - ウィジェット編集"))
+        self.setWindowTitle(lds_tr(f"{APP_NAME} - ウィジェット編集"))
         self.resize(520, 420)
 
         layout = QFormLayout(self)

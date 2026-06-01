@@ -96,6 +96,7 @@ except:
     QOpenGLWidget = None
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
+from litedesktopstudio.version import APP_NAME
 
 
 
@@ -120,9 +121,6 @@ def lds_tr(text: str) -> str:
         return table.get(source, translated or source)
     except:
         return translated or source
-
-
-APP_NAME = "Lite Desktop Studio v2.1.3"
 
 
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), "LiteDesktopStudio_config.json")
@@ -195,7 +193,7 @@ LDS_BUILTIN_TRANSLATIONS = {
                 "留園のような落ち着く感じ": "Calm feeling like the Lingering Garden",
         "🧰 その他のツール": "🧰 Other Tools",
         "🧰 その他のツールを開く": "🧰 Open Other Tools",
-        "Lite Desktop Studio v2.1.1 - その他のツール": "Lite Desktop Studio v2.1.1 - Other Tools",
+        "{} - その他のツール".format(APP_NAME): "{} - Other Tools".format(APP_NAME),
         "JSHTML package、画像変換、HTML/JSON/JavaScript編集、診断などの補助機能を開きます。\n\n右側のプロパティに詰め込みすぎず、今後ツールが増えてもこの画面から管理できるようにします。": "Open helper tools such as JSHTML package utilities, image conversion, HTML/JSON/JavaScript editing, and diagnostics.\n\nInstead of packing too much into the right-side properties panel, this screen keeps future tools organized in one place.",
 
         "デスクトップ操作優先モード": "Desktop priority mode",

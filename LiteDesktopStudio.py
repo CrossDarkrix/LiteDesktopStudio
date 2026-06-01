@@ -147,6 +147,7 @@ from litedesktopstudio.widgets import *
 from litedesktopstudio.jshtml import *
 from litedesktopstudio.tools import *
 from litedesktopstudio.effects_editor import *
+from litedesktopstudio.version import APP_NAME
 
 
 from litedesktopstudio.core import (
@@ -7917,7 +7918,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.3"))
+        self.setWindowTitle(lds_tr(APP_NAME))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -8313,7 +8314,7 @@ class LiteDeskStudio(QMainWindow):
     def apply_language_to_existing_ui(self):
         """Retranslate existing widgets in-place without changing layout geometry."""
         try:
-            self.setWindowTitle(lds_tr("Lite Desktop Studio v2.1.3"))
+            self.setWindowTitle(lds_tr(APP_NAME))
             try:
                 self.canvas.setWindowTitle(lds_tr(APP_NAME))
             except:
@@ -9638,7 +9639,7 @@ class LiteDeskStudio(QMainWindow):
         theme = "Dark" if self.canvas.dark_mode else "Light"
 
         self.status_label.setText(
-            f"Theme: {theme} | Lite Desktop Studio v2.1.3 を使用しています。"
+            f"Theme: {theme} | {APP_NAME} を使用しています。"
         )
 
     def apply_studio_theme_stylesheet(self, studio, theme):
