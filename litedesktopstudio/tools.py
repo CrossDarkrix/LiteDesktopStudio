@@ -1,106 +1,32 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import asyncio
-import concurrent.futures
-import calendar as py_calendar
-import ctypes
-import ctypes.wintypes
-import json
-import math
-import random
-import os
-import shutil
-import queue
-import sys
-import threading
-import time
-import urllib.parse
-import urllib.request
-import warnings
-import uuid
-import webbrowser
-import zipfile
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
-from pathlib import Path
 
-import numpy as np
-import psutil
-import soundcard as sc
-from PySide6.QtCore import (QFileInfo,
-    QObject,
-    Signal,
-    Slot,
-    Qt,
-    QRectF,
-    QPoint,
-    QTimer,
-    QThread,
-    QEvent,
-    QUrl,
-    QPointF,
-    QRect,
-    QCoreApplication,
-    QTranslator,
-    QAbstractNativeEventFilter,
-    QLocale,
-)
+from PySide6.QtCore import (QThread,
+                            )
 from PySide6.QtGui import (
-    QColor,
-    QPainter,
-    QFont,
-    QPen,
-    QIcon,
-    QBrush,
-    QRadialGradient,
-    QLinearGradient,
-    QTextDocument,
-    QPainterPath,
-    QImage,
-    QPixmap,
-    QRegion,
-    QSurfaceFormat,
-    QOpenGLContext,
-    QOffscreenSurface,
-    QFontMetrics,
     QDesktopServices,
 )
-from PySide6.QtWidgets import (QStyle, QFileIconProvider,
-    QApplication,
-    QWidget,
-    QMainWindow,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QColorDialog,
-    QFileDialog,
-    QSpinBox,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QMessageBox,
-    QListWidget,
-    QCheckBox,
-    QGridLayout,
-    QScrollArea,
-    QDoubleSpinBox,
-    QComboBox,
-    QTabWidget,
-    QGroupBox,
-)
+from PySide6.QtWidgets import (QWidget,
+                               QVBoxLayout,
+                               QHBoxLayout,
+                               QPushButton,
+                               QTextEdit,
+                               QColorDialog,
+                               QFileDialog,
+                               QSpinBox,
+                               QDialog,
+                               QFormLayout,
+                               QLineEdit,
+                               QMessageBox,
+                               QCheckBox,
+                               QTabWidget,
+                               )
+
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except:
     QOpenGLWidget = None
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebChannel import QWebChannel
 
-from litedesktopstudio.core import *
-from litedesktopstudio.effects import *
-from litedesktopstudio.runtime import *
-from litedesktopstudio.widgets import *
 from litedesktopstudio.jshtml import *
 from litedesktopstudio.version import APP_NAME
 
@@ -110,7 +36,7 @@ def _lds_set_non_native_file_dialog(dialog):
         dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
     except AttributeError:
         try:
-            dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+            dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
         except:
             pass
 
@@ -526,7 +452,7 @@ class SvgToPngWorker(QObject):
             if height <= 0:
                 height = 512
             image = QImage(width, height, QImage.Format.Format_ARGB32)
-            image.fill(Qt.transparent if self.transparent else QColor("white"))
+            image.fill(Qt.GlobalColor.transparent if self.transparent else QColor("white"))
             painter = QPainter(image)
             renderer.render(painter)
             painter.end()
@@ -1130,7 +1056,7 @@ class WidgetEditor(QDialog):
             try:
                 dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
             except AttributeError:
-                dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+                dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
 
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return

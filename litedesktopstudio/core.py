@@ -1,113 +1,36 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import asyncio
-import concurrent.futures
-import calendar as py_calendar
-import ctypes
-import ctypes.wintypes
+
 import json
-import math
-import random
 import os
-import shutil
-import queue
 import sys
 import threading
-import time
-import urllib.parse
-import urllib.request
-import warnings
-import uuid
-import webbrowser
-import zipfile
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
-from pathlib import Path
+from typing import List, Dict
 
-import numpy as np
-import psutil
-import soundcard as sc
-from PySide6.QtCore import (QFileInfo,
-    QObject,
-    Signal,
-    Slot,
-    Qt,
-    QRectF,
-    QPoint,
-    QTimer,
-    QThread,
-    QEvent,
-    QUrl,
-    QPointF,
-    QRect,
-    QCoreApplication,
-    QTranslator,
-    QAbstractNativeEventFilter,
-    QLocale,
-)
+from PySide6.QtCore import (Qt,
+                            QCoreApplication,
+                            QTranslator,
+                            QLocale,
+                            )
 from PySide6.QtGui import (
     QColor,
-    QPainter,
-    QFont,
-    QPen,
-    QIcon,
-    QBrush,
-    QRadialGradient,
-    QLinearGradient,
-    QTextDocument,
-    QPainterPath,
-    QImage,
-    QPixmap,
-    QRegion,
     QSurfaceFormat,
     QOpenGLContext,
     QOffscreenSurface,
-    QFontMetrics,
-    QDesktopServices,
 )
-from PySide6.QtWidgets import (QStyle, QFileIconProvider,
-    QApplication,
-    QWidget,
-    QMainWindow,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QColorDialog,
-    QFileDialog,
-    QSpinBox,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QMessageBox,
-    QListWidget,
-    QCheckBox,
-    QGridLayout,
-    QScrollArea,
-    QDoubleSpinBox,
-    QComboBox,
-    QTabWidget,
-    QGroupBox,
-)
+from PySide6.QtWidgets import (QApplication,
+                               QLabel,
+                               )
+
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except:
     QOpenGLWidget = None
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebChannel import QWebChannel
 from litedesktopstudio.version import APP_NAME
 
 
 
 def lds_tr(text: str) -> str:
-    """Translate UI text.
-
-    Primary path: Qt .qm translation files.
-    Fallback path: a small built-in dictionary for labels added by this file,
-    so cloud-related controls remain usable in Japanese or English even when
-    external translation files are not installed.
-    """
     source = str(text)
     try:
         translated = QApplication.translate("LiteDesktopStudio", source)
@@ -212,13 +135,6 @@ def _lds_app_base_dir() -> str:
 
 
 def _lds_normalize_lang(lang=None) -> str:
-    """Normalize language names used by QTranslator.
-
-    Priority when *lang* is not specified:
-    1. LITEDESKTOPSTUDIO_LANG environment variable
-    2. --lang / --language / --locale command-line option
-    3. LDS_DEFAULT_LANGUAGE (English)
-    """
     try:
         value = (lang or "").strip()
     except:
@@ -345,7 +261,6 @@ def get_litedesktopstudio_translator_path() -> str:
 
 
 def load_litedesktopstudio_language_preference(default=None) -> str:
-    """Read saved language from LiteDesktopStudio_config.json; fallback is English."""
     try:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -359,7 +274,6 @@ def load_litedesktopstudio_language_preference(default=None) -> str:
 
 
 def save_litedesktopstudio_language_preference(lang: str) -> bool:
-    """Persist language without touching widget settings when possible."""
     try:
         data = {}
         if os.path.exists(CONFIG_PATH):
@@ -479,12 +393,6 @@ def _safe_qt_app_attr(name: str):
 
 
 def configure_effect_gpu_backend_before_app(force: bool = True) -> bool:
-    """Configure Qt's GPU-friendly rendering path before QApplication is created.
-
-    This does not rewrite every QPainter primitive into custom shaders. It enables
-    Qt's OpenGL/RHI-friendly application attributes and default surface format so
-    supported systems can use GPU-backed composition and pixmap/image paths.
-    """
     if str(os.environ.get(EFFECT_GPU_ENV_FLAG, "1")).lower() in ("0", "false", "off", "no"):
         EFFECT_GPU_STATUS.update({"requested": False, "configured": False, "message": lds_tr("環境変数でGPU支援描画が無効です")})
         return False
@@ -515,7 +423,6 @@ def configure_effect_gpu_backend_before_app(force: bool = True) -> bool:
 
 
 def detect_effect_gpu_backend() -> Dict[str, object]:
-    """Best-effort OpenGL availability check after QApplication is available."""
     status = dict(EFFECT_GPU_STATUS)
     try:
         surface = QOffscreenSurface()
@@ -600,25 +507,12 @@ def get_next_studio_theme(value):
 
 
 def get_studio_theme_label(value, lang=None):
-    """Return a Studio theme label for the current UI language.
-
-    Important: this must be evaluated at display time, not at module import time.
-    QTranslator is installed after QApplication is created, so translating theme
-    labels in a global dictionary would freeze them in the wrong language.
-    """
     value = normalize_studio_theme(value)
     source_label = STUDIO_THEME_LABEL_SOURCES.get(value, STUDIO_THEME_LABEL_SOURCES[DEFAULT_STUDIO_THEME])
     fallback_label = STUDIO_THEME_LABEL_FALLBACKS.get(value, STUDIO_THEME_LABEL_FALLBACKS[DEFAULT_STUDIO_THEME])
     locale_name = _lds_normalize_lang(lang or get_litedesktopstudio_language())
-
-    # Japanese is the source UI language. When Japanese is selected, return the
-    # Japanese source label directly, e.g. "リキッドグラス".
     if _lds_is_source_language(locale_name):
         return source_label
-
-    # For English or other languages, prefer the .qm translation for the
-    # Japanese source label. If that entry is not in the .qm file, use a safe
-    # built-in English fallback so labels never stay Japanese in English mode.
     translated = lds_tr(source_label)
     if translated and translated != source_label:
         return translated
@@ -641,7 +535,6 @@ def get_studio_window_opacity(theme):
 
 
 def _qss_rgba(hex_color: str, alpha: int = 255) -> str:
-    """Return rgba(r,g,b,a) for Qt style sheets. Keeps UI styling robust."""
     try:
         c = QColor(str(hex_color or "#FFFFFF"))
         return f"rgba({c.red()}, {c.green()}, {c.blue()}, {max(0, min(255, int(alpha)))})"
@@ -650,12 +543,6 @@ def _qss_rgba(hex_color: str, alpha: int = 255) -> str:
 
 
 def get_studio_settings_palette(theme):
-    """Palette used by settings dialogs. It follows the current Studio theme.
-
-    The goal is Photoshop-like contrast: dark panels, clear borders, blue/cyan
-    accent colors, and readable beginner help cards. Light theme keeps the same
-    structure but uses a bright surface.
-    """
     theme = normalize_studio_theme(theme)
     if theme == STUDIO_THEME_LIGHT:
         return {
@@ -707,7 +594,6 @@ def get_studio_settings_palette(theme):
 
 
 def build_beginner_photoshop_settings_qss(theme):
-    """Build a Photoshop-like, beginner-friendly QSS for settings dialogs."""
     p = get_studio_settings_palette(theme)
     return f"""
         QDialog {{
@@ -836,7 +722,6 @@ def build_beginner_photoshop_settings_qss(theme):
 
 
 def apply_beginner_photoshop_settings_style(dialog, theme=None):
-    """Apply Photoshop-like styling to a settings dialog without changing logic."""
     try:
         if theme is None:
             parent = dialog.parent()
@@ -848,7 +733,6 @@ def apply_beginner_photoshop_settings_style(dialog, theme=None):
 
 
 def make_beginner_guide_label(title: str, body: str) -> QLabel:
-    """Create a reusable beginner help card."""
     label = QLabel(f"<b>{title}</b><br>{body}")
     label.setObjectName("BeginnerGuide")
     label.setWordWrap(True)
@@ -857,7 +741,6 @@ def make_beginner_guide_label(title: str, body: str) -> QLabel:
 
 
 def set_beginner_tooltip(widget, text: str):
-    """Set a tooltip safely. Useful when UI labels are short but beginners need help."""
     try:
         if widget is not None:
             widget.setToolTip(str(text or ""))
@@ -866,12 +749,6 @@ def set_beginner_tooltip(widget, text: str):
 
 
 def build_beginner_photoshop_main_qss(theme):
-    """Extra QSS for the main widget editor.
-
-    This is intentionally additive: the existing Studio theme still provides the
-    base look, while this layer makes the editing screen more Photoshop-like and
-    easier for beginners to scan.
-    """
     p = get_studio_settings_palette(theme)
     return f"""
         QMainWindow {{
@@ -1008,7 +885,6 @@ def build_beginner_photoshop_main_qss(theme):
 
 
 def apply_beginner_photoshop_main_style(studio, theme=None):
-    """Apply only the beginner/Photoshop additive layer to a main editor window."""
     try:
         if theme is None:
             canvas = getattr(studio, "canvas", None)
@@ -1038,7 +914,7 @@ def choose_canvas_window_flags(canvas):
         canvas.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnBottomHint |
-            Qt.Tool
+            Qt.WindowType.Tool
         )
     else:
         canvas.setWindowFlags(

@@ -1,103 +1,32 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import asyncio
-import concurrent.futures
-import calendar as py_calendar
-import ctypes
-import ctypes.wintypes
-import json
-import math
-import random
-import os
-import shutil
-import queue
-import sys
-import threading
-import time
-import urllib.parse
-import urllib.request
-import warnings
-import uuid
-import webbrowser
-import zipfile
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
-from pathlib import Path
 
-import numpy as np
-import psutil
-import soundcard as sc
-from PySide6.QtCore import (QFileInfo,
-    QObject,
-    Signal,
-    Slot,
-    Qt,
-    QRectF,
-    QPoint,
-    QTimer,
-    QThread,
-    QEvent,
-    QUrl,
-    QPointF,
-    QRect,
-    QCoreApplication,
-    QTranslator,
-    QAbstractNativeEventFilter,
-    QLocale,
-)
+import calendar as py_calendar
+import dataclasses
+import math
+import time
+
+from PySide6.QtCore import (QRectF,
+                            QPoint,
+                            QPointF,
+                            )
 from PySide6.QtGui import (
-    QColor,
     QPainter,
     QFont,
     QPen,
-    QIcon,
     QBrush,
-    QRadialGradient,
     QLinearGradient,
     QTextDocument,
     QPainterPath,
     QImage,
     QPixmap,
-    QRegion,
-    QSurfaceFormat,
-    QOpenGLContext,
-    QOffscreenSurface,
-    QFontMetrics,
-    QDesktopServices,
 )
-from PySide6.QtWidgets import (QStyle, QFileIconProvider,
-    QApplication,
-    QWidget,
-    QMainWindow,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QColorDialog,
-    QFileDialog,
-    QSpinBox,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QMessageBox,
-    QListWidget,
-    QCheckBox,
-    QGridLayout,
-    QScrollArea,
-    QDoubleSpinBox,
-    QComboBox,
-    QTabWidget,
-    QGroupBox,
-)
+
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except:
     QOpenGLWidget = None
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebChannel import QWebChannel
 
-from litedesktopstudio.core import *
 from litedesktopstudio.effects import *
 from litedesktopstudio.runtime import *
 
@@ -152,9 +81,6 @@ class WidgetConfig:
     text: str = ""
     font_size: int = 14
 
-    # JavaScript HTML widget runtime fields.
-    # inline: cfg.text をそのまま WebEngine に流し込む従来モード。
-    # package: ウィジェット専用ディレクトリ内の entry HTML を読み込むモード。
     jshtml_mode: str = "inline"
     jshtml_instance_id: str = ""
     jshtml_entry: str = "index.html"
@@ -188,14 +114,12 @@ class WidgetConfig:
     effects_json: str = "{}"
     effects_follow_mouse: bool = True
 
-
 def widget_config_from_dict(item):
     if not isinstance(item, dict):
         item = {}
     valid_keys = set(WidgetConfig.__dataclass_fields__.keys())
     filtered = {k: v for k, v in item.items() if k in valid_keys}
     return WidgetConfig(**filtered)
-
 
 class BaseWidget:
     def __init__(self, cfg: WidgetConfig):
@@ -519,9 +443,9 @@ class MediaPlayerWidget(BaseWidget):
             bg = QColor(self.cfg.bg or "#10141C")
             bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
 
-        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setBrush(QBrush(bg))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
         accent = QColor(self.cfg.color or "#80FF9F")
@@ -529,11 +453,11 @@ class MediaPlayerWidget(BaseWidget):
         sub_color = QColor(210, 218, 230, 160)
         muted_color = QColor(210, 218, 230, 115)
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(title_color)
         p.drawText(
             QRectF(r.left() + 14, r.top() + 10, r.width() - 28, 24),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self.cfg.title or ""
         )
 
@@ -553,11 +477,11 @@ class MediaPlayerWidget(BaseWidget):
         app_id = data.get("app_id", "") or ""
         error = data.get("error", "") or ""
 
-        p.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         p.setPen(title_color)
         p.drawText(
             QRectF(text_left, r.top() + 46, text_w, 24),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self._elide_text(p, title, int(text_w))
         )
 
@@ -565,7 +489,7 @@ class MediaPlayerWidget(BaseWidget):
         p.setPen(sub_color)
         p.drawText(
             QRectF(text_left, r.top() + 72, text_w, 20),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self._elide_text(p, artist or album or app_id, int(text_w))
         )
 
@@ -579,7 +503,7 @@ class MediaPlayerWidget(BaseWidget):
 
         p.drawText(
             QRectF(text_left, r.top() + 94, text_w, 20),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self._elide_text(p, meta_line, int(text_w))
         )
 
@@ -588,7 +512,7 @@ class MediaPlayerWidget(BaseWidget):
             p.setPen(QColor(255, 190, 130, 170))
             p.drawText(
                 QRectF(r.left() + 14, r.top() + 124, r.width() - 28, 16),
-                Qt.AlignLeft | Qt.AlignVCenter,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 self._elide_text(p, error, int(r.width() - 28))
             )
 
@@ -614,8 +538,8 @@ class MediaPlayerWidget(BaseWidget):
             scaled = pixmap.scaled(
                 int(rect.width()),
                 int(rect.height()),
-                Qt.KeepAspectRatioByExpanding,
-                Qt.SmoothTransformation
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation
             )
 
             x = int(rect.left() + (rect.width() - scaled.width()) / 2)
@@ -627,9 +551,9 @@ class MediaPlayerWidget(BaseWidget):
             p.restore()
             return
 
-        p.setFont(QFont("Segoe UI Symbol", 28, QFont.Bold))
+        p.setFont(QFont("Segoe UI Symbol", 28, QFont.Weight.Bold))
         p.setPen(accent)
-        p.drawText(rect, Qt.AlignCenter, "♪")
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "♪")
 
     def _thumbnail_from_bytes(self, thumbnail_bytes):
         if not thumbnail_bytes:
@@ -655,21 +579,21 @@ class MediaPlayerWidget(BaseWidget):
         p.setPen(QPen(QColor(255, 255, 255, 45), 1))
         p.drawRoundedRect(rect, 14, 14)
 
-        p.setFont(QFont("Segoe UI Symbol", 15, QFont.Bold))
+        p.setFont(QFont("Segoe UI Symbol", 15, QFont.Weight.Bold))
         p.setPen(accent)
-        p.drawText(rect, Qt.AlignCenter, text)
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
 
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
     def _elide_text(self, p: QPainter, text: str, width: int):
         metrics = p.fontMetrics()
-        return metrics.elidedText(text or "", Qt.ElideRight, max(20, width))
+        return metrics.elidedText(text or "", Qt.TextElideMode.ElideRight, max(20, width))
 
 
 class SystemWidget(BaseWidget):
@@ -681,10 +605,10 @@ class SystemWidget(BaseWidget):
 
         bg = widget_bg_color(self.cfg)
         p.setBrush(QBrush(bg))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(QColor(245, 248, 255))
         p.drawText(QRectF(r.left() + 14, r.top() + 10, r.width(), 24), self.cfg.title)
 
@@ -711,7 +635,7 @@ class SystemWidget(BaseWidget):
         bw = max(20, w - 92)
 
         p.setBrush(QColor(255, 255, 255, 28))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(QRectF(bx, y + 3, bw, h - 6), 5, 5)
 
         fill_w = bw * max(0, min(100, value)) / 100.0
@@ -723,9 +647,9 @@ class SystemWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
 
@@ -744,19 +668,19 @@ class NetworkWidget(BaseWidget):
             bg = QColor(self.cfg.bg or "#10141C")
             bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
 
-        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setBrush(QBrush(bg))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
         down_color = QColor(get_network_down_color(self.cfg))
         up_color = QColor(get_network_up_color(self.cfg))
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(QColor(245, 248, 255))
         p.drawText(
             QRectF(r.left() + 14, r.top() + 10, r.width() - 28, 24),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self.cfg.title or ""
         )
 
@@ -848,7 +772,7 @@ class NetworkWidget(BaseWidget):
             QColor(255, 255, 255, 26)
         )
 
-        p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         label_metrics = p.fontMetrics()
         label_w = min(42, max(28, label_metrics.horizontalAdvance(label_text) + 8))
         label_rect = QRectF(x + 34, y, label_w, 20)
@@ -858,7 +782,7 @@ class NetworkWidget(BaseWidget):
         p.setPen(label_color)
         p.drawText(
             label_rect,
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             label_text
         )
 
@@ -866,7 +790,7 @@ class NetworkWidget(BaseWidget):
         p.setPen(color)
         p.drawText(
             value_rect,
-            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             value
         )
 
@@ -935,7 +859,7 @@ class NetworkWidget(BaseWidget):
         y = rect.top()
 
         p.setPen(QColor(210, 218, 230, 160))
-        p.drawText(QRectF(x, y, total_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, total_text)
+        p.drawText(QRectF(x, y, total_w, rect.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, total_text)
         x += total_w + gap
 
         self._draw_network_arrow_icon(
@@ -947,9 +871,9 @@ class NetworkWidget(BaseWidget):
         )
         x += icon_w + 2
         p.setPen(QColor(210, 218, 230, 170))
-        p.drawText(QRectF(x, y, down_label_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, down_label)
+        p.drawText(QRectF(x, y, down_label_w, rect.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, down_label)
         x += down_label_w + 4
-        p.drawText(QRectF(x, y, down_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, str(total_down))
+        p.drawText(QRectF(x, y, down_w, rect.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(total_down))
         x += down_w + gap * 2
 
         self._draw_network_arrow_icon(
@@ -961,9 +885,9 @@ class NetworkWidget(BaseWidget):
         )
         x += icon_w + 2
         p.setPen(QColor(210, 218, 230, 170))
-        p.drawText(QRectF(x, y, up_label_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, up_label)
+        p.drawText(QRectF(x, y, up_label_w, rect.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, up_label)
         x += up_label_w + 4
-        p.drawText(QRectF(x, y, up_w, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, str(total_up))
+        p.drawText(QRectF(x, y, up_w, rect.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(total_up))
 
         p.restore()
 
@@ -1015,13 +939,13 @@ class NetworkWidget(BaseWidget):
 
         p.drawText(
             QRectF(rect.left() + 8, rect.top() + 4, rect.width() - 16, 16),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             "last 30s"
         )
 
         p.drawText(
             QRectF(rect.left() + 8, rect.bottom() - 20, rect.width() - 16, 16),
-            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             f"max {format_bytes_per_sec(max_value)}"
         )
 
@@ -1086,15 +1010,15 @@ class NetworkWidget(BaseWidget):
             fill_color.setAlpha(36)
 
             p.setBrush(fill_color)
-            p.setPen(Qt.NoPen)
+            p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(path)
 
         pen = QPen(color, 2)
-        pen.setCapStyle(Qt.RoundCap)
-        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
 
         for i in range(1, len(points)):
             x1, y1 = points[i - 1]
@@ -1113,7 +1037,7 @@ class NetworkWidget(BaseWidget):
         dot_color.setAlpha(230)
 
         p.setBrush(dot_color)
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(
             QPoint(int(last_x), int(last_y)),
             3,
@@ -1125,7 +1049,7 @@ class NetworkWidget(BaseWidget):
         p.setPen(QColor(210, 218, 230, 120))
         p.drawText(
             rect,
-            Qt.AlignCenter,
+            Qt.AlignmentFlag.AlignCenter,
             "waiting for network data..."
         )
 
@@ -1142,10 +1066,10 @@ class NetworkWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
 
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
 
@@ -1154,7 +1078,7 @@ class AnalogClockWidget(BaseWidget):
         r = self.rect
         p.save()
 
-        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         cx = r.center().x()
         cy = r.center().y()
@@ -1183,7 +1107,7 @@ class AnalogClockWidget(BaseWidget):
                 int(cy + math.sin(angle) * outer)
             )
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(QColor(240, 240, 255))
 
         for num in range(1, 13):
@@ -1193,7 +1117,7 @@ class AnalogClockWidget(BaseWidget):
             x = cx + math.cos(angle) * tr
             y = cy + math.sin(angle) * tr
 
-            p.drawText(QRectF(x - 12, y - 10, 24, 20), Qt.AlignCenter, str(num))
+            p.drawText(QRectF(x - 12, y - 10, 24, 20), Qt.AlignmentFlag.AlignCenter, str(num))
 
         now = time.localtime()
         h = now.tm_hour % 12
@@ -1209,7 +1133,7 @@ class AnalogClockWidget(BaseWidget):
         self._draw_hand(p, cx, cy, radius * 0.92, sa, accent, 2)
 
         p.setBrush(accent)
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), 4, 4)
         p.restore()
 
@@ -1219,7 +1143,7 @@ class AnalogClockWidget(BaseWidget):
         y = cy + math.sin(angle) * length
 
         pen = QPen(color, width)
-        pen.setCapStyle(Qt.RoundCap)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
 
         p.setPen(pen)
         p.drawLine(int(cx), int(cy), int(x), int(y))
@@ -1231,9 +1155,9 @@ class CalendarWidget(BaseWidget):
         p.save()
         bg = widget_bg_color(self.cfg)
 
-        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setBrush(QBrush(bg))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
         now = time.localtime()
@@ -1250,21 +1174,21 @@ class CalendarWidget(BaseWidget):
         weekend_color = QColor(255, 205, 205, 200)
         today_text_color = QColor(20, 24, 32)
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(title_color)
         p.drawText(
             QRectF(r.left() + 14, r.top() + 10, r.width() - 28, 24),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self.cfg.title or ""
         )
 
         month_label = f"{year} / {month:02d}"
 
-        p.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         p.setPen(month_color)
         p.drawText(
             QRectF(r.left() + 14, r.top() + 36, r.width() - 28, 30),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             month_label
         )
 
@@ -1283,7 +1207,7 @@ class CalendarWidget(BaseWidget):
 
         weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
 
         for i, day_name in enumerate(weekdays):
             x = grid_left + cell_w * i
@@ -1296,7 +1220,7 @@ class CalendarWidget(BaseWidget):
 
             p.drawText(
                 header_rect,
-                Qt.AlignCenter,
+                Qt.AlignmentFlag.AlignCenter,
                 day_name
             )
 
@@ -1325,7 +1249,7 @@ class CalendarWidget(BaseWidget):
                     highlight.setAlpha(210)
 
                     p.setBrush(QBrush(highlight))
-                    p.setPen(Qt.NoPen)
+                    p.setPen(Qt.PenStyle.NoPen)
 
                     size = min(cell_rect.width(), cell_rect.height(), 28)
                     cx = cell_rect.center().x()
@@ -1338,10 +1262,10 @@ class CalendarWidget(BaseWidget):
                     )
 
                     p.setPen(today_text_color)
-                    p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                    p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
 
                 else:
-                    p.setBrush(Qt.NoBrush)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
 
                     if col >= 5:
                         p.setPen(weekend_color)
@@ -1352,7 +1276,7 @@ class CalendarWidget(BaseWidget):
 
                 p.drawText(
                     cell_rect,
-                    Qt.AlignCenter,
+                    Qt.AlignmentFlag.AlignCenter,
                     str(day)
                 )
 
@@ -1365,9 +1289,9 @@ class CalendarWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
 
@@ -1383,7 +1307,7 @@ class HtmlWidget(BaseWidget):
         bg = widget_bg_color(self.cfg)
 
         p.setBrush(bg)
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
         html = self.cfg.text or """
@@ -1407,9 +1331,9 @@ class HtmlWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
 
@@ -1453,10 +1377,10 @@ class VolumeWidget(BaseWidget):
         bg = widget_bg_color(self.cfg)
 
         p.setBrush(bg)
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(QColor(245, 248, 255))
         p.drawText(QRectF(r.left() + 14, r.top() + 10, r.width(), 24), "Volume")
 
@@ -1466,15 +1390,15 @@ class VolumeWidget(BaseWidget):
         bh = 16
 
         p.setBrush(QColor(255, 255, 255, 30))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(QRectF(bx, by, bw, bh), 8, 8)
 
         p.setBrush(QColor(self.cfg.color))
         p.drawRoundedRect(QRectF(bx, by, bw * v / 100.0, bh), 8, 8)
 
         p.setPen(QColor(240, 240, 240))
-        p.setFont(QFont("Segoe UI", 18, QFont.Bold))
-        p.drawText(QRectF(r.left(), r.top() + 72, r.width(), 40), Qt.AlignCenter, f"{v}%")
+        p.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        p.drawText(QRectF(r.left(), r.top() + 72, r.width(), 40), Qt.AlignmentFlag.AlignCenter, f"{v}%")
 
         if not volume.available:
             p.setFont(QFont("Segoe UI", 8))
@@ -1487,9 +1411,9 @@ class VolumeWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
 
@@ -1511,9 +1435,9 @@ class WeatherWidget(BaseWidget):
             bg = QColor(self.cfg.bg or "#10141C")
             bg.setAlpha(getattr(self.cfg, "bg_alpha", 155))
 
-        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setBrush(QBrush(bg))
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
 
         accent = QColor(self.cfg.color or "#80FF9F")
@@ -1521,11 +1445,11 @@ class WeatherWidget(BaseWidget):
         sub_color = QColor(210, 218, 230, 170)
         text_color = QColor(235, 240, 250, 220)
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(title_color)
         p.drawText(
             QRectF(r.left() + 14, r.top() + 10, r.width() - 28, 24),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self.cfg.title or ""
         )
 
@@ -1541,7 +1465,7 @@ class WeatherWidget(BaseWidget):
         p.setPen(sub_color)
         p.drawText(
             QRectF(r.left() + 14, r.top() + 34, r.width() - 28, 18),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             place_text
         )
 
@@ -1552,7 +1476,7 @@ class WeatherWidget(BaseWidget):
             p.setPen(QColor(255, 180, 120))
             p.drawText(
                 QRectF(r.left() + 14, r.top() + 62, r.width() - 28, 40),
-                Qt.AlignLeft | Qt.AlignVCenter,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 lds_tr("天気の取得に失敗しました")
             )
 
@@ -1560,7 +1484,7 @@ class WeatherWidget(BaseWidget):
             p.setPen(QColor(255, 210, 180, 160))
             p.drawText(
                 QRectF(r.left() + 14, r.top() + 98, r.width() - 28, 50),
-                Qt.AlignLeft | Qt.TextWordWrap,
+                Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap,
                 error
             )
 
@@ -1586,23 +1510,23 @@ class WeatherWidget(BaseWidget):
         p.setPen(accent)
         p.drawText(
             icon_rect,
-            Qt.AlignCenter,
+            Qt.AlignmentFlag.AlignCenter,
             icon
         )
 
-        p.setFont(QFont("Segoe UI", 34, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 34, QFont.Weight.Bold))
         p.setPen(accent)
         p.drawText(
             temp_rect,
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             f"{temp}°"
         )
 
-        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         p.setPen(text_color)
         p.drawText(
             desc_rect,
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             desc
         )
 
@@ -1610,7 +1534,7 @@ class WeatherWidget(BaseWidget):
         p.setPen(sub_color)
         p.drawText(
             feels_rect,
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             lds_tr("体感 ") + f"{feels}°C"
         )
 
@@ -1643,11 +1567,11 @@ class WeatherWidget(BaseWidget):
         forecast_top = info_top + info_h * 2 + 8
 
         if forecast and r.height() >= 220:
-            p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
             p.setPen(sub_color)
             p.drawText(
                 QRectF(r.left() + 14, forecast_top, r.width() - 28, 18),
-                Qt.AlignLeft | Qt.AlignVCenter,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 lds_tr("3日予報")
             )
 
@@ -1659,7 +1583,7 @@ class WeatherWidget(BaseWidget):
                 rect = QRectF(x, card_top, card_w, 56)
 
                 p.setBrush(QColor(255, 255, 255, 20))
-                p.setPen(Qt.NoPen)
+                p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(rect, 10, 10)
 
                 date = item.get("date", "")
@@ -1671,7 +1595,7 @@ class WeatherWidget(BaseWidget):
                 p.setPen(sub_color)
                 p.drawText(
                     QRectF(rect.left() + 5, rect.top() + 3, rect.width() - 10, 12),
-                    Qt.AlignCenter,
+                    Qt.AlignmentFlag.AlignCenter,
                     date[-5:] if len(date) >= 5 else date
                 )
 
@@ -1679,15 +1603,15 @@ class WeatherWidget(BaseWidget):
                 p.setPen(accent)
                 p.drawText(
                     QRectF(rect.left() + 5, rect.top() + 16, rect.width() - 10, 18),
-                    Qt.AlignCenter,
+                    Qt.AlignmentFlag.AlignCenter,
                     day_icon
                 )
 
-                p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+                p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
                 p.setPen(text_color)
                 p.drawText(
                     QRectF(rect.left() + 5, rect.top() + 35, rect.width() - 10, 16),
-                    Qt.AlignCenter,
+                    Qt.AlignmentFlag.AlignCenter,
                     f"{min_t}°/{max_t}°"
                 )
 
@@ -1698,7 +1622,7 @@ class WeatherWidget(BaseWidget):
             p.setPen(QColor(210, 218, 230, 120))
             p.drawText(
                 QRectF(r.left() + 12, r.bottom() - 20, r.width() - 24, 14),
-                Qt.AlignRight | Qt.AlignVCenter,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                 lds_tr("更新 ") + f"{updated}"
             )
 
@@ -1712,22 +1636,22 @@ class WeatherWidget(BaseWidget):
         p.setPen(label_color)
         p.drawText(
             QRectF(x, y, w * 0.45, 18),
-            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             label
         )
 
-        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         p.setPen(value_color)
         p.drawText(
             QRectF(x + w * 0.45, y, w * 0.55, 18),
-            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             value
         )
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
 
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)

@@ -8,18 +8,7 @@ import math
 import random
 import os
 
-
-# -----------------------------------------------------------------------------
-# JSHTML / QtWebEngine realtime rendering guard
-# -----------------------------------------------------------------------------
 def lds_apply_qtwebengine_realtime_flags():
-    """Reduce Chromium/QtWebEngine background throttling for JSHTML widgets.
-
-    JSHTML Audio Reactive widgets rely on JavaScript animation/timer callbacks.
-    Chromium may throttle hidden/occluded/background pages after several minutes,
-    which can make WebEngine-based visualizers drop to a very low FPS. These
-    flags must be applied before QtWebEngine is initialized.
-    """
     try:
         existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "") or ""
         required = [
@@ -137,9 +126,6 @@ except:
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
 
-# -----------------------------------------------------------------------------
-# Extracted modules (kept as imports so core classes remain in this file)
-# -----------------------------------------------------------------------------
 from litedesktopstudio.core import *
 from litedesktopstudio.effects import *
 from litedesktopstudio.runtime import *
@@ -157,10 +143,6 @@ from litedesktopstudio.core import (
     _lds_translation_candidates,
     _safe_qt_app_attr,
     _qss_rgba,
-)
-
-from litedesktopstudio.jshtml import (
-    __htmls,
 )
 
 
@@ -182,7 +164,6 @@ def _lds_get_class_name(hwnd) -> str:
 
 
 def _lds_workerw_candidates():
-    """Enumerate WorkerW HWNDs with metadata for manual selection."""
     if not is_windows():
         return []
     try:
@@ -253,15 +234,6 @@ def _lds_workerw_candidates():
         return []
 
 def _lds_select_workerw_candidate():
-    """Select WorkerW only from explicit environment variables.
-
-    Environment variables:
-      LITEDESKTOPSTUDIO_EFFECTS_WORKERW_INDEX=0
-      LITEDESKTOPSTUDIO_EFFECTS_WORKERW_HWND=0x730568
-
-    If neither is set, only print candidates and return 0.
-    This prevents accidentally covering desktop icons.
-    """
     items = _lds_workerw_candidates()
 
     try:
@@ -348,7 +320,6 @@ def _lds_select_workerw_candidate():
     return 0
 
 def attach_background_effects_to_desktop_host(widget, prefer: str = "workerw") -> bool:
-    """Attach EffectsOverlay background as a native child of a selected WorkerW."""
     if not is_windows():
         return False
 
@@ -487,7 +458,6 @@ def attach_background_effects_to_desktop_host(widget, prefer: str = "workerw") -
 
 
 def _lds_c_void_p(value):
-    """Return c_void_p that also accepts HWND insert-after negative constants."""
     try:
         return ctypes.c_void_p(value)
     except OverflowError:
@@ -498,12 +468,6 @@ def _lds_c_void_p(value):
 
 
 def lds_restore_windows_taskbar_visibility():
-    """Best-effort taskbar visibility/Z-order restore for Windows.
-
-    This does not change Windows taskbar settings. It only asks Explorer taskbar
-    windows to show again and nudges them above normal windows, which prevents
-    a detached desktop-background child window from visually masking them.
-    """
     if not is_windows():
         return False
     try:
@@ -556,11 +520,6 @@ def lds_restore_windows_taskbar_visibility():
 
 
 def lds_detach_window_from_desktop_host(widget, restore_taskbar=True):
-    """Detach a QWidget HWND from WorkerW/desktop host safely.
-
-    Returns True when the function reached the Win32 cleanup path. It is safe to
-    call multiple times and safe to call for non-attached widgets.
-    """
     if widget is None or not is_windows():
         return False
     try:
@@ -653,7 +612,6 @@ def lds_detach_window_from_desktop_host(widget, restore_taskbar=True):
 
 
 def lds_cleanup_background_effects_canvas(canvas_owner):
-    """Cleanup owner.background_effects_canvas without leaving taskbar masked."""
     try:
         bg = getattr(canvas_owner, "background_effects_canvas", None)
         if bg is None:
@@ -686,18 +644,7 @@ def lds_cleanup_background_effects_canvas(canvas_owner):
             pass
         return False
 
-
 def lds_safe_desktop_geometry():
-    """Return the screen area LiteDesktopStudio should occupy.
-
-    By default this uses Qt's availableGeometry(), which excludes the Windows
-    taskbar/app bars. This is intentionally safer than primaryScreen().geometry()
-    for a frameless bottom/tool desktop window, because a full-screen transparent
-    Qt window can visually cover the taskbar even when it is not topmost.
-
-    Set LITEDESKTOPSTUDIO_ALLOW_TASKBAR_COVER=1 only if you intentionally want
-    LiteDesktopStudio to use the entire monitor including the taskbar area.
-    """
     try:
         screen = QApplication.primaryScreen()
         if screen is None:
@@ -717,29 +664,6 @@ def lds_safe_desktop_geometry():
 
 def is_windows_only_desktop_overlay_supported():
     return is_windows()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class EffectsOverlayWidget(BaseWidget):
@@ -875,7 +799,6 @@ class EffectsOverlayWidget(BaseWidget):
             self._vector_image_cache_order = []
 
     def _draw_cached_vector_layer(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float, layer_name: str, draw_func, fps: int = 24, static: bool = False):
-        """Render vector effects to QImage, then drawImage on normal frames."""
         if not self._vector_image_cache_enabled():
             try:
                 draw_func(p, r, settings, now)
@@ -951,7 +874,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _realtime_scenic_sky_enabled(self) -> bool:
-        """Whether scenic presets should react to the computer's real local time."""
         try:
             raw = json.loads(getattr(self.cfg, "effects_json", "") or "{}")
             if isinstance(raw, dict) and "realtime_scenic_sky_enabled" in raw:
@@ -968,11 +890,6 @@ class EffectsOverlayWidget(BaseWidget):
             return True
 
     def _realtime_sky_state(self, now: float = None) -> dict:
-        """Return a smooth real-local-time sky state for scenic presets.
-
-        Local clock ranges:
-          04:30-07:30 dawn, 07:30-16:30 day, 16:30-19:30 dusk, otherwise night.
-        """
         try:
             if now is None:
                 now = time.time()
@@ -1000,18 +917,6 @@ class EffectsOverlayWidget(BaseWidget):
         return {"hour": hour, "phase": "night", "t": t}
 
     def _draw_realtime_lightweight_clouds(self, p: QPainter, r: QRectF, now: float, scene: str, phase: str, t: float):
-        """Draw scenic clouds as a cached ambient air layer.
-
-        Design intent:
-        - Not moving clouds, but a quiet atmospheric layer.
-        - Cache the full cloud/haze layer into QImage.
-        - Normal frames do not create QImage, random numbers, paths, gradients, or cloud particles.
-        - Normal frames only drawImage the cached layer with a very small opacity drift.
-
-        This is intentionally closer to "air perspective / ambience" than a cloud
-        animation.  It should feel still at a glance, with only a faint breathing
-        quality over long viewing.
-        """
         try:
             w = int(max(1, r.width()))
             h = int(max(1, r.height()))
@@ -1196,12 +1101,6 @@ class EffectsOverlayWidget(BaseWidget):
             pass
 
     def _draw_chichibugahama_time_light_accents(self, p: QPainter, r: QRectF, now: float, phase: str, t: float):
-        """Subtle non-rectangular time-of-day accents for Chichibugahama mirror shore.
-
-        Important: avoid localized rectangular reflection blocks.  Reflections are
-        expressed as horizon-wide gradients and thin horizontal water lines so the
-        shore reads as a shallow mirror, not a separate square effect.
-        """
         try:
             w = float(max(1.0, r.width()))
             h = float(max(1.0, r.height()))
@@ -1259,13 +1158,6 @@ class EffectsOverlayWidget(BaseWidget):
             pass
 
     def _draw_scenic_cloud_reflection_on_mirror(self, p: QPainter, r: QRectF, now: float, scene: str):
-        """Reflect the existing cloud effect into mirror-style scenic presets.
-
-        This intentionally reuses the normal cloud effect particles stored in
-        self._extra_effects["cloud"].  It does not create a separate static cloud
-        layer and does not generate new clouds.  If the cloud effect is off, this
-        returns immediately.
-        """
         try:
             scene = str(scene or "")
             if scene not in ("uyuni", "chichibugahama"):
@@ -1302,7 +1194,6 @@ class EffectsOverlayWidget(BaseWidget):
             pass
 
     def _draw_realtime_scenic_sky(self, p: QPainter, r: QRectF, now: float, scene: str = "desert"):
-        """Overlay real-time sky, sun glow, stars and shooting stars for scenic presets."""
         try:
             if not self._realtime_scenic_sky_enabled():
                 return
@@ -1461,14 +1352,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _realtime_scenic_sun_rays_enabled(self) -> bool:
-        """Whether explicit sun ray line strokes are drawn for realtime scenic sky.
-
-        This no-ray build defaults to False. Heat and brightness are still shown
-        through radial/linear gradients in _draw_realtime_scenic_sky(), which is
-        more natural for Uyuni salt flat and softer desert scenes.
-        Set realtime_scenic_sun_rays_enabled=true in effects_json only if the
-        previous line-ray style is desired.
-        """
         try:
             raw = json.loads(getattr(self.cfg, "effects_json", "") or "{}")
             if isinstance(raw, dict) and "realtime_scenic_sun_rays_enabled" in raw:
@@ -1594,7 +1477,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _draw_fullscreen_scenic_engine(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float, scene_id: str):
-        """Draw a cached full-screen scenic landscape engine."""
         try:
             w = int(max(1, r.width()))
             h = int(max(1, r.height()))
@@ -1642,7 +1524,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _render_pamukkale_opaque_fallback(self, q: QPainter, w: int, h: int):
-        """Opaque line-relief fallback without oval/capsule foreground objects."""
         try:
             q.setPen(Qt.PenStyle.NoPen)
             sky_h = h * 0.25
@@ -1721,13 +1602,6 @@ class EffectsOverlayWidget(BaseWidget):
         return img
 
     def _render_pamukkale_static(self, q: QPainter, w: int, h: int):
-        """Render Pamukkale as flat background relief only.
-
-        This version deliberately removes foreground oval/capsule/pool objects.
-        The visual is built from one continuous white limestone surface with
-        subtle horizontal relief bands, chipped edges, fine mineral noise,
-        shadowed terrace faces, and very thin downhill water stains.
-        """
         q.setPen(Qt.PenStyle.NoPen)
         sky_h = h * 0.245
         rnd = random.Random((w * 12007) ^ (h * 27011) ^ 0x50414D74)
@@ -1930,14 +1804,7 @@ class EffectsOverlayWidget(BaseWidget):
             q.drawEllipse(QRectF(cx - rr, cy - rr, rr * 2, rr * 2))
         self._draw_soft_vignette(q, w, h, QColor(0, 15, 70, 96))
 
-
-
     def _render_chichibugahama_static(self, q: QPainter, w: int, h: int):
-        """Neutral Chichibugahama mirror-shore base without local square artifacts.
-
-        The base keeps Chichibugahama weaker than Uyuni, but makes the reflection
-        broad and horizon-aligned.  No puddle/square reflection block is drawn.
-        """
         horizon = h * 0.48
         q.setPen(Qt.PenStyle.NoPen)
 
@@ -2845,7 +2712,6 @@ class EffectsOverlayWidget(BaseWidget):
         return img
 
     def _has_visible_moon_effect(self, settings: Optional[EffectOverlaySettings] = None) -> bool:
-        """Return True when any moon-related visual is enabled."""
         if settings is None:
             settings = get_effect_overlay_settings(self.cfg)
         return bool(
@@ -2855,13 +2721,6 @@ class EffectsOverlayWidget(BaseWidget):
         )
 
     def moon_interaction_rect(self, settings: Optional[EffectOverlaySettings] = None) -> QRectF:
-        """Compact hit/selection area for moon body, moonlight and moon shadow.
-
-        The overlay widget itself can be full-screen. For moon effects, the selectable
-        rectangle is the union of the enabled moon visuals only. The long moonlight
-        beam is intentionally excluded from hit-testing so the selection area stays
-        near the moon instead of stretching to the bottom of the screen.
-        """
         if settings is None:
             settings = get_effect_overlay_settings(self.cfg)
         r = self.rect
@@ -2928,7 +2787,6 @@ class EffectsOverlayWidget(BaseWidget):
         return QPointF(float(pos.x()) - center.x(), float(pos.y()) - center.y())
 
     def move_moon_center_to(self, pos: QPoint, offset: Optional[QPointF] = None):
-        """Move moon body/light/shadow together by updating moon_x and moon_y."""
         settings = get_effect_overlay_settings(self.cfg)
         r = self.rect
         if r.width() <= 0 or r.height() <= 0:
@@ -2970,7 +2828,6 @@ class EffectsOverlayWidget(BaseWidget):
         return QPointF(float(pos.x()) - center.x(), float(pos.y()) - center.y())
 
     def move_ice_center_to(self, pos: QPoint, offset: Optional[QPointF] = None):
-        """Move only the ice/glacier surface without moving the entire overlay widget."""
         settings = get_effect_overlay_settings(self.cfg)
         r = self.rect
         if r.width() <= 0 or r.height() <= 0:
@@ -3236,14 +3093,12 @@ class EffectsOverlayWidget(BaseWidget):
         return QPointF(x, y)
 
     def _angle_degrees(self, settings: EffectOverlaySettings, name: str, default: float = 0.0) -> float:
-        """Safely read an angle setting in degrees."""
         try:
             return float(getattr(settings, name, default))
         except:
             return float(default)
 
     def _rotated_offset(self, x: float, y: float, angle_degrees: float) -> QPointF:
-        """Rotate an offset vector by angle_degrees around the origin."""
         rad = math.radians(float(angle_degrees))
         ca = math.cos(rad)
         sa = math.sin(rad)
@@ -3271,7 +3126,6 @@ class EffectsOverlayWidget(BaseWidget):
         return max(4, min(128, int(getattr(settings, "sun_effect_cache_max_items", 32))))
 
     def _sun_effect_time_bucket(self, now: float, moving: bool = True) -> int:
-        """Small quantization keeps shimmer alive without repainting every frame."""
         if not moving:
             return 0
         try:
@@ -3404,7 +3258,6 @@ class EffectsOverlayWidget(BaseWidget):
             self._draw_sun_body(p, center, radius, settings, now)
 
     def _draw_sildur_sun_body(self, p: QPainter, center: QPointF, radius: float, settings: EffectOverlaySettings, now: float):
-        """High-detail, deterministic sun disk/corona inspired by vibrant shader packs."""
         sun_color = QColor(getattr(settings, "sun_color", "#FFD36E"))
         edge_color = QColor(getattr(settings, "sun_edge_color", "#FF7A3D"))
         alpha = max(0, min(255, int(getattr(settings, "sun_alpha", 235) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
@@ -4037,7 +3890,6 @@ class EffectsOverlayWidget(BaseWidget):
         self._last_extra_ripple_time = now
 
     def _snow_accumulation_base_y(self, r: QRectF, settings: EffectOverlaySettings) -> float:
-        """積雪が積もり始める基準Y座標を返す。0.0=上端、1.0=下端。"""
         ratio = max(0.0, min(1.0, float(getattr(settings, "snow_accumulation_start_y", 1.0))))
         return r.top() + r.height() * ratio
 
@@ -4314,7 +4166,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _puddle_specs(self, settings: EffectOverlaySettings):
-        """Return normalized puddle specs. First puddle follows puddle_x/y; the rest are scattered deterministically."""
         count = max(1, min(12, int(getattr(settings, "puddle_count", 1))))
         base_x = max(0.0, min(1.0, float(getattr(settings, "puddle_x", 0.50))))
         base_y = max(0.0, min(1.0, float(getattr(settings, "puddle_y", 0.84))))
@@ -4403,7 +4254,6 @@ class EffectsOverlayWidget(BaseWidget):
         return union
 
     def _puddle_rect(self, r: QRectF, settings: EffectOverlaySettings) -> QRectF:
-        """Return the union bounds of all oval puddles."""
         return self._puddle_union_rect(r, settings)
 
     def _puddle_path(self, r: QRectF, settings: EffectOverlaySettings) -> QPainterPath:
@@ -4504,7 +4354,6 @@ class EffectsOverlayWidget(BaseWidget):
         set_effect_overlay_settings(self.cfg, settings)
 
     def _puddle_resize_handles(self, rect: QRectF):
-        """編集モード用: 個別水たまりのサイズ変更ハンドル。"""
         handle = max(8.0, min(16.0, min(rect.width(), rect.height()) * 0.12))
         return {
             "right": QRectF(rect.right() - handle * 0.5, rect.center().y() - handle * 0.5, handle, handle),
@@ -4513,7 +4362,6 @@ class EffectsOverlayWidget(BaseWidget):
         }
 
     def puddle_resize_hit_kind(self, pos: QPoint, settings: Optional[EffectOverlaySettings] = None):
-        """サイズ変更ハンドルに当たった場合は (水たまりindex, handle_kind) を返す。"""
         if settings is None:
             settings = get_effect_overlay_settings(self.cfg)
         if not self._has_visible_puddle_effect(settings):
@@ -4531,7 +4379,6 @@ class EffectsOverlayWidget(BaseWidget):
         return index is not None and kind is not None
 
     def resize_puddle_to(self, pos: QPoint, index: Optional[int] = None, kind: str = "corner"):
-        """右/下/右下ハンドルのドラッグ位置から、指定した水たまりだけをリサイズする。"""
         settings = get_effect_overlay_settings(self.cfg)
         r = self.rect
         if r.width() <= 0 or r.height() <= 0:
@@ -4672,7 +4519,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _draw_reflected_clouds_on_water(self, p: QPainter, water_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
-        """Reflect cloud particles onto water/ice surfaces with compression and fade."""
         extra = getattr(self, "_extra_effects", {}) if hasattr(self, "_extra_effects") else {}
         clouds = list(extra.get("cloud", []))
         if not clouds:
@@ -4882,7 +4728,6 @@ class EffectsOverlayWidget(BaseWidget):
                 fish["vx"] = -abs(fish["vx"])
 
     def _draw_single_water_fish(self, p: QPainter, fish, settings: EffectOverlaySettings, alpha_base: int, now: float):
-        """Draw a normal-sized, plump fish using curved QPainterPath shapes."""
         size = max(4.0, float(fish.get("size", 24.0)))
         direction = 1.0 if float(fish.get("vx", 1.0)) >= 0 else -1.0
         depth = max(0.15, min(1.0, float(fish.get("depth", 0.8))))
@@ -5160,7 +5005,6 @@ class EffectsOverlayWidget(BaseWidget):
         )
 
     def _draw_reflected_effects_on_ice(self, p: QPainter, r: QRectF, ice_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
-        """氷面の個別エフェクト反射を必要に応じて数フレームキャッシュする。"""
         if not bool(getattr(settings, "ice_reflect_effects_enabled", True)):
             return
         skip = max(0, min(12, int(getattr(settings, "ice_skip_reflected_effect_frames", 2))))
@@ -5189,7 +5033,6 @@ class EffectsOverlayWidget(BaseWidget):
         p.drawImage(QPointF(ice_rect.left(), ice_rect.top()), image)
 
     def _draw_reflected_effects_on_ice_direct(self, p: QPainter, r: QRectF, ice_rect: QRectF, settings: EffectOverlaySettings, now: float, alpha_base: int):
-        """氷面専用の個別エフェクト反射。水面用の既存反射描画を流用しつつ、氷用ON/OFFで分岐する。"""
         if not bool(getattr(settings, "ice_reflect_effects_enabled", True)):
             return
         old_wave = getattr(settings, "water_mirror_wave", 7.0)
@@ -5222,7 +5065,6 @@ class EffectsOverlayWidget(BaseWidget):
                 pass
 
     def _ice_surface_rect(self, r: QRectF, settings: EffectOverlaySettings) -> QRectF:
-        """氷・氷河の描画領域を返す。水面とは独立してY/深さを調整できる。"""
         if r.width() <= 0 or r.height() <= 0:
             return QRectF()
         surface_ratio = max(0.0, min(1.0, float(getattr(settings, "ice_y", getattr(settings, "water_surface_y", 0.58)))))
@@ -5253,7 +5095,6 @@ class EffectsOverlayWidget(BaseWidget):
         )
 
     def _make_ice_reflection_image(self, source: QImage, ice_rect: QRectF, settings: EffectOverlaySettings) -> QImage:
-        """氷面用の上下反転反射画像を作る。既存水面反射と同じ考え方だが、氷用パラメータで独立制御する。"""
         if source is None or source.isNull() or ice_rect.width() <= 1 or ice_rect.height() <= 1:
             return QImage()
         key = self._ice_reflection_cache_key(source, ice_rect, settings)
@@ -5349,7 +5190,6 @@ class EffectsOverlayWidget(BaseWidget):
         )
 
     def _render_ice_static_surface_image(self, ice_rect: QRectF, settings: EffectOverlaySettings, alpha: int) -> QImage:
-        """Render static ice geometry once into a small transparent image."""
         quality = max(0.25, min(1.0, float(getattr(settings, "ice_quality_scale", 0.58))))
         lightweight = bool(getattr(settings, "ice_lightweight_enabled", True))
         img_w = max(1, int(math.ceil(ice_rect.width() * quality)))
@@ -5538,9 +5378,6 @@ class EffectsOverlayWidget(BaseWidget):
                 p.drawLine(QPointF(fog_rect.left() + xoff, y), QPointF(fog_rect.right() + xoff, y + math.sin(i * 1.3) * fog_h * 0.08))
 
     def _draw_ice_surface(self, p: QPainter, r: QRectF, settings: EffectOverlaySettings, now: float):
-        """軽量化したリアル寄りの氷/氷河表現。
-        静的な氷板・亀裂・気泡はキャッシュし、毎フレームは反射/霧だけを更新する。
-        """
         alpha = max(0, min(255, int(getattr(settings, "ice_alpha", 178) * max(0.0, float(getattr(settings, "intensity", 1.0))))))
         if alpha <= 0 or r.width() <= 0 or r.height() <= 0:
             return
@@ -6017,12 +5854,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _draw_mist_cloud_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
-        """Draw a lightweight, realistic mist-like cloud.
-
-        This path uses a small number of large translucent radial gradients instead
-        of many solid lobes.  It is intentionally cheaper than the volumetric cloud
-        renderer while giving a softer, hazier silhouette.
-        """
         p.save()
         try:
             base = max(12.0, float(getattr(item, "size", 80.0)))
@@ -6075,7 +5906,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _cloud_cache_signature(self, item, settings: EffectOverlaySettings):
-        """Return a stable cache key for a rendered cloud image."""
         size = max(12.0, float(getattr(item, "size", 80.0)))
         quality = max(0.25, min(1.0, float(getattr(settings, "cloud_cache_quality_scale", 0.62))))
         size_bucket = max(12, int(round(size * quality / 4.0) * 4))
@@ -6117,7 +5947,6 @@ class EffectsOverlayWidget(BaseWidget):
                 pass
 
     def _draw_cumulus_fluff_overlay(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
-        """Add cotton-candy / summer cumulus highlights on top of the base cloud."""
         if not bool(getattr(settings, "cloud_cumulus_enabled", True)):
             return
         base = max(12.0, float(getattr(item, "size", 80.0)))
@@ -6157,11 +5986,6 @@ class EffectsOverlayWidget(BaseWidget):
 
 
     def _draw_shader_cloud_lighting_overlay(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
-        """Shader-inspired cached cloud lighting: warm rim, underside shadow and soft bloom.
-
-        This is not shader code; it is a QPainter approximation designed for a desktop
-        overlay.  The effect is cached with the cloud image, so it remains lightweight.
-        """
         if not bool(getattr(settings, "cloud_shader_lighting_enabled", True)):
             return
         base = max(12.0, float(getattr(item, "size", 80.0)))
@@ -6243,7 +6067,6 @@ class EffectsOverlayWidget(BaseWidget):
             p.restore()
 
     def _render_cloud_cache_image(self, item, settings: EffectOverlaySettings, key):
-        """Render a cloud once into a padded transparent QImage for reuse."""
         quality_size = max(12, int(key[1]))
         img_w = max(80, int(quality_size * 6.20))
         img_h = max(64, int(quality_size * 7.00))
@@ -6277,7 +6100,6 @@ class EffectsOverlayWidget(BaseWidget):
         return image
 
     def _draw_cloud_particle(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
-        """Draw cloud using a padded cached image when enabled; fallback to raw drawing."""
         if not bool(getattr(settings, "cloud_cache_enabled", True)):
             self._draw_cloud_particle_raw(p, item, alpha, settings)
             self._draw_cumulus_fluff_overlay(p, item, alpha, settings)
@@ -6315,7 +6137,6 @@ class EffectsOverlayWidget(BaseWidget):
             p.restore()
 
     def _draw_cloud_particle_raw(self, p: QPainter, item, alpha: int, settings: EffectOverlaySettings):
-        """Draw a randomized, volumetric cloud using Qt gradients only."""
         if bool(getattr(settings, "cloud_mist_enabled", True)) and not bool(getattr(settings, "cloud_cumulus_enabled", True)):
             self._draw_mist_cloud_particle(p, item, alpha, settings)
             return
@@ -7721,48 +7542,6 @@ class EffectsOverlayWidget(BaseWidget):
                     p.fillRect(handle_rect, QColor(180, 235, 255, 160))
                     p.drawRect(handle_rect)
 
-DEFAULT_JS_HTML = """
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: transparent;
-    font-family: "Segoe UI", sans-serif;
-    color: white;
-}
-.card {
-    box-sizing: border-box;
-    width: 100%;
-    height: 100%;
-    border-radius: 16px;
-    padding: 16px;
-    background: rgba(16, 20, 28, 0.62);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-.title {
-    font-size: 20px;
-    font-weight: 700;
-    color: #80FF9F;
-}
-button {
-    margin-top: 12px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(128, 255, 159, 0.55);
-    background: rgba(128, 255, 159, 0.12);
-    color: white;
-}""" + __htmls
-
-
-
-# JSHTML QtWebEngine cache-size guard fallback.
 try:
     _lds_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "") or ""
     for _lds_flag in ("--disk-cache-size=1", "--media-cache-size=1", "--disable-gpu-shader-disk-cache"):
@@ -7931,11 +7710,6 @@ class LiteDeskStudio(QMainWindow):
         self.ui_timer.start(500)
 
     def apply_beginner_editor_window_geometry(self):
-        """Make the main widget editor larger and readable, while staying on screen.
-
-        The previous default size was compact. This screen-aware sizing keeps the
-        editor comfortable on large monitors and still safe on smaller displays.
-        """
         min_w = 1320
         min_h = 780
         fallback_w = 1440
@@ -7965,7 +7739,6 @@ class LiteDeskStudio(QMainWindow):
             self.resize(fallback_w, fallback_h)
 
     def configure_readable_help_text(self, text_edit, min_height=180, fixed_height=None):
-        """Make explanatory QTextEdit boxes easier to read for beginners."""
         try:
             text_edit.setReadOnly(True)
         except:
@@ -8014,7 +7787,6 @@ class LiteDeskStudio(QMainWindow):
         self.apply_beginner_main_tooltips()
 
     def apply_beginner_main_tooltips(self):
-        """Beginner explanations for the main widget editor controls."""
         tips = {
             "btn_add_visualizer": lds_tr("音楽に合わせて動くバー表示を追加します。まずはこのボタンで追加し、右側でサイズや色を調整します。"),
             "btn_add_effects_overlay": lds_tr("花びら・雨・月・水面などの背景演出を追加します。細かい設定は中央の『エフェクト設定』から開けます。"),
@@ -8164,7 +7936,6 @@ class LiteDeskStudio(QMainWindow):
         return scroll
 
     def update_language_button_text(self):
-        """Update the language toggle button label."""
         try:
             lang = _lds_normalize_lang(get_litedesktopstudio_language())
             if lang.lower().startswith("en"):
@@ -8178,7 +7949,6 @@ class LiteDeskStudio(QMainWindow):
             pass
 
     def _snapshot_canvas_widget_configs(self):
-        """Capture widget configs before language switching."""
         snapshot = {"configs": [], "selected_index": -1, "edit_mode": None}
         try:
             widgets = list(getattr(self.canvas, "widgets", []) or [])
@@ -8196,7 +7966,6 @@ class LiteDeskStudio(QMainWindow):
         return snapshot
 
     def _restore_canvas_widget_configs(self, snapshot):
-        """Restore desktop widget configs captured before a language switch."""
         try:
             if not isinstance(snapshot, dict):
                 return
@@ -8257,7 +8026,6 @@ class LiteDeskStudio(QMainWindow):
             pass
 
     def on_language_button_clicked(self):
-        """Toggle language without changing desktop widget placement."""
         snapshot = self._snapshot_canvas_widget_configs()
         try:
             app = QApplication.instance()
@@ -8312,7 +8080,6 @@ class LiteDeskStudio(QMainWindow):
             pass
 
     def apply_language_to_existing_ui(self):
-        """Retranslate existing widgets in-place without changing layout geometry."""
         try:
             self.setWindowTitle(lds_tr(APP_NAME))
             try:
@@ -8411,7 +8178,6 @@ class LiteDeskStudio(QMainWindow):
             pass
 
     def rebuild_ui_after_language_change(self):
-        """Backward-compatible wrapper.  It no longer rebuilds layouts."""
         self.apply_language_to_existing_ui()
 
     def open_effects_overlay_editor(self):
@@ -9748,11 +9514,6 @@ class LiteDeskStudio(QMainWindow):
 
         event.accept()
 
-
-
-# -----------------------------------------------------------------------------
-# Immersive desktop scene icon overlay / interaction proxy helpers
-# -----------------------------------------------------------------------------
 _LDS_ICON_SCENE_CACHE = {"time": 0.0, "items": [], "size": (0, 0), "listview": 0}
 _LDS_ICON_IMAGE_CACHE = {}
 _LDS_ICON_FIELD_CACHE = {"key": None, "field": None}
@@ -9844,7 +9605,6 @@ def _lds_icon_scene_float_env(name: str, default_value: float, min_value: float,
 
 
 def _lds_icon_scene_bool_env(name: str, default_value: bool = False, aliases=None) -> bool:
-    """Read an icon-scene boolean from environment/profile defaults."""
     try:
         names = [str(name)]
         if aliases:
@@ -9939,13 +9699,6 @@ def _lds_set_icon_scene_active_profile_from_widget(widget):
     return profile
 
 def _lds_find_desktop_shell_windows():
-    """Return (desktop_host, SHELLDLL_DefView, SysListView32) for Explorer desktop.
-
-    Explorer can host desktop icons either under Progman or under a WorkerW.
-    This function checks Progman first, then enumerates top-level windows for a
-    WorkerW that owns SHELLDLL_DefView. That makes icon click/drag forwarding
-    work on more Windows desktop configurations.
-    """
     if not is_windows():
         return (0, 0, 0)
     try:
@@ -9998,7 +9751,6 @@ def _lds_make_lparam(x: int, y: int) -> int:
 
 
 def _lds_icon_proxy_post_mouse(message: int, x: int, y: int, wparam: int = 0) -> bool:
-    """Forward a mouse message to Explorer's desktop SysListView32."""
     if not is_windows():
         return False
     try:
@@ -10033,7 +9785,6 @@ def _lds_invalidate_icon_scene_cache():
 
 
 def _lds_canvas_pos_to_desktop_listview_client(canvas, pos):
-    """Convert a LiteDesktopStudio canvas QPoint to Explorer desktop listview client coords."""
     try:
         x = int(pos.x()); y = int(pos.y())
     except Exception:
@@ -10071,7 +9822,6 @@ def _lds_icon_proxy_post_mouse_from_canvas(canvas, message: int, pos, wparam: in
 
 
 def _lds_desktop_listview_clear_selection() -> bool:
-    """Clear Explorer desktop icon selection directly on the SysListView32."""
     if not is_windows():
         return False
     try:
@@ -10134,7 +9884,6 @@ def _lds_desktop_listview_clear_selection() -> bool:
 
 
 def _lds_desktop_listview_set_item_position(index: int, x: int, y: int) -> bool:
-    """Move one Explorer desktop icon by setting its listview item position."""
     if not is_windows():
         return False
     try:
@@ -10152,7 +9901,6 @@ def _lds_desktop_listview_set_item_position(index: int, x: int, y: int) -> bool:
 
 
 def _lds_desktop_icon_drag_prepare(canvas, hit, items, start_pos):
-    """Prepare drag state for Explorer desktop icons."""
     try:
         sx, sy = _lds_canvas_pos_to_desktop_listview_client(canvas, start_pos)
         selected_items = [it for it in list(items or []) if bool(it.get("selected"))]
@@ -10179,7 +9927,6 @@ def _lds_desktop_icon_drag_prepare(canvas, hit, items, start_pos):
 
 
 def _lds_desktop_icon_drag_update(canvas, pos) -> bool:
-    """Move prepared desktop icons according to mouse delta."""
     try:
         items = list(getattr(canvas, "_lds_icon_proxy_drag_items", []) or [])
         if not items:
@@ -10226,7 +9973,6 @@ def _lds_icon_hit_test(items, x: int, y: int, padding: int = 10):
 
 
 def _lds_point_hits_litedesktop_widget(canvas, pos) -> bool:
-    """Do not steal input from LiteDesktopStudio widgets in normal mode."""
     try:
         for w in reversed(getattr(canvas, "widgets", []) or []):
             try:
@@ -10245,7 +9991,6 @@ def _lds_point_hits_litedesktop_widget(canvas, pos) -> bool:
 
 
 def _lds_icon_proxy_should_handle(canvas, pos, require_icon: bool = False):
-    """Return (should_handle, hit_item, items) for desktop icon proxy input."""
     try:
         if _lds_point_hits_litedesktop_widget(canvas, pos):
             return (False, None, [])
@@ -10263,11 +10008,6 @@ def _lds_icon_proxy_should_handle(canvas, pos, require_icon: bool = False):
 
 
 def _lds_read_desktop_icon_items(canvas_width: int, canvas_height: int):
-    """Read desktop icon rect/text/state/image index from Explorer SysListView32.
-
-    Read-only synchronization: Explorer remains the source of truth. Results are
-    cached to keep rendering non-blocking.
-    """
     if not is_windows():
         return []
     try:
@@ -10653,9 +10393,6 @@ def _lds_extract_desktop_icon_image(image_index, size=48):
 
 
 def _lds_paint_desktop_icon_scene_overlay(p: QPainter, canvas, items):
-    icon_img = None
-    icon_size = None
-    """Paint atmospheric icon layer: not a copied UI, a scene integration layer."""
     try:
         if not items:
             return
@@ -10807,7 +10544,6 @@ def _lds_paint_desktop_icon_scene_overlay(p: QPainter, canvas, items):
 
 
 def _lds_icon_scene_overlay_signature(canvas, items):
-    """Compact signature for cached atmospheric icon overlay."""
     try:
         mouse = None
         try:
@@ -10849,7 +10585,6 @@ def _lds_icon_scene_overlay_signature(canvas, items):
 
 
 def _lds_paint_desktop_icon_scene_overlay_cached(p: QPainter, canvas, items):
-    """Draw cached icon scene overlay as QImage to keep redraw cost low."""
     try:
         if not items:
             return
@@ -10882,16 +10617,6 @@ def _lds_paint_desktop_icon_scene_overlay_cached(p: QPainter, canvas, items):
             pass
 
 def _lds_should_paint_icon_foreground_for_canvas(canvas):
-    """Return whether the visible LiteDesktopStudio icon foreground layer should be painted.
-
-    This is a stricter call-site gate to avoid double icons.
-
-    Policy:
-      - env force ON: draw
-      - env force OFF: do not draw
-      - auto/default: draw only when a full-screen scenic engine is actually enabled
-        in an EffectsOverlayWidget config.
-    """
     try:
         raw = str(
             os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS", "0")
@@ -10944,13 +10669,6 @@ def _lds_should_paint_icon_foreground_for_canvas(canvas):
         return False
 
 def _lds_icon_foreground_layer_enabled():
-    """Return whether LiteDesktopStudio should draw its own visible icon layer.
-
-    Priority:
-      1. Environment variable override
-      2. Runtime/theme mode saved in global
-      3. Safe default OFF
-    """
     try:
         raw_env = os.environ.get("LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS", None)
 
@@ -10983,18 +10701,6 @@ def _lds_icon_foreground_layer_enabled():
         return False
 
 def _lds_make_icon_label_image(text_value, selected=False, focused=False):
-    """Create cached soft desktop-icon label QImage.
-
-    Visual intent:
-      - softer translucent label backing
-      - subtle blue-white halo around the label
-      - slight text glow for readability
-      - selected/focused state remains visible but not harsh
-
-    Required names already expected in LiteDesktopStudio.py:
-      QFont, QFontMetrics, QImage, QPainter, QColor, QPen,
-      QRadialGradient, QBrush, QPointF, QRectF, Qt, os
-    """
     try:
         label = str(text_value or "")[:96]
         if not label:
@@ -11239,16 +10945,6 @@ def _lds_icon_foreground_signature(canvas, items):
 
 
 def _lds_paint_desktop_icon_foreground_layer_cached(p, canvas, items):
-    """Paint visible desktop icons as a cached drawImage layer.
-
-    Explorer remains the source of truth for:
-      - position
-      - text
-      - selection/focus
-      - input routing
-
-    LiteDesktopStudio draws the visual icon layer on top of the scene.
-    """
     try:
         if not _lds_icon_foreground_layer_enabled() or not items:
             return
@@ -11432,7 +11128,6 @@ def _lds_paint_desktop_icon_foreground_layer_cached(p, canvas, items):
 
 
 def _lds_normalize_desktop_icon_label(value):
-    """Normalize Explorer display label and filesystem names for matching."""
     try:
         import unicodedata
 
@@ -11446,7 +11141,6 @@ def _lds_normalize_desktop_icon_label(value):
 
 
 def _lds_expand_windows_path(value):
-    """Expand Windows registry/env-style path strings."""
     try:
         s = str(value or "").strip()
         if not s:
@@ -11470,11 +11164,6 @@ def _lds_expand_windows_path(value):
 
 
 def _lds_registry_desktop_roots():
-    """Read actual Desktop roots from Windows registry.
-
-    This is usually more reliable than guessing USERPROFILE/Desktop when
-    Desktop is redirected to OneDrive or another folder.
-    """
     roots = []
 
     try:
@@ -11530,19 +11219,6 @@ def _lds_registry_desktop_roots():
 
 
 def _lds_desktop_roots_for_icon_resolution():
-    """Collect actual roots for icon path resolution.
-
-    This intentionally includes:
-      - registry/known desktop roots if available
-      - conventional Desktop folders
-      - OneDrive Desktop folders
-      - Public Desktop
-      - manual override by LITEDESKTOPSTUDIO_ICON_SCENE_DESKTOP_ROOTS
-      - current working directory and app directory as a practical fallback
-
-    The last two are important when LiteDesktopStudio is being developed from a
-    build/project folder and desktop labels point to files near the app.
-    """
     roots = []
     seen = set()
     
@@ -11754,14 +11430,6 @@ def _lds_desktop_roots_for_icon_resolution():
     return roots
 
 def _lds_desktop_icon_candidate_paths_from_label(label):
-    """Resolve Explorer desktop display label to filesystem candidates.
-
-    This resolver is intentionally broad:
-      - uses registry Desktop roots
-      - supports OneDrive/Public Desktop
-      - compares exact filename, stem, common hidden extensions
-      - normalizes Unicode, whitespace, full-width/half-width differences
-    """
     try:
         raw_label = str(label or "").strip()
         norm_label = _lds_normalize_desktop_icon_label(raw_label)
@@ -12011,7 +11679,6 @@ def _lds_extract_icon_image_with_qfileiconprovider(path, size=48):
         return None
 
 def _lds_is_recycle_bin_label(label):
-    """Return True when Explorer label looks like Recycle Bin."""
     try:
         normalized = _lds_normalize_desktop_icon_label(label)
         return normalized in (
@@ -12028,11 +11695,6 @@ def _lds_is_recycle_bin_label(label):
 
 
 def _lds_extract_recycle_bin_icon_image(size=48):
-    """Return a recycle-bin/trash icon QImage.
-
-    This does not depend on a filesystem path because Recycle Bin is a Shell
-    namespace item, not a normal desktop file.
-    """
     try:
         size = int(size)
         if size <= 0:
@@ -12121,20 +11783,6 @@ def _lds_extract_recycle_bin_icon_image(size=48):
         return None
 
 def _lds_extract_desktop_icon_image_for_item(item, size=48):
-    """Extract visible icon image for a synced Explorer desktop item.
-
-    Order:
-      1. Resolve label -> filesystem candidates
-      2. QFileIconProvider(path)
-      3. SHGetFileInfoW(path), if available
-      4. Explorer image-list image_index
-      5. QFileIconProvider generic file icon
-
-    Rationale:
-      At this stage, label -> path resolution is confirmed working.
-      Therefore path-based extraction should be preferred over cross-process
-      SysListView32 image-list extraction.
-    """
     try:
         size = int(size)
         label = str(item.get("text", "")) if isinstance(item, dict) else ""
@@ -12324,17 +11972,6 @@ def _lds_extract_desktop_icon_image_for_item(item, size=48):
         return None
 
 def _lds_qfileiconprovider_icon_for_path_or_generic(path=None, size=48):
-    """Return a QImage icon using multiple fallback paths.
-
-    Order:
-      1. QFileIconProvider for real filesystem path
-      2. QFileIconProvider generic file icon
-      3. QApplication.style().standardIcon(QStyle.SP_FileIcon)
-      4. Manually drawn fallback document glyph
-
-    This function is intentionally designed to return a visible QImage whenever
-    the foreground icon layer is actually being painted.
-    """
     try:
         size = int(size)
         if size <= 0:
@@ -12433,7 +12070,6 @@ def _lds_qfileiconprovider_icon_for_path_or_generic(path=None, size=48):
         return None
 
 def _lds_try_qfileiconprovider_from_item_label(item, size=48):
-    """Resolve item label to path, then force QFileIconProvider path icon first."""
     try:
         label = str(item.get("text", "")) if isinstance(item, dict) else ""
         size = int(size)
@@ -12534,7 +12170,6 @@ def _lds_try_qfileiconprovider_from_item_label(item, size=48):
         return None
 
 class BackgroundEffectsCanvas(QWidget):
-    """Hidden-until-attached WorkerW native child background for EffectsOverlayWidget."""
     def __init__(self, foreground_canvas):
         super().__init__(None)
         self.foreground_canvas = foreground_canvas
@@ -12626,7 +12261,6 @@ class BackgroundEffectsCanvas(QWidget):
             pass
 
     def detach_from_workerw(self):
-        """Detach this background HWND from WorkerW and restore taskbar visibility."""
         try:
             return lds_detach_window_from_desktop_host(self, restore_taskbar=True)
         except Exception:
@@ -12659,9 +12293,6 @@ class BackgroundEffectsCanvas(QWidget):
 
 
 class DesktopPriorityHotkeyFilter(QAbstractNativeEventFilter):
-    """Windows native Alt+D hotkey so desktop priority mode can be turned off
-    even when the main transparent canvas is no longer receiving mouse/key focus.
-    """
     WM_HOTKEY = 0x0312
     MOD_ALT = 0x0001
     VK_D = 0x44
@@ -12803,7 +12434,6 @@ class DesktopCanvas(QWidget):
         self.update_platform_hit_mask()
 
     def apply_safe_desktop_geometry(self):
-        """Keep the frameless desktop canvas outside the taskbar area."""
         try:
             geom = lds_safe_desktop_geometry()
             self.setGeometry(geom)
@@ -12820,13 +12450,6 @@ class DesktopCanvas(QWidget):
         return None
 
     def _effective_effect_frame_interval_ms(self) -> int:
-        """Return the current canvas timer interval from enabled effect FPS settings.
-
-        The canvas is painted as a single transparent window, so the safest way to
-        control effect FPS without OpenGL is to throttle the shared render timer.
-        When multiple effect overlays have FPS limits, the lowest enabled FPS is
-        used to reduce load consistently.
-        """
         fps_values = []
         try:
             for widget in getattr(self, "widgets", []):
@@ -12858,7 +12481,6 @@ class DesktopCanvas(QWidget):
                 widget.on_mouse_release(pos)
 
     def should_widget_reflect_in_mirrors(self, widget) -> bool:
-        """Return True when an individual widget is allowed to appear in water/ice mirror reflections."""
         try:
             if widget is None or not hasattr(widget, "cfg"):
                 return False
@@ -14178,10 +13800,6 @@ def main():
 
     sys.exit(app.exec())
 
-
-
-
-# --- ALT+R default layout restore patch (monkey patch) ---
 def _lds_alt_r_make_default_widget_configs(self):
     return [
         WidgetConfig(type="visualizer", x=120, y=120, w=560, h=190, title=lds_tr("音楽Spectrum"), color="#5BE7FF", bg="#10141C"),
@@ -14270,7 +13888,6 @@ DesktopCanvas.make_default_widget_configs = _lds_alt_r_make_default_widget_confi
 DesktopCanvas.refresh_control_panel_after_layout_change = _lds_alt_r_refresh_control_panel_after_layout_change
 DesktopCanvas.restore_default_layout = _lds_alt_r_restore_default_layout
 DesktopCanvas.keyPressEvent = _lds_alt_r_keyPressEvent
-# --- END ALT+R default layout restore patch ---
 
 if __name__ == "__main__":
     main()

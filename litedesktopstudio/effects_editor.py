@@ -1,103 +1,26 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import asyncio
-import concurrent.futures
-import calendar as py_calendar
-import ctypes
-import ctypes.wintypes
-import json
-import math
-import random
-import os
-import shutil
-import queue
-import sys
-import threading
-import time
-import urllib.parse
-import urllib.request
-import warnings
-import uuid
-import webbrowser
-import zipfile
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
-from pathlib import Path
 
-import numpy as np
-import psutil
-import soundcard as sc
-from PySide6.QtCore import (QFileInfo,
-    QObject,
-    Signal,
-    Slot,
-    Qt,
-    QRectF,
-    QPoint,
-    QTimer,
-    QThread,
-    QEvent,
-    QUrl,
-    QPointF,
-    QRect,
-    QCoreApplication,
-    QTranslator,
-    QAbstractNativeEventFilter,
-    QLocale,
-)
-from PySide6.QtGui import (
-    QColor,
-    QPainter,
-    QFont,
-    QPen,
-    QIcon,
-    QBrush,
-    QRadialGradient,
-    QLinearGradient,
-    QTextDocument,
-    QPainterPath,
-    QImage,
-    QPixmap,
-    QRegion,
-    QSurfaceFormat,
-    QOpenGLContext,
-    QOffscreenSurface,
-    QFontMetrics,
-    QDesktopServices,
-)
-from PySide6.QtWidgets import (QStyle, QFileIconProvider,
-    QApplication,
-    QWidget,
-    QMainWindow,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QColorDialog,
-    QFileDialog,
-    QSpinBox,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QMessageBox,
-    QListWidget,
-    QCheckBox,
-    QGridLayout,
-    QScrollArea,
-    QDoubleSpinBox,
-    QComboBox,
-    QTabWidget,
-    QGroupBox,
-)
+from PySide6.QtWidgets import (QWidget,
+                               QVBoxLayout,
+                               QHBoxLayout,
+                               QPushButton,
+                               QColorDialog,
+                               QSpinBox,
+                               QDialog,
+                               QFormLayout,
+                               QLineEdit,
+                               QCheckBox,
+                               QGridLayout,
+                               QScrollArea,
+                               QDoubleSpinBox,
+                               )
+
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except:
     QOpenGLWidget = None
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebChannel import QWebChannel
 
-from litedesktopstudio.core import *
 from litedesktopstudio.effects import *
 from litedesktopstudio.version import APP_NAME
 
@@ -114,7 +37,7 @@ class EffectsOverlayEditorDialog(QDialog):
                 self.setWindowOpacity(0.90)
             except:
                 pass
-        from PySide6.QtWidgets import QTabWidget, QGroupBox
+        from PySide6.QtWidgets import QTabWidget
 
         self.widget = widget
         self.cfg = widget.cfg
@@ -333,7 +256,6 @@ class EffectsOverlayEditorDialog(QDialog):
         return f"{icon} {s}" if icon else s
 
     def _add_beginner_tab_guides(self):
-        """Add short, theme-aware beginner explanations to every settings tab."""
         guides = [
             (self.basic_form, lds_tr("基本"), lds_tr("効果を表示するかどうかを切り替える入口です。迷った時はプリセットボタンを使うと安全です。")),
             (self.rose_form, lds_tr("バラ花びら"), lds_tr("花びらの数・速さ・大きさを調整します。数を増やすほど華やかですが、パソコン負荷も上がります。")),
@@ -1333,7 +1255,7 @@ class EffectsOverlayEditorDialog(QDialog):
         self._theme_set_value("software_max_ripples", 36)
 
     def _theme_set_raw_extra(self, name: str, value):
-        """Store theme-only settings that are saved into effects_json."""
+        self._theme_extra_settings = {}
         try:
             if not hasattr(self, "_theme_extra_settings") or self._theme_extra_settings is None:
                 self._theme_extra_settings = {}
@@ -1342,13 +1264,6 @@ class EffectsOverlayEditorDialog(QDialog):
             pass
 
     def _theme_clear_scenic_engine_flags(self):
-        """Clear all mutually-exclusive full-screen scenic engine flags.
-
-        Without writing explicit False values into effects_json, a previously
-        selected scenic preset such as Pamukkale can remain active after choosing
-        a non-scenic preset. This method is intentionally called by every preset
-        reset path before enabling the next theme.
-        """
         for flag in [
             "sahara_desert_engine_enabled",
             "uyuni_salt_flat_engine_enabled",
@@ -1363,7 +1278,6 @@ class EffectsOverlayEditorDialog(QDialog):
         self._theme_set_raw_extra("desktop_ui_aware_rendering_enabled", False)
 
     def _theme_select_fullscreen_scenic_engine(self, active_flag: str, fps: int = 60, cache_fps: int = 30, intensity: float = 0.88):
-        """Select exactly one full-screen scenic engine and configure safe scenic defaults."""
         cache_fps = max(60, int(cache_fps))
         self._theme_apply_60fps_scenic_foundation(fps=fps, cache_fps=cache_fps)
         self._theme_clear_scenic_engine_flags()
@@ -1406,7 +1320,6 @@ class EffectsOverlayEditorDialog(QDialog):
             pass
 
     def _theme_apply_60fps_scenic_foundation(self, fps: int = 60, cache_fps: int = 8):
-        """Common 60fps-first baseline for large static scenic engines."""
         self._theme_disable_all_visual_effects()
         self._theme_apply_common_lightweight(fps=fps, quality=0.50)
         self._theme_set_checked("effect_frame_rate_enabled", True)
@@ -1440,7 +1353,6 @@ class EffectsOverlayEditorDialog(QDialog):
         self._theme_set_extra("cloud", enabled=False, count=0)
 
     def apply_effect_theme(self, theme_id: str):
-        """Enable a curated group of effects as a theme preset."""
         self._theme_disable_all_visual_effects()
         self._theme_clear_scenic_engine_flags()
         self._theme_apply_common_lightweight()

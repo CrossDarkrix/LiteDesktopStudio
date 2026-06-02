@@ -1,95 +1,23 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import asyncio
-import concurrent.futures
-import calendar as py_calendar
-import ctypes
-import ctypes.wintypes
-import json
-import math
-import random
-import os
+
 import shutil
-import queue
-import sys
-import threading
-import time
-import urllib.parse
-import urllib.request
-import warnings
 import uuid
 import webbrowser
 import zipfile
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import psutil
-import soundcard as sc
-from PySide6.QtCore import (QFileInfo,
-    QObject,
-    Signal,
-    Slot,
-    Qt,
-    QRectF,
-    QPoint,
-    QTimer,
-    QThread,
-    QEvent,
-    QUrl,
-    QPointF,
-    QRect,
-    QCoreApplication,
-    QTranslator,
-    QAbstractNativeEventFilter,
-    QLocale,
-)
-from PySide6.QtGui import (
-    QColor,
-    QPainter,
-    QFont,
-    QPen,
-    QIcon,
-    QBrush,
-    QRadialGradient,
-    QLinearGradient,
-    QTextDocument,
-    QPainterPath,
-    QImage,
-    QPixmap,
-    QRegion,
-    QSurfaceFormat,
-    QOpenGLContext,
-    QOffscreenSurface,
-    QFontMetrics,
-    QDesktopServices,
-)
-from PySide6.QtWidgets import (QStyle, QFileIconProvider,
-    QApplication,
-    QWidget,
-    QMainWindow,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QColorDialog,
-    QFileDialog,
-    QSpinBox,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QMessageBox,
-    QListWidget,
-    QCheckBox,
-    QGridLayout,
-    QScrollArea,
-    QDoubleSpinBox,
-    QComboBox,
-    QTabWidget,
-    QGroupBox,
-)
+from PySide6.QtCore import (QObject,
+                            Signal,
+                            Slot,
+                            QTimer,
+                            QEvent,
+                            QUrl,
+                            )
+
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except:
@@ -97,9 +25,7 @@ except:
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
 
-from litedesktopstudio.core import *
 from litedesktopstudio.widgets import *
-from litedesktopstudio.effects import *
 from litedesktopstudio.runtime import *
 
 
@@ -117,7 +43,44 @@ __htmls = """
 </body>
 </html>
 """.format(lds=lds_tr("この内容は WidgetConfig.text として config.json に保存されます。"))
-
+DEFAULT_JS_HTML = """
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Segoe UI", sans-serif;
+    color: white;
+}
+.card {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    padding: 16px;
+    background: rgba(16, 20, 28, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #80FF9F;
+}
+button {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(128, 255, 159, 0.55);
+    background: rgba(128, 255, 159, 0.12);
+    color: white;
+}""" + __htmls
 
 JSHTML_WIDGETS_DIR = Path(CONFIG_PATH).with_name("LiteDesktopStudio_jshtml_widgets")
 
@@ -401,10 +364,10 @@ class JSHtmlWidget(BaseWidget):
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
 
         p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect, 16, 16)
 
 
@@ -807,7 +770,7 @@ def lds_configure_jshtml_webengine_profile(profile) -> bool:
                 ok = True
             except Exception:
                 try:
-                    profile.setHttpCacheType(QWebEngineProfile.NoCache)
+                    profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
                     ok = True
                 except Exception:
                     pass
@@ -821,7 +784,7 @@ def lds_configure_jshtml_webengine_profile(profile) -> bool:
                 ok = True
             except Exception:
                 try:
-                    profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+                    profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
                     ok = True
                 except Exception:
                     pass
@@ -1013,7 +976,7 @@ class JSHtmlViewManager:
             pass
 
         try:
-            view.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            view.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         except Exception:
             pass
         try:
@@ -1176,7 +1139,7 @@ class JSHtmlViewManager:
                     self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
                 except:
                     try:
-                        self.setContextMenuPolicy(Qt.NoContextMenu)
+                        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
                     except:
                         pass
                 try:
@@ -1347,11 +1310,11 @@ class JSHtmlViewManager:
             lds_install_jshtml_webengine_keepalive(view)
         except Exception:
             pass
-        view.setAttribute(Qt.WA_TranslucentBackground, True)
+        view.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         view.setStyleSheet("background: transparent;")
         try:
             page = view.page()
-            page.setBackgroundColor(Qt.transparent)
+            page.setBackgroundColor(Qt.GlobalColor.transparent)
             try:
                 lds_keep_jshtml_webengine_active(view)
             except Exception:
@@ -1432,7 +1395,7 @@ class JSHtmlViewManager:
         view.setGeometry(int(r.left()), int(r.top()), max(1, int(r.width())), max(1, int(r.height())))
         edit_mode = bool(getattr(self.canvas, "edit_mode", True))
         desktop_priority = bool(getattr(self.canvas, "desktop_priority_mode", False))
-        view.setAttribute(Qt.WA_TransparentForMouseEvents, edit_mode or desktop_priority)
+        view.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, edit_mode or desktop_priority)
         key = id(widget)
         mode = str(getattr(cfg, "jshtml_mode", "inline") or "inline").lower()
         if mode == "package":

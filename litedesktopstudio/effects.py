@@ -1,101 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import asyncio
-import concurrent.futures
-import calendar as py_calendar
-import ctypes
-import ctypes.wintypes
-import json
-import math
-import random
-import os
-import shutil
-import queue
-import sys
-import threading
-import time
-import urllib.parse
-import urllib.request
-import warnings
-import uuid
-import webbrowser
-import zipfile
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
-from pathlib import Path
 
-import numpy as np
-import psutil
-import soundcard as sc
-from PySide6.QtCore import (QFileInfo,
-    QObject,
-    Signal,
-    Slot,
-    Qt,
-    QRectF,
-    QPoint,
-    QTimer,
-    QThread,
-    QEvent,
-    QUrl,
-    QPointF,
-    QRect,
-    QCoreApplication,
-    QTranslator,
-    QAbstractNativeEventFilter,
-    QLocale,
-)
-from PySide6.QtGui import (
-    QColor,
-    QPainter,
-    QFont,
-    QPen,
-    QIcon,
-    QBrush,
-    QRadialGradient,
-    QLinearGradient,
-    QTextDocument,
-    QPainterPath,
-    QImage,
-    QPixmap,
-    QRegion,
-    QSurfaceFormat,
-    QOpenGLContext,
-    QOffscreenSurface,
-    QFontMetrics,
-    QDesktopServices,
-)
-from PySide6.QtWidgets import (QStyle, QFileIconProvider,
-    QApplication,
-    QWidget,
-    QMainWindow,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QTextEdit,
-    QColorDialog,
-    QFileDialog,
-    QSpinBox,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QMessageBox,
-    QListWidget,
-    QCheckBox,
-    QGridLayout,
-    QScrollArea,
-    QDoubleSpinBox,
-    QComboBox,
-    QTabWidget,
-    QGroupBox,
-)
+from dataclasses import dataclass, asdict
+
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except:
     QOpenGLWidget = None
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebChannel import QWebChannel
 
 from litedesktopstudio.core import *
 
