@@ -8159,6 +8159,7 @@ class LiteDeskStudio(QMainWindow):
                 "prop_font_size": lds_tr("🔤 Font Size"),
                 "prop_visualizer_bar_width_scale": lds_tr("📏 スペクトルバー幅"),
                 "prop_visualizer_orientation": lds_tr("🧭 スペクトル展開方向"),
+                "prop_visualizer_style": lds_tr("🎨 スペクトル視覚効果"),
                 "prop_visualizer_frame_rate": lds_tr("🎞️ FPS"),
             }
             for field_attr_name, source_text in form_labels.items():
@@ -8424,6 +8425,57 @@ class LiteDeskStudio(QMainWindow):
         self.prop_visualizer_orientation.addItem(lds_tr("横向きに展開"), "horizontal")
         self.prop_visualizer_orientation.addItem(lds_tr("縦向きに展開"), "vertical")
         self.prop_visualizer_orientation.currentIndexChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_style = QComboBox()
+        for _label, _value in [
+            (lds_tr("クラシック"), "classic"),
+            (lds_tr("ベースドロップス風"), "bass_drop"),
+            (lds_tr("メロディック・バイブ風"), "melodic_vibe"),
+            (lds_tr("オルタナティブ風"), "alternative"),
+            (lds_tr("サークル風"), "circle"),
+            (lds_tr("楕円形"), "ellipse"),
+            (lds_tr("ターンテーブル風"), "turntable"),
+            (lds_tr("スポットライト・ビート風"), "spotlight_beat"),
+            (lds_tr("オーディオ・リアクト風"), "audio_react"),
+            (lds_tr("レトロな未来風"), "retro_future"),
+            (lds_tr("虹風"), "rainbow"),
+            (lds_tr("ミニマル風"), "minimal"),
+            (lds_tr("アーバンタイムラプス風"), "urban_timelapse"),
+            (lds_tr("ミュージックビートウォール風"), "music_beat_wall"),
+            (lds_tr("LEDオーディオ波風"), "led_audio_wave"),
+            (lds_tr("Euphoria in Motion風"), "euphoria_motion"),
+            (lds_tr("Luminance風"), "luminance"),
+            (lds_tr("Parallax Waves風"), "parallax_waves"),
+            (lds_tr("HUDオーディオイコライザ風"), "hud_equalizer"),
+            (lds_tr("Space風"), "space"),
+            (lds_tr("フラットオーディオスペクトラム風"), "flat_spectrum"),
+            (lds_tr("ダイナミックグリッチ風"), "dynamic_glitch"),
+            (lds_tr("Cyber風"), "cyber"),
+            (lds_tr("オーロラ風"), "aurora"),
+            (lds_tr("ホログラム風"), "hologram"),
+            (lds_tr("エネルギーシールド風"), "energy_shield"),
+            (lds_tr("オーディオリップル風"), "audio_ripple"),
+            (lds_tr("ネビュラ風"), "nebula"),
+            (lds_tr("Matrix風"), "matrix"),
+            (lds_tr("レーダースキャン風"), "radar_scan"),
+            (lds_tr("オーディオトンネル風"), "audio_tunnel"),
+            (lds_tr("流星群風"), "meteor_shower"),
+            (lds_tr("ネオン・トンネル・ワイヤー風"), "neon_tunnel_wire"),
+            (lds_tr("ネオン音波ビジュアライザー風"), "neon_soundwave"),
+            (lds_tr("光彩ビートのミュージック風"), "glow_beat_music"),
+            (lds_tr("エニマティック・コ響サウンド風"), "enigmatic_echo_sound"),
+            (lds_tr("音声反応型ライト風"), "reactive_lights"),
+            (lds_tr("エレクトロ・ダブステップ風"), "electro_dubstep"),
+            (lds_tr("ミニマルビート風"), "minimal_beat"),
+            (lds_tr("ローファイ・バイブス風"), "lofi_vibes"),
+            (lds_tr("コズミックフュージョン風"), "cosmic_fusion"),
+            (lds_tr("フューチャリスティックトンネル風"), "futuristic_tunnel"),
+            (lds_tr("エレクトリックパルス風"), "electric_pulse"),
+            (lds_tr("サークル波形風"), "circle_waveform"),
+            (lds_tr("パララックスウェーブ風"), "parallax_waves"),
+            (lds_tr("ビート蛍光色視覚化アプリ風"), "beat_fluorescent_app"),
+        ]:
+            self.prop_visualizer_style.addItem(_label, _value)
+        self.prop_visualizer_style.currentIndexChanged.connect(self.apply_properties_live)
         self.prop_visualizer_frame_rate_enabled = QCheckBox(lds_tr("🎞️ FPS制限を使う"))
         self.prop_visualizer_frame_rate_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_visualizer_frame_rate = QSpinBox()
@@ -8487,6 +8539,7 @@ class LiteDeskStudio(QMainWindow):
         form.addRow("", self.prop_visualizer_glow_enabled)
         form.addRow(lds_tr("📏 スペクトルバー幅"), self.prop_visualizer_bar_width_scale)
         form.addRow(lds_tr("🧭 スペクトル展開方向"), self.prop_visualizer_orientation)
+        form.addRow(lds_tr("🎨 スペクトル視覚効果"), self.prop_visualizer_style)
         form.addRow("", self.prop_visualizer_frame_rate_enabled)
         form.addRow("🎞️ FPS", self.prop_visualizer_frame_rate)
         self.visualizer_only_property_widgets = [
@@ -8495,6 +8548,7 @@ class LiteDeskStudio(QMainWindow):
             self.prop_visualizer_glow_enabled,
             self.prop_visualizer_bar_width_scale,
             self.prop_visualizer_orientation,
+            self.prop_visualizer_style,
             self.prop_visualizer_frame_rate_enabled,
             self.prop_visualizer_frame_rate,
         ]
@@ -8884,6 +8938,7 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_visualizer_glow_enabled", None),
             getattr(self, "prop_visualizer_bar_width_scale", None),
             getattr(self, "prop_visualizer_orientation", None),
+            getattr(self, "prop_visualizer_style", None),
             getattr(self, "prop_visualizer_frame_rate_enabled", None),
             getattr(self, "prop_visualizer_frame_rate", None),
             getattr(self, "prop_network_down_color", None),
@@ -8925,6 +8980,7 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_glow_enabled.setChecked(True)
                 self.prop_visualizer_bar_width_scale.setValue(1.0)
                 self.prop_visualizer_orientation.setCurrentIndex(0)
+                self.prop_visualizer_style.setCurrentIndex(0)
                 self.prop_visualizer_frame_rate_enabled.setChecked(True)
                 self.prop_visualizer_frame_rate.setValue(60)
                 self.set_visualizer_controls_visible(False)
@@ -8993,6 +9049,9 @@ class LiteDeskStudio(QMainWindow):
                 orientation = str(getattr(cfg, "visualizer_orientation", "horizontal") or "horizontal").lower()
                 idx = self.prop_visualizer_orientation.findData("vertical" if orientation == "vertical" else "horizontal")
                 self.prop_visualizer_orientation.setCurrentIndex(max(0, idx))
+                style = str(getattr(cfg, "visualizer_style", "classic") or "classic")
+                style_idx = self.prop_visualizer_style.findData(style)
+                self.prop_visualizer_style.setCurrentIndex(max(0, style_idx))
                 self.prop_visualizer_frame_rate_enabled.setChecked(bool(getattr(cfg, "visualizer_frame_rate_enabled", True)))
                 self.prop_visualizer_frame_rate.setValue(max(1, min(240, int(getattr(cfg, "visualizer_frame_rate", 40)))))
             else:
@@ -9171,6 +9230,7 @@ class LiteDeskStudio(QMainWindow):
                 cfg.visualizer_glow_enabled = self.prop_visualizer_glow_enabled.isChecked()
                 cfg.visualizer_bar_width_scale = self.prop_visualizer_bar_width_scale.value()
                 cfg.visualizer_orientation = self.prop_visualizer_orientation.currentData() or "horizontal"
+                cfg.visualizer_style = self.prop_visualizer_style.currentData() or "classic"
                 cfg.visualizer_frame_rate_enabled = self.prop_visualizer_frame_rate_enabled.isChecked()
                 cfg.visualizer_frame_rate = max(1, min(240, self.prop_visualizer_frame_rate.value()))
                 if hasattr(widget, "_visualizer_frame_cache"):
@@ -12820,6 +12880,7 @@ class DesktopCanvas(QWidget):
             visualizer_glow_enabled=getattr(old, "visualizer_glow_enabled", True),
             visualizer_bar_width_scale=getattr(old, "visualizer_bar_width_scale", 1.0),
             visualizer_orientation=getattr(old, "visualizer_orientation", "horizontal"),
+            visualizer_style=getattr(old, "visualizer_style", "classic"),
             effects_json=getattr(old, "effects_json", "{}"),
             effects_follow_mouse=getattr(old, "effects_follow_mouse", True),
             weather_location=getattr(old, "weather_location", ""),

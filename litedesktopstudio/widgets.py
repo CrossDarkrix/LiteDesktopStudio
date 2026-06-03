@@ -16,6 +16,7 @@ from PySide6.QtGui import (
     QPen,
     QBrush,
     QLinearGradient,
+    QRadialGradient,
     QTextDocument,
     QPainterPath,
     QImage,
@@ -105,6 +106,7 @@ class WidgetConfig:
     visualizer_glow_enabled: bool = True
     visualizer_bar_width_scale: float = 1.0
     visualizer_orientation: str = "horizontal"
+    visualizer_style: str = "classic"
     visualizer_frame_rate_enabled: bool = True
     visualizer_frame_rate: int = 60
     weather_location: str = ""
@@ -192,6 +194,11 @@ class VisualizerWidget(BaseWidget):
         fps = max(1, min(240, fps))
         return 1.0 / fps
 
+
+    def _visualizer_effect_padding(self) -> float:
+        """External cache padding is disabled; visualizer effects are scaled to fit inside the widget frame."""
+        return 0.0
+
     def _visualizer_frame_cache_key_for(self, ctx: Dict):
         r = self.rect
         return (
@@ -202,6 +209,8 @@ class VisualizerWidget(BaseWidget):
             bool(getattr(self.cfg, "visualizer_glow_enabled", True)),
             round(float(getattr(self.cfg, "visualizer_bar_width_scale", 1.0)), 3),
             str(getattr(self.cfg, "visualizer_orientation", "horizontal")),
+            str(getattr(self.cfg, "visualizer_style", "classic")),
+            round(float(self._visualizer_effect_padding()), 2),
             bool(getattr(self, "selected", False)),
             bool(ctx.get("edit_mode", True)) if isinstance(ctx, dict) else True,
         )
@@ -227,6 +236,10 @@ class VisualizerWidget(BaseWidget):
             ip = QPainter(image)
             try:
                 ip.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                try:
+                    ip.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                except Exception:
+                    pass
                 ip.translate(-r.left(), -r.top())
                 self._paint_visualizer_direct(ip, ctx)
             finally:
@@ -240,6 +253,363 @@ class VisualizerWidget(BaseWidget):
         else:
             self._paint_visualizer_direct(p, ctx)
 
+
+    def _visualizer_style(self):
+        value = str(getattr(self.cfg, "visualizer_style", "classic") or "classic").strip().lower()
+        aliases = {
+            "クラシック": "classic", "classic": "classic",
+            "ベースドロップス風": "bass_drop", "bass drop": "bass_drop", "bass_drop": "bass_drop",
+            "メロディック・バイブ風": "melodic_vibe", "melodic vibe": "melodic_vibe", "melodic_vibe": "melodic_vibe",
+            "オルタナティブ風": "alternative", "alternative": "alternative",
+            "サークル風": "circle", "circle": "circle",
+            "楕円形": "ellipse", "ellipse": "ellipse",
+            "ターンテーブル風": "turntable", "turntable": "turntable",
+            "スポットライト・ビート風": "spotlight_beat", "スポットライト・ビート風": "spotlight_beat", "spotlight beat": "spotlight_beat",
+            "オーディオ・リアクト風": "audio_react", "audio react": "audio_react", "audio_react": "audio_react",
+            "レトロな未来風": "retro_future", "retro future": "retro_future", "retro_future": "retro_future",
+            "虹風": "rainbow", "rainbow": "rainbow",
+            "ミニマル風": "minimal", "minimal": "minimal",
+            "アーバンタイムラプス風": "urban_timelapse", "urban timelapse": "urban_timelapse",
+            "ミュージックビートウォール風": "music_beat_wall", "music beat wall": "music_beat_wall",
+            "ledオーディオ波風": "led_audio_wave", "led audio wave": "led_audio_wave",
+            "euphoria in motion風": "euphoria_motion", "euphoria in motion": "euphoria_motion",
+            "luminance風": "luminance", "luminance": "luminance",
+            "parallax waves風": "parallax_waves", "parallax waves": "parallax_waves", "パララックスウェーブ風": "parallax_waves",
+            "hudオーディオイコライザ風": "hud_equalizer", "hud equalizer": "hud_equalizer",
+            "space風": "space", "space": "space",
+            "フラットオーディオスペクトラム風": "flat_spectrum", "flat spectrum": "flat_spectrum",
+            "ダイナミックグリッチ風": "dynamic_glitch", "ダイナミックグリッチ風": "dynamic_glitch", "dynamic glitch": "dynamic_glitch",
+            "cyber風": "cyber", "cyber": "cyber",
+            "オーロラ風": "aurora", "aurora": "aurora",
+            "ホログラム風": "hologram", "hologram": "hologram",
+            "エネルギーシールド風": "energy_shield", "energy shield": "energy_shield",
+            "オーディオリップル風": "audio_ripple", "audio ripple": "audio_ripple",
+            "ネビュラ風": "nebula", "nebula": "nebula",
+            "matrix風": "matrix", "matrix": "matrix",
+            "レーダースキャン風": "radar_scan", "radar scan": "radar_scan",
+            "オーディオトンネル風": "audio_tunnel", "audio tunnel": "audio_tunnel",
+            "流星群風": "meteor_shower", "meteor shower": "meteor_shower",
+            "ネオン・トンネル・ワイヤー風": "neon_tunnel_wire", "neon tunnel wire": "neon_tunnel_wire",
+            "ネオン音波ビジュアライザー風": "neon_soundwave", "neon soundwave": "neon_soundwave",
+            "光彩ビートのミュージック風": "glow_beat_music", "glow beat music": "glow_beat_music",
+            "エニマティック・コ響サウンド風": "enigmatic_echo_sound", "エニグマティック・共鳴サウンド風": "enigmatic_echo_sound", "enigmatic echo sound": "enigmatic_echo_sound",
+            "音声反応型ライト風": "reactive_lights", "reactive lights": "reactive_lights",
+            "エレクトロ・ダブステップ風": "electro_dubstep", "electro dubstep": "electro_dubstep",
+            "ミニマルビート風": "minimal_beat", "minimal beat": "minimal_beat",
+            "ローファイ・バイブス風": "lofi_vibes", "lofi vibes": "lofi_vibes",
+            "コズミックフュージョン風": "cosmic_fusion", "cosmic fusion": "cosmic_fusion",
+            "フューチャリスティックトンネル風": "futuristic_tunnel", "futuristic tunnel": "futuristic_tunnel",
+            "エレクトリックパルス風": "electric_pulse", "electric pulse": "electric_pulse",
+            "サークル波形風": "circle_waveform", "circle waveform": "circle_waveform",
+            "ビート蛍光色視覚化アプリ風": "beat_fluorescent_app", "beat fluorescent app": "beat_fluorescent_app",
+        }
+        return aliases.get(value, value if value else "classic")
+
+    def _visualizer_energy(self, bars):
+        try:
+            vals = [max(0.0, min(1.0, float(v))) for v in bars]
+            if not vals:
+                return 0.0, 0.0, 0.0
+            n = len(vals)
+            bass_n = max(1, n // 5)
+            bass = sum(vals[:bass_n]) / bass_n
+            mid_vals = vals[bass_n:max(bass_n + 1, n * 3 // 5)]
+            mid = sum(mid_vals) / max(1, len(mid_vals))
+            avg = sum(vals) / n
+            return avg, bass, max(mid, max(vals) * 0.35)
+        except Exception:
+            return 0.0, 0.0, 0.0
+
+    def _rainbow_color(self, phase: float, alpha: int = 230, sat: float = 0.82, val: float = 1.0) -> QColor:
+        try:
+            c = QColor()
+            c.setHsvF(float(phase) % 1.0, max(0.0, min(1.0, float(sat))), max(0.0, min(1.0, float(val))), max(0, min(255, int(alpha))) / 255.0)
+            return c
+        except Exception:
+            return QColor(255, 255, 255, max(0, min(255, int(alpha))))
+
+    def _draw_visualizer_polyline(self, p: QPainter, points, color: QColor, width: float = 2.0, alpha: int = 220):
+        if len(points) < 2:
+            return
+        c = QColor(color); c.setAlpha(max(0, min(255, int(alpha))))
+        pen = QPen(c, max(0.5, float(width)))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath(points[0])
+        for pt in points[1:]:
+            path.lineTo(pt)
+        p.drawPath(path)
+
+    def _draw_visualizer_soft_orb(self, p: QPainter, center: QPointF, radius: float, color: QColor, alpha: int):
+        try:
+            radius = max(1.0, float(radius))
+            grad = QRadialGradient(center, radius)
+            c0 = QColor(color); c0.setAlpha(max(0, min(255, int(alpha))))
+            c1 = QColor(color); c1.setAlpha(0)
+            grad.setColorAt(0.0, c0)
+            grad.setColorAt(1.0, c1)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawEllipse(center, radius, radius)
+        except Exception:
+            pass
+
+    def _paint_visualizer_styled(self, p: QPainter, bars, style: str, r: QRectF, area: QRectF, base_color: QColor, now: float):
+        values = [max(0.0, min(1.0, float(v))) for v in bars]
+        count = max(1, len(values))
+        avg, bass, mid = self._visualizer_energy(values)
+        cx = area.center().x(); cy = area.center().y()
+        aw = max(1.0, area.width()); ah = max(1.0, area.height())
+        short_side = min(aw, ah)
+        # Scale all "maximum" extents so the strongest beat remains inside the frame.
+        max_effect_radius = max(2.0, short_side * 0.43)
+        radius = min(short_side * (0.23 + 0.12 * bass), max_effect_radius * 0.72)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        atmospheric = {"space", "cyber", "retro_future", "hud_equalizer", "aurora", "hologram", "energy_shield", "nebula", "matrix", "radar_scan", "audio_tunnel", "neon_tunnel_wire", "cosmic_fusion", "futuristic_tunnel", "beat_fluorescent_app"}
+        if style in atmospheric:
+            grad = QRadialGradient(QPointF(cx, cy), max(aw, ah) * 0.78)
+            if style == "aurora":
+                grad.setColorAt(0.0, QColor(90, 255, 210, 56 + int(avg * 60)))
+                grad.setColorAt(0.55, QColor(170, 80, 255, 28 + int(bass * 42)))
+            elif style == "nebula":
+                grad.setColorAt(0.0, QColor(150, 70, 255, 58 + int(avg * 64)))
+                grad.setColorAt(0.45, QColor(255, 70, 180, 30 + int(mid * 58)))
+            elif style == "matrix":
+                grad.setColorAt(0.0, QColor(0, 42, 20, 38 + int(avg * 32)))
+                grad.setColorAt(0.7, QColor(0, 14, 8, 16))
+            elif style in ("audio_tunnel", "neon_tunnel_wire", "futuristic_tunnel"):
+                grad.setColorAt(0.0, QColor(0, 230, 255, 46 + int(avg * 54)))
+                grad.setColorAt(0.58, QColor(160, 40, 255, 28 + int(bass * 42)))
+            else:
+                grad.setColorAt(0.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 40 + int(avg * 52)))
+                grad.setColorAt(0.58, QColor(0, 0, 0, 12))
+            grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+            p.setBrush(QBrush(grad)); p.setPen(Qt.PenStyle.NoPen); p.drawRect(area)
+
+        if style in ("space", "nebula", "cosmic_fusion", "meteor_shower"):
+            for i in range(54):
+                x = area.left() + ((i * 73 + int(now * (20 + bass * 60))) % int(max(1, aw)))
+                y = area.top() + ((i * 47 + int(now * (9 + avg * 24))) % int(max(1, ah)))
+                p.setPen(QPen(QColor(190, 230, 255, 45 + ((i * 17) % 70)), 1))
+                p.drawPoint(QPointF(x, y))
+
+        if style == "aurora":
+            colors = [QColor(40, 255, 210, 120), QColor(140, 90, 255, 110), QColor(255, 120, 210, 90)]
+            for band in range(3):
+                pts = []
+                for i, v in enumerate(values):
+                    x = area.left() + aw * i / max(1, count - 1)
+                    y = area.top() + ah * (0.22 + band * 0.16) + math.sin(i * 0.23 + now * (0.9 + band * 0.18)) * ah * (0.08 + bass * 0.10) - v * ah * 0.18
+                    pts.append(QPointF(x, y))
+                self._draw_visualizer_polyline(p, pts, colors[band], 4.0 + band * 2.2 + bass * 4.0, 85 + int(avg * 95))
+            p.restore(); return
+
+        if style == "hologram":
+            p.setPen(QPen(QColor(120, 245, 255, 70), 1))
+            for gy in range(9):
+                y = area.top() + ah * gy / 8.0
+                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
+            slot = aw / count
+            for i, v in enumerate(values):
+                x = area.left() + i * slot + slot * 0.5
+                h = ah * (0.16 + v * 0.72)
+                p.setPen(QPen(QColor(120, 245, 255, 115 + int(v * 110)), max(1.0, slot * 0.18)))
+                p.drawLine(QPointF(x, cy + h * 0.5), QPointF(x, cy - h * 0.5))
+            p.restore(); return
+
+        if style == "matrix":
+            # 目に優しい Matrix 風: 0/1 がゆっくり落下する表示。
+            soft_bg = QLinearGradient(QPointF(area.left(), area.top()), QPointF(area.left(), area.bottom()))
+            soft_bg.setColorAt(0.0, QColor(0, 18, 10, 28)); soft_bg.setColorAt(1.0, QColor(0, 6, 4, 10))
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(soft_bg)); p.drawRect(area)
+            font_size = max(8, min(14, int(ah / 13.5)))
+            p.setFont(QFont("Consolas", font_size))
+            cell_h = max(10.0, font_size * 1.45); cell_w = max(9.0, font_size * 0.95)
+            cols = max(6, int(aw / cell_w)); rows = max(4, int(ah / cell_h) + 3)
+            base_speed = 6.0 + bass * 10.0
+            time_bucket = int(now * 0.55)
+            for col in range(cols):
+                v = values[int(col * count / max(1, cols)) % count]
+                speed = base_speed + (col % 5) * 0.7 + v * 3.5
+                phase = (now * speed + col * cell_h * 0.83) % (rows * cell_h)
+                x = area.left() + col * cell_w + cell_w * 0.15
+                trail_len = 4 + int(v * 5)
+                for row in range(rows):
+                    y = area.top() + row * cell_h + phase - rows * cell_h * 0.42
+                    if y < area.top() - cell_h or y > area.bottom() + cell_h:
+                        continue
+                    digit = "1" if ((col * 17 + row * 31 + time_bucket) & 1) else "0"
+                    distance = abs((row % max(1, trail_len + 1)))
+                    alpha = max(18, min(128, int(42 + v * 58 + bass * 24 - distance * 10)))
+                    color = QColor(170, 255, 190, max(alpha, min(155, int(78 + v * 55 + bass * 28)))) if row % (trail_len + 1) == 0 else QColor(45, 190, 90, alpha)
+                    p.setPen(color); p.drawText(QPointF(x, y), digit)
+            p.restore(); return
+
+        if style in ("energy_shield", "audio_ripple", "radar_scan", "circle_waveform"):
+            rings = 5 if style != "circle_waveform" else 3
+            for k in range(rings):
+                rr = min(max_effect_radius, short_side * (0.11 + k * 0.075 + bass * 0.035 + ((now * 0.12 + k * 0.06) % 0.045 if style == "audio_ripple" else 0.0)))
+                alpha = max(18, 115 - k * 17 + int(avg * 70))
+                col = QColor(base_color)
+                if style == "energy_shield": col = QColor(60, 210, 255, alpha)
+                elif style == "radar_scan": col = QColor(80, 255, 140, alpha)
+                elif style == "circle_waveform": col = self._rainbow_color(k * 0.13 + now * 0.05, alpha)
+                else: col.setAlpha(alpha)
+                p.setPen(QPen(col, 1.2 + bass * 3.2)); p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(QPointF(cx, cy), rr, rr)
+            if style == "radar_scan":
+                ang = now * 1.8
+                p.setPen(QPen(QColor(120, 255, 160, 140), 3 + bass * 5))
+                p.drawLine(QPointF(cx, cy), QPointF(cx + math.cos(ang) * max_effect_radius, cy + math.sin(ang) * max_effect_radius))
+            for i, v in enumerate(values):
+                ang = i / count * math.tau - math.pi / 2
+                inner_r = radius * (0.72 if style == "circle_waveform" else 0.95)
+                outer_r = min(max_effect_radius, inner_r + short_side * (0.04 + v * 0.14))
+                col = self._rainbow_color(i / count + now * 0.05, 220) if style == "circle_waveform" else QColor(base_color)
+                p.setPen(QPen(col, max(1.0, 1.5 + v * 4.0)))
+                p.drawLine(QPointF(cx + math.cos(ang)*inner_r, cy + math.sin(ang)*inner_r), QPointF(cx + math.cos(ang)*outer_r, cy + math.sin(ang)*outer_r))
+            p.restore(); return
+
+        if style in ("audio_tunnel", "neon_tunnel_wire", "futuristic_tunnel"):
+            for k in range(9):
+                t = k / 8.0; scale = 1.0 - t * 0.82
+                wobble = math.sin(now * 1.4 + k) * bass * 12.0
+                rect = QRectF(cx - aw*scale*0.44 + wobble, cy - ah*scale*0.36, aw*scale*0.88, ah*scale*0.72)
+                col = self._rainbow_color(0.52 + t * 0.34 + now * 0.04, 55 + int((1.0 - t) * 150))
+                if style == "futuristic_tunnel": col = QColor(120, 235, 255, 65 + int((1.0 - t) * 150))
+                p.setPen(QPen(col, 1.0 + (1.0 - t) * 2.5 + bass * 2.0)); p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRoundedRect(rect, 8, 8)
+                if style == "neon_tunnel_wire":
+                    p.drawLine(QPointF(area.left(), cy), QPointF(rect.left(), rect.top()))
+                    p.drawLine(QPointF(area.right(), cy), QPointF(rect.right(), rect.bottom()))
+            p.restore(); return
+
+        if style in ("nebula", "cosmic_fusion"):
+            for i, v in enumerate(values):
+                angle = i / count * math.tau + now * 0.12
+                rr = min(max_effect_radius * 0.82, radius * (0.38 + (i % 7) * 0.065 + v * 0.42))
+                col = self._rainbow_color(0.70 + i / count * 0.35 + now * 0.02, 42 + int(v * 130), 0.78, 1.0)
+                self._draw_visualizer_soft_orb(p, QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle * 1.3) * rr * 0.65), 3 + v * short_side * 0.045, col, 35 + int(v * 90))
+            p.restore(); return
+
+        if style == "meteor_shower":
+            for i in range(18):
+                v = values[(i * 3) % count]
+                x = area.left() + ((i * 83 + int(now * (90 + v * 170))) % int(max(1, aw + 80))) - 40
+                y = area.top() + ((i * 41 + int(now * (28 + bass * 55))) % int(max(1, ah)))
+                p.setPen(QPen(self._rainbow_color(0.55 + i * 0.03, 120 + int(v * 110)), 1.5 + v * 4.0))
+                p.drawLine(QPointF(x, y), QPointF(x - 24 - v * 50, y + 18 + v * 26))
+            p.restore(); return
+
+        if style in ("neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse"):
+            palettes = [QColor(0, 245, 255, 220), QColor(255, 60, 210, 190), QColor(255, 245, 90, 170)]
+            layers = 3
+            if style == "lofi_vibes":
+                palettes = [QColor(255, 180, 150, 170), QColor(130, 190, 255, 145)]; layers = 2
+            if style == "electric_pulse":
+                palettes = [QColor(60, 230, 255, 230), QColor(255, 255, 255, 190), QColor(90, 120, 255, 160)]
+            for layer in range(layers):
+                pts = []
+                for i, v in enumerate(values):
+                    x = area.left() + aw * i / max(1, count - 1)
+                    y = cy + math.sin(i * (0.18 + layer * 0.04) + now * (2.0 + layer * 0.35)) * ah * (0.07 + layer * 0.035) - (v - avg) * ah * (0.30 + layer * 0.08)
+                    if style == "enigmatic_echo_sound": y += math.sin(i * 0.51 - now * 1.1) * ah * 0.045
+                    pts.append(QPointF(x, y))
+                self._draw_visualizer_polyline(p, pts, palettes[layer], 2.0 + layer * 1.2 + bass * 3.0, 105 + int(avg * 120))
+            p.restore(); return
+
+        if style == "reactive_lights":
+            lamps = max(8, min(28, count // 2))
+            for i in range(lamps):
+                v = values[int(i * count / lamps)]
+                self._draw_visualizer_soft_orb(p, QPointF(area.left() + aw * (i + 0.5) / lamps, cy), ah * (0.06 + v * 0.26), self._rainbow_color(i / lamps + now * 0.08, 70 + int(v * 170)), 40 + int(v * 120))
+            p.restore(); return
+
+        if style in ("electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music"):
+            slot = aw / count
+            for i, v in enumerate(values):
+                x = area.left() + i * slot; h = ah * (0.08 + v * 0.88)
+                if style == "electro_dubstep":
+                    col = QColor(120 + int(120 * v), 40, 255, 215)
+                    if i % 4 == 0: h *= 1.18 + bass * 0.35
+                elif style == "minimal_beat":
+                    col = QColor(base_color); col.setAlpha(150 + int(v * 80))
+                elif style == "glow_beat_music":
+                    col = QColor(255, 230, 120, 180 + int(v * 70)); self._draw_visualizer_soft_orb(p, QPointF(x + slot * 0.5, area.bottom() - h), 5 + v * 18, col, 50 + int(v * 80))
+                else:
+                    col = self._rainbow_color(i / count + now * 0.11, 210, 0.95, 1.0)
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                if style == "minimal_beat": p.drawRect(QRectF(x + slot*0.35, area.bottom() - h, max(1.0, slot*0.30), h))
+                else: p.drawRoundedRect(QRectF(x + slot*0.16, area.bottom() - h, max(1.0, slot*0.68), h), 3, 3)
+            p.restore(); return
+
+        # Existing first-wave style families.
+        circular = style in ("circle", "turntable", "spotlight_beat", "euphoria_motion", "luminance", "space")
+        elliptic = style in ("ellipse", "parallax_waves")
+        wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "rainbow", "dynamic_glitch", "urban_timelapse", "melodic_vibe")
+        if circular or elliptic:
+            rx_scale = 1.40 if elliptic else 1.0
+            ry_scale = 0.58 if elliptic else 1.0
+            max_core_radius = max(2.0, min(aw / max(1.0, rx_scale), ah / max(1.0, ry_scale)) * 0.30)
+            core_radius = min(radius, max_core_radius)
+            rx = core_radius * rx_scale; ry = core_radius * ry_scale
+            max_ray_len = max(2.0, min(max(1.0, aw * 0.48 - rx), max(1.0, ah * 0.48 - ry)))
+            if style == "turntable":
+                p.setPen(QPen(QColor(255,255,255,42), 2)); p.setBrush(Qt.BrushStyle.NoBrush)
+                for k in range(4): p.drawEllipse(QPointF(cx, cy), core_radius * (0.45 + k * 0.18 + bass * 0.03), core_radius * (0.45 + k * 0.18 + bass * 0.03))
+                p.setBrush(QBrush(QColor(base_color.red(), base_color.green(), base_color.blue(), 80))); p.drawEllipse(QPointF(cx, cy), core_radius * 0.18, core_radius * 0.18)
+            if style == "spotlight_beat":
+                for k in range(6):
+                    ang = now * 0.8 + k * math.pi / 3.0
+                    p.setPen(QPen(QColor(base_color.red(), base_color.green(), base_color.blue(), 26 + int(bass*70)), 12 + bass*18)); p.drawLine(QPointF(cx, cy), QPointF(cx + math.cos(ang) * rx * 1.5, cy + math.sin(ang) * ry * 1.5))
+            for i, v in enumerate(values):
+                ang = (i / count) * math.tau - math.pi / 2.0 + (now * 0.25 if style in ("turntable", "euphoria_motion") else 0.0)
+                length = min(max_ray_len, short_side * (0.05 + 0.16 * v))
+                col = self._rainbow_color(i / count + now * 0.08, 235) if style in ("euphoria_motion", "rainbow") else QColor(base_color)
+                if style == "luminance": col = QColor(255, 255, 240, 130 + int(v * 125))
+                p.setPen(QPen(col, max(1.0, 1.5 + v * 4.0)))
+                p.drawLine(QPointF(cx + math.cos(ang) * rx, cy + math.sin(ang) * ry), QPointF(cx + math.cos(ang) * (rx + length), cy + math.sin(ang) * (ry + length)))
+            p.restore(); return
+        if wall:
+            slot = aw / count
+            for i, v in enumerate(values):
+                x = area.left() + i * slot; h = max(2.0, ah * (0.08 + v * 0.88)); col = QColor(base_color)
+                if style == "rainbow": col = self._rainbow_color(i / max(1, count) + now * 0.06, 230)
+                elif style == "cyber": col = QColor(0, 245, 255, 220)
+                elif style == "retro_future": col = self._rainbow_color(0.78 + i/count*0.16, 210)
+                elif style == "bass_drop": col = QColor(255, 60 + int(80*v), 90, 230)
+                elif style == "minimal": col.setAlpha(175)
+                elif style == "hud_equalizer": col = QColor(80, 255, 190, 220)
+                elif style == "dynamic_glitch": col = QColor(255 if i % 3 == 0 else base_color.red(), base_color.green(), 255 if i % 4 == 0 else base_color.blue(), 220)
+                elif style == "urban_timelapse": col = QColor(255, 188, 80, 210)
+                elif style == "flat_spectrum": col = QColor(base_color.red(), base_color.green(), base_color.blue(), 210)
+                if style == "music_beat_wall":
+                    levels = 5; cell_h = ah / levels * 0.72
+                    for j in range(levels):
+                        if (j + 1) / levels <= v + 0.12:
+                            cc = QColor(col); cc.setAlpha(80 + int(150 * ((j+1)/levels))); p.setBrush(QBrush(cc)); p.setPen(Qt.PenStyle.NoPen); p.drawRoundedRect(QRectF(x + slot*0.16, area.bottom() - (j+1)*ah/levels, slot*0.68, cell_h), 2, 2)
+                elif style == "led_audio_wave":
+                    dot = max(2.0, min(7.0, slot * 0.45)); y = cy + math.sin(i * 0.32 + now * 3.2) * ah * 0.12; steps = max(1, int(v * 7))
+                    for j in range(-steps, steps + 1):
+                        cc = QColor(col); cc.setAlpha(max(35, 210 - abs(j)*22)); p.setBrush(QBrush(cc)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(x + slot/2, y + j * dot * 1.7), dot, dot)
+                elif style == "dynamic_glitch":
+                    jitter = ((i * 17 + int(now * 60)) % 7 - 3) * (1.0 + bass * 3.0); p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen); p.drawRect(QRectF(x + slot*0.18 + jitter, area.bottom() - h, max(1.0, slot*0.62), h))
+                elif style in ("audio_react", "melodic_vibe"):
+                    p.setPen(QPen(col, max(1.0, slot*0.24))); p.drawLine(QPointF(x + slot/2, cy + h*0.45), QPointF(x + slot/2, cy - h*0.5))
+                elif style == "minimal":
+                    p.setPen(QPen(col, 2.0)); p.drawLine(QPointF(x + slot/2, area.bottom()), QPointF(x + slot/2, area.bottom() - h))
+                else:
+                    p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen); p.drawRoundedRect(QRectF(x + slot*0.18, area.bottom() - h, max(1.0, slot*0.64), h), 1 if style == "flat_spectrum" else 4, 1 if style == "flat_spectrum" else 4)
+            if style in ("retro_future", "cyber", "hud_equalizer"):
+                p.setPen(QPen(QColor(255,255,255,38), 1))
+                for gy in range(1, 5): p.drawLine(QPointF(area.left(), area.top() + ah * gy / 5.0), QPointF(area.right(), area.top() + ah * gy / 5.0))
+            p.restore(); return
+        p.restore()
+
     def _paint_visualizer_direct(self, p: QPainter, ctx: Dict):
         audio: AudioEngine = ctx["audio"]
         bars = audio.get_spectrum()
@@ -251,9 +621,13 @@ class VisualizerWidget(BaseWidget):
         p.setBrush(QBrush(bg))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 16, 16)
+        # All visualizer effects are clipped to the rounded widget frame.
+        clip_path = QPainterPath()
+        clip_path.addRoundedRect(r, 16, 16)
+        p.setClipPath(clip_path)
 
         margin = 14
-        label_h = 18
+        label_h = 0
         available_w = max(1.0, r.width() - margin * 2)
         available_h = max(1.0, r.height() - margin * 2 - label_h)
         left = r.left() + margin
@@ -268,6 +642,27 @@ class VisualizerWidget(BaseWidget):
         orientation = self._visualizer_orientation()
         width_scale = self._visualizer_bar_width_scale()
         now = time.time()
+
+        style = self._visualizer_style()
+        if style != "classic":
+            inner_inset = max(6.0, min(available_w, available_h) * 0.060)
+            area = QRectF(
+                left + inner_inset,
+                top + inner_inset,
+                max(1.0, available_w - inner_inset * 2.0),
+                max(1.0, available_h - inner_inset * 2.0),
+            )
+            self._paint_visualizer_styled(p, bars, style, r, area, color, now)
+            p.setPen(QColor(230, 240, 255, 220))
+            p.setFont(QFont("Segoe UI", 9))
+            label = ""
+            if audio.use_fake:
+                label += "fallback"
+            pass  # label hidden
+            if self.selected and ctx.get("edit_mode", True):
+                self._paint_selection(p)
+            p.restore()
+            return
         dt = max(0.001, min(0.08, now - getattr(self, "_last_peak_update", now)))
         self._last_peak_update = now
         self._ensure_peak_levels(count)
@@ -338,7 +733,7 @@ class VisualizerWidget(BaseWidget):
             label += " / fallback"
         if orientation == "vertical":
             label += " / vertical"
-        p.drawText(QRectF(r.left() + 14, r.top() + 8, r.width() - 20, 18), label)
+        pass  # label hidden
         if self.selected and ctx.get("edit_mode", True):
             self._paint_selection(p)
         p.restore()
