@@ -8417,9 +8417,9 @@ class LiteDeskStudio(QMainWindow):
         self.prop_visualizer_glow_enabled = QCheckBox(lds_tr("💡 スペクトル発光を有効化"))
         self.prop_visualizer_glow_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_visualizer_bar_width_scale = QDoubleSpinBox()
-        self.prop_visualizer_bar_width_scale.setRange(0.35, 2.40)
+        self.prop_visualizer_bar_width_scale.setRange(0.1, 100.00)
         self.prop_visualizer_bar_width_scale.setDecimals(2)
-        self.prop_visualizer_bar_width_scale.setSingleStep(0.05)
+        self.prop_visualizer_bar_width_scale.setSingleStep(0.01)
         self.prop_visualizer_bar_width_scale.valueChanged.connect(self.apply_properties_live)
         self.prop_visualizer_orientation = QComboBox()
         self.prop_visualizer_orientation.addItem(lds_tr("横向きに展開"), "horizontal")
@@ -8481,6 +8481,33 @@ class LiteDeskStudio(QMainWindow):
         self.prop_visualizer_frame_rate = QSpinBox()
         self.prop_visualizer_frame_rate.setRange(1, 500)
         self.prop_visualizer_frame_rate.valueChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_shadow_enabled = QCheckBox(lds_tr("🌑 影を表示"))
+        self.prop_visualizer_shadow_enabled.stateChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_shadow_offset_x = QDoubleSpinBox()
+        self.prop_visualizer_shadow_offset_x.setRange(-500.0, 500.0)
+        self.prop_visualizer_shadow_offset_x.setDecimals(1)
+        self.prop_visualizer_shadow_offset_x.setSingleStep(0.5)
+        self.prop_visualizer_shadow_offset_x.valueChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_shadow_offset_y = QDoubleSpinBox()
+        self.prop_visualizer_shadow_offset_y.setRange(-500.0, 500.0)
+        self.prop_visualizer_shadow_offset_y.setDecimals(1)
+        self.prop_visualizer_shadow_offset_y.setSingleStep(0.5)
+        self.prop_visualizer_shadow_offset_y.valueChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_shadow_strength = QDoubleSpinBox()
+        self.prop_visualizer_shadow_strength.setRange(0.0, 3.0)
+        self.prop_visualizer_shadow_strength.setDecimals(2)
+        self.prop_visualizer_shadow_strength.setSingleStep(0.05)
+        self.prop_visualizer_shadow_strength.valueChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_shadow_opacity = QDoubleSpinBox()
+        self.prop_visualizer_shadow_opacity.setRange(0.0, 100.0)
+        self.prop_visualizer_shadow_opacity.setDecimals(2)
+        self.prop_visualizer_shadow_opacity.setSingleStep(0.05)
+        self.prop_visualizer_shadow_opacity.valueChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_shadow_depth = QDoubleSpinBox()
+        self.prop_visualizer_shadow_depth.setRange(0.0, 100.0)
+        self.prop_visualizer_shadow_depth.setDecimals(2)
+        self.prop_visualizer_shadow_depth.setSingleStep(0.05)
+        self.prop_visualizer_shadow_depth.valueChanged.connect(self.apply_properties_live)
         self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
         self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
         self.prop_weather_location = QLineEdit()
@@ -8542,6 +8569,12 @@ class LiteDeskStudio(QMainWindow):
         form.addRow(lds_tr("🎨 スペクトル視覚効果"), self.prop_visualizer_style)
         form.addRow("", self.prop_visualizer_frame_rate_enabled)
         form.addRow("🎞️ FPS", self.prop_visualizer_frame_rate)
+        form.addRow("", self.prop_visualizer_shadow_enabled)
+        form.addRow(lds_tr("影X"), self.prop_visualizer_shadow_offset_x)
+        form.addRow(lds_tr("影Y"), self.prop_visualizer_shadow_offset_y)
+        form.addRow(lds_tr("影の強さ"), self.prop_visualizer_shadow_strength)
+        form.addRow(lds_tr("影の透明度"), self.prop_visualizer_shadow_opacity)
+        form.addRow(lds_tr("影の深さ"), self.prop_visualizer_shadow_depth)
         self.visualizer_only_property_widgets = [
             self.prop_visualizer_flip_vertical,
             self.prop_visualizer_peak_bar_enabled,
@@ -8551,6 +8584,12 @@ class LiteDeskStudio(QMainWindow):
             self.prop_visualizer_style,
             self.prop_visualizer_frame_rate_enabled,
             self.prop_visualizer_frame_rate,
+            self.prop_visualizer_shadow_enabled,
+            self.prop_visualizer_shadow_offset_x,
+            self.prop_visualizer_shadow_offset_y,
+            self.prop_visualizer_shadow_strength,
+            self.prop_visualizer_shadow_opacity,
+            self.prop_visualizer_shadow_depth,
         ]
 
         self.clock_only_property_widgets = [
@@ -8941,6 +8980,12 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_visualizer_style", None),
             getattr(self, "prop_visualizer_frame_rate_enabled", None),
             getattr(self, "prop_visualizer_frame_rate", None),
+            getattr(self, "prop_visualizer_shadow_enabled", None),
+            getattr(self, "prop_visualizer_shadow_offset_x", None),
+            getattr(self, "prop_visualizer_shadow_offset_y", None),
+            getattr(self, "prop_visualizer_shadow_strength", None),
+            getattr(self, "prop_visualizer_shadow_opacity", None),
+            getattr(self, "prop_visualizer_shadow_depth", None),
             getattr(self, "prop_network_down_color", None),
             getattr(self, "prop_network_up_color", None),
         ]
@@ -8983,6 +9028,12 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_style.setCurrentIndex(0)
                 self.prop_visualizer_frame_rate_enabled.setChecked(True)
                 self.prop_visualizer_frame_rate.setValue(60)
+                self.prop_visualizer_shadow_enabled.setChecked(True)
+                self.prop_visualizer_shadow_offset_x.setValue(3.0)
+                self.prop_visualizer_shadow_offset_y.setValue(4.0)
+                self.prop_visualizer_shadow_strength.setValue(1.0)
+                self.prop_visualizer_shadow_opacity.setValue(0.65)
+                self.prop_visualizer_shadow_depth.setValue(1.0)
                 self.set_visualizer_controls_visible(False)
                 self.set_weather_controls_visible(False)
                 self.prop_network_down_color.setText("")
@@ -9043,7 +9094,7 @@ class LiteDeskStudio(QMainWindow):
                     bool(getattr(cfg, "visualizer_glow_enabled", True))
                 )
                 try:
-                    self.prop_visualizer_bar_width_scale.setValue(max(0.35, min(2.40, float(getattr(cfg, "visualizer_bar_width_scale", 1.0)))))
+                    self.prop_visualizer_bar_width_scale.setValue(max(0.01, min(100.00, float(getattr(cfg, "visualizer_bar_width_scale", 1.0)))))
                 except:
                     self.prop_visualizer_bar_width_scale.setValue(1.0)
                 orientation = str(getattr(cfg, "visualizer_orientation", "horizontal") or "horizontal").lower()
@@ -9053,7 +9104,13 @@ class LiteDeskStudio(QMainWindow):
                 style_idx = self.prop_visualizer_style.findData(style)
                 self.prop_visualizer_style.setCurrentIndex(max(0, style_idx))
                 self.prop_visualizer_frame_rate_enabled.setChecked(bool(getattr(cfg, "visualizer_frame_rate_enabled", True)))
-                self.prop_visualizer_frame_rate.setValue(max(1, min(240, int(getattr(cfg, "visualizer_frame_rate", 40)))))
+                self.prop_visualizer_frame_rate.setValue(max(1, min(500, int(getattr(cfg, "visualizer_frame_rate", 40)))))
+                self.prop_visualizer_shadow_enabled.setChecked(bool(getattr(cfg, "visualizer_shadow_enabled", True)))
+                self.prop_visualizer_shadow_offset_x.setValue(max(-500.0, min(500.0, float(getattr(cfg, "visualizer_shadow_offset_x", 3.0)))))
+                self.prop_visualizer_shadow_offset_y.setValue(max(-500.0, min(500.0, float(getattr(cfg, "visualizer_shadow_offset_y", 4.0)))))
+                self.prop_visualizer_shadow_strength.setValue(max(0.0, min(3.0, float(getattr(cfg, "visualizer_shadow_strength", 1.0)))))
+                self.prop_visualizer_shadow_opacity.setValue(max(0.0, min(1.0, float(getattr(cfg, "visualizer_shadow_opacity", 0.65)))))
+                self.prop_visualizer_shadow_depth.setValue(max(0.0, min(100.0, float(getattr(cfg, "visualizer_shadow_depth", 1.0)))))
             else:
                 self.prop_visualizer_flip_vertical.setChecked(False)
                 self.prop_visualizer_peak_bar_enabled.setChecked(True)
@@ -9231,6 +9288,12 @@ class LiteDeskStudio(QMainWindow):
                 cfg.visualizer_bar_width_scale = self.prop_visualizer_bar_width_scale.value()
                 cfg.visualizer_orientation = self.prop_visualizer_orientation.currentData() or "horizontal"
                 cfg.visualizer_style = self.prop_visualizer_style.currentData() or "classic"
+                cfg.visualizer_shadow_enabled = self.prop_visualizer_shadow_enabled.isChecked()
+                cfg.visualizer_shadow_offset_x = self.prop_visualizer_shadow_offset_x.value()
+                cfg.visualizer_shadow_offset_y = self.prop_visualizer_shadow_offset_y.value()
+                cfg.visualizer_shadow_strength = self.prop_visualizer_shadow_strength.value()
+                cfg.visualizer_shadow_opacity = self.prop_visualizer_shadow_opacity.value()
+                cfg.visualizer_shadow_depth = self.prop_visualizer_shadow_depth.value()
                 cfg.visualizer_frame_rate_enabled = self.prop_visualizer_frame_rate_enabled.isChecked()
                 cfg.visualizer_frame_rate = max(1, min(240, self.prop_visualizer_frame_rate.value()))
                 if hasattr(widget, "_visualizer_frame_cache"):
@@ -12881,6 +12944,12 @@ class DesktopCanvas(QWidget):
             visualizer_bar_width_scale=getattr(old, "visualizer_bar_width_scale", 1.0),
             visualizer_orientation=getattr(old, "visualizer_orientation", "horizontal"),
             visualizer_style=getattr(old, "visualizer_style", "classic"),
+            visualizer_shadow_enabled=getattr(old, "visualizer_shadow_enabled", True),
+            visualizer_shadow_offset_x=getattr(old, "visualizer_shadow_offset_x", 3.0),
+            visualizer_shadow_offset_y=getattr(old, "visualizer_shadow_offset_y", 4.0),
+            visualizer_shadow_strength=getattr(old, "visualizer_shadow_strength", 1.0),
+            visualizer_shadow_opacity=getattr(old, "visualizer_shadow_opacity", 0.65),
+            visualizer_shadow_depth=getattr(old, "visualizer_shadow_depth", 1.0),
             effects_json=getattr(old, "effects_json", "{}"),
             effects_follow_mouse=getattr(old, "effects_follow_mouse", True),
             weather_location=getattr(old, "weather_location", ""),
