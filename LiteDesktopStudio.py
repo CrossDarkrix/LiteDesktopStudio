@@ -8473,6 +8473,13 @@ class LiteDeskStudio(QMainWindow):
             (lds_tr("サークル波形風"), "circle_waveform"),
             (lds_tr("パララックスウェーブ風"), "parallax_waves"),
             (lds_tr("ビート蛍光色視覚化アプリ風"), "beat_fluorescent_app"),
+            (lds_tr("Rainbow Ring DJ Visualizer風"), "rainbow_ring_dj"),
+            (lds_tr("Liquid Audio Spectrum風"), "liquid_audio_spectrum"),
+            (lds_tr("Music Logo Reveal Visualizer風"), "music_logo_reveal"),
+            (lds_tr("Particle Audio Visualizer風"), "particle_audio_visualizer"),
+            (lds_tr("Music Lower Third with Audio Visualizer風"), "music_lower_third_audio"),
+            (lds_tr("Digital Base Audio Visualizer風"), "digital_base_audio"),
+            (lds_tr("Round Base Audio Visualizer風"), "round_base_audio"),
         ]:
             self.prop_visualizer_style.addItem(_label, _value)
         self.prop_visualizer_style.currentIndexChanged.connect(self.apply_properties_live)
@@ -8508,6 +8515,11 @@ class LiteDeskStudio(QMainWindow):
         self.prop_visualizer_shadow_depth.setDecimals(2)
         self.prop_visualizer_shadow_depth.setSingleStep(0.05)
         self.prop_visualizer_shadow_depth.valueChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_shadow_blur = QDoubleSpinBox()
+        self.prop_visualizer_shadow_blur.setRange(0.0, 3.0)
+        self.prop_visualizer_shadow_blur.setDecimals(2)
+        self.prop_visualizer_shadow_blur.setSingleStep(0.05)
+        self.prop_visualizer_shadow_blur.valueChanged.connect(self.apply_properties_live)
         self.btn_pick_network_down_color.clicked.connect(self.pick_network_down_color)
         self.btn_pick_network_up_color.clicked.connect(self.pick_network_up_color)
         self.prop_weather_location = QLineEdit()
@@ -8575,6 +8587,7 @@ class LiteDeskStudio(QMainWindow):
         form.addRow(lds_tr("影の強さ"), self.prop_visualizer_shadow_strength)
         form.addRow(lds_tr("影の透明度"), self.prop_visualizer_shadow_opacity)
         form.addRow(lds_tr("影の深さ"), self.prop_visualizer_shadow_depth)
+        form.addRow(lds_tr("影のぼかし量"), self.prop_visualizer_shadow_blur)
         self.visualizer_only_property_widgets = [
             self.prop_visualizer_flip_vertical,
             self.prop_visualizer_peak_bar_enabled,
@@ -8590,6 +8603,7 @@ class LiteDeskStudio(QMainWindow):
             self.prop_visualizer_shadow_strength,
             self.prop_visualizer_shadow_opacity,
             self.prop_visualizer_shadow_depth,
+            self.prop_visualizer_shadow_blur,
         ]
 
         self.clock_only_property_widgets = [
@@ -8986,6 +9000,7 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_visualizer_shadow_strength", None),
             getattr(self, "prop_visualizer_shadow_opacity", None),
             getattr(self, "prop_visualizer_shadow_depth", None),
+            getattr(self, "prop_visualizer_shadow_blur", None),
             getattr(self, "prop_network_down_color", None),
             getattr(self, "prop_network_up_color", None),
         ]
@@ -9034,6 +9049,7 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_shadow_strength.setValue(1.0)
                 self.prop_visualizer_shadow_opacity.setValue(0.65)
                 self.prop_visualizer_shadow_depth.setValue(1.0)
+                self.prop_visualizer_shadow_blur.setValue(1.0)
                 self.set_visualizer_controls_visible(False)
                 self.set_weather_controls_visible(False)
                 self.prop_network_down_color.setText("")
@@ -9294,6 +9310,7 @@ class LiteDeskStudio(QMainWindow):
                 cfg.visualizer_shadow_strength = self.prop_visualizer_shadow_strength.value()
                 cfg.visualizer_shadow_opacity = self.prop_visualizer_shadow_opacity.value()
                 cfg.visualizer_shadow_depth = self.prop_visualizer_shadow_depth.value()
+                cfg.visualizer_shadow_blur = self.prop_visualizer_shadow_blur.value()
                 cfg.visualizer_frame_rate_enabled = self.prop_visualizer_frame_rate_enabled.isChecked()
                 cfg.visualizer_frame_rate = max(1, min(240, self.prop_visualizer_frame_rate.value()))
                 if hasattr(widget, "_visualizer_frame_cache"):
@@ -12950,6 +12967,7 @@ class DesktopCanvas(QWidget):
             visualizer_shadow_strength=getattr(old, "visualizer_shadow_strength", 1.0),
             visualizer_shadow_opacity=getattr(old, "visualizer_shadow_opacity", 0.65),
             visualizer_shadow_depth=getattr(old, "visualizer_shadow_depth", 1.0),
+            visualizer_shadow_blur=getattr(old, "visualizer_shadow_blur", 1.0),
             effects_json=getattr(old, "effects_json", "{}"),
             effects_follow_mouse=getattr(old, "effects_follow_mouse", True),
             weather_location=getattr(old, "weather_location", ""),

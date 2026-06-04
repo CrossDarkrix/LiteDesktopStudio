@@ -113,6 +113,7 @@ class WidgetConfig:
     visualizer_shadow_strength: float = 1.0
     visualizer_shadow_opacity: float = 0.65
     visualizer_shadow_depth: float = 1.0
+    visualizer_shadow_blur: float = 1.0
     visualizer_frame_rate_enabled: bool = True
     visualizer_frame_rate: int = 60
     weather_location: str = ""
@@ -222,6 +223,7 @@ class VisualizerWidget(BaseWidget):
             round(float(getattr(self.cfg, "visualizer_shadow_strength", 1.0)), 2),
             round(float(getattr(self.cfg, "visualizer_shadow_opacity", 0.65)), 2),
             round(float(getattr(self.cfg, "visualizer_shadow_depth", 1.0)), 2),
+            round(float(getattr(self.cfg, "visualizer_shadow_blur", 1.0)), 2),
             round(float(self._visualizer_effect_padding()), 2),
             bool(getattr(self, "selected", False)),
             bool(ctx.get("edit_mode", True)) if isinstance(ctx, dict) else True,
@@ -314,6 +316,13 @@ class VisualizerWidget(BaseWidget):
             "エレクトリックパルス風": "electric_pulse", "electric pulse": "electric_pulse",
             "サークル波形風": "circle_waveform", "circle waveform": "circle_waveform",
             "ビート蛍光色視覚化アプリ風": "beat_fluorescent_app", "beat fluorescent app": "beat_fluorescent_app",
+            "rainbow ring dj visualizer風": "rainbow_ring_dj", "rainbow ring dj visualizer": "rainbow_ring_dj", "rainbow_ring_dj": "rainbow_ring_dj",
+            "liquid audio spectrum風": "liquid_audio_spectrum", "liquid audio spectrum": "liquid_audio_spectrum", "liquid_audio_spectrum": "liquid_audio_spectrum",
+            "music logo reveal visualizer風": "music_logo_reveal", "music logo reveal visualizer": "music_logo_reveal", "music_logo_reveal": "music_logo_reveal",
+            "particle audio visualizer風": "particle_audio_visualizer", "particle audio visualizer": "particle_audio_visualizer", "particle_audio_visualizer": "particle_audio_visualizer",
+            "music lower third with audio visualizer風": "music_lower_third_audio", "music lower third with audio visualizer": "music_lower_third_audio", "music_lower_third_audio": "music_lower_third_audio",
+            "digital base audio visualizer風": "digital_base_audio", "digital base audio visualizer": "digital_base_audio", "digital_base_audio": "digital_base_audio",
+            "round base audio visualizer風": "round_base_audio", "round base audio visualizer": "round_base_audio", "round_base_audio": "round_base_audio",
         }
         return aliases.get(value, value if value else "classic")
 
@@ -407,31 +416,209 @@ class VisualizerWidget(BaseWidget):
                 shadow_depth = float(getattr(self.cfg, "visualizer_shadow_depth", 1.0))
             except Exception:
                 shadow_depth = 1.0
+            try:
+                shadow_blur = float(getattr(self.cfg, "visualizer_shadow_blur", 1.0))
+            except Exception:
+                shadow_blur = 1.0
             shadow_strength = max(0.0, min(3.0, shadow_strength))
             shadow_opacity = max(0.0, min(1.0, shadow_opacity))
             shadow_depth = max(0.0, min(3.0, shadow_depth))
+            shadow_blur = max(0.0, min(3.0, shadow_blur))
             if shadow_strength <= 0.0 or shadow_opacity <= 0.0 or shadow_depth <= 0.0:
                 return
-            depth_offset_scale = 0.45 + shadow_depth * 0.55
+            depth_offset_scale = 0.25 + shadow_depth * 0.85
             ox *= depth_offset_scale
             oy *= depth_offset_scale
             alpha = max(0, min(190, int((30 + avg * 62 + bass * 22) * shadow_strength * shadow_opacity * (0.85 + shadow_depth * 0.10))))
             if alpha <= 0:
                 return
             shadow = QColor(0, 0, 0, alpha)
-            soft_shadow = QColor(0, 0, 0, max(1, int(alpha * (0.34 + shadow_depth * 0.08))))
-            shadow_size = max(0.20, min(3.5, shadow_strength * (0.70 + shadow_depth * 0.30)))
+            soft_shadow = QColor(0, 0, 0, max(1, int(alpha * (0.28 + shadow_depth * 0.06) / (0.85 + shadow_blur * 0.22))))
+            shadow_size = max(0.20, min(4.2, shadow_strength * (0.70 + shadow_depth * 0.30) * (0.75 + shadow_blur * 0.25)))
             shadow_size *= max(0.35, min(2.4, self._visualizer_bar_width_scale()))
+            # Style-specific branches use these adjusted values so strength/depth/opacity/blur remain visibly effective.
+            style_shadow = QColor(0, 0, 0, max(0, min(235, int(alpha * (0.62 + shadow_strength * 0.18)))))
+            style_soft_shadow = QColor(0, 0, 0, max(1, min(210, int(style_shadow.alpha() / (1.10 + shadow_blur * 0.42)))))
+            style_shadow_size = max(0.15, min(6.0, shadow_size * (0.72 + shadow_strength * 0.12 + shadow_blur * 0.18)))
             p.save()
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             p.setPen(Qt.PenStyle.NoPen)
 
-            circular = style in ("circle", "turntable", "spotlight_beat", "euphoria_motion", "luminance", "space", "energy_shield", "audio_ripple", "radar_scan", "circle_waveform")
+            circular = style in ("circle", "turntable", "spotlight_beat", "euphoria_motion", "luminance", "space", "energy_shield", "audio_ripple", "radar_scan", "circle_waveform", "rainbow_ring_dj", "round_base_audio")
             elliptic = style in ("ellipse", "parallax_waves")
             tunnel = style in ("audio_tunnel", "neon_tunnel_wire", "futuristic_tunnel")
-            wave = style in ("aurora", "neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse")
-            cloud = style in ("nebula", "cosmic_fusion", "meteor_shower", "reactive_lights")
-            wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "rainbow", "dynamic_glitch", "urban_timelapse", "melodic_vibe", "hologram", "matrix", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music")
+            wave = style in ("aurora", "neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse", "liquid_audio_spectrum")
+            cloud = style in ("nebula", "cosmic_fusion", "meteor_shower", "reactive_lights", "particle_audio_visualizer")
+            wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "rainbow", "dynamic_glitch", "urban_timelapse", "melodic_vibe", "hologram", "matrix", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music", "music_logo_reveal", "music_lower_third_audio", "digital_base_audio")
+
+
+            # Style-specific shadows: keep the shadow silhouette aligned with each visualizer skin.
+            if style == "bass_drop":
+                slot = aw / count
+                center_y = cy + oy
+                p.setPen(QPen(style_soft_shadow, max(1.0, 2.2 * style_shadow_size)))
+                p.drawLine(QPointF(area.left() + ox, center_y), QPointF(area.right() + ox, center_y))
+                bass_n = max(4, count // 4)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_shadow))
+                for i, v in enumerate(values):
+                    low_boost = values[min(i, bass_n - 1)] if i < bass_n else v * 0.45
+                    value = max(v * 0.35, low_boost)
+                    h = ah * (0.035 + value * (0.34 + bass * 0.22))
+                    x = area.left() + i * slot + ox
+                    bw = max(1.0, slot * min(0.92, 0.52 * style_shadow_size))
+                    p.drawRoundedRect(QRectF(x + slot * 0.24, center_y - h, bw, h * 2.0), 4, 4)
+                p.restore(); return
+
+            if style in ("melodic_vibe", "liquid_audio_spectrum", "rainbow", "parallax_waves", "space", "aurora", "neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse"):
+                layers = 3 if style in ("parallax_waves", "liquid_audio_spectrum", "melodic_vibe") else 2
+                for layer in range(layers):
+                    pts = []
+                    smooth = avg
+                    speed = 0.55 + layer * 0.28
+                    for i, raw in enumerate(values):
+                        smooth = smooth * 0.80 + float(raw) * 0.20
+                        x = area.left() + aw * i / max(1, count - 1) + ox
+                        y = cy + oy + math.sin(i * (0.10 + layer * 0.03) + now * speed) * ah * (0.045 + layer * 0.025) - (smooth - avg) * ah * (0.15 + layer * 0.05)
+                        pts.append(QPointF(x, y + (layer - 1) * ah * 0.035))
+                    self._draw_visualizer_polyline(p, pts, shadow, (2.2 + layer * 1.0) * style_shadow_size, alpha)
+                p.restore(); return
+
+            if style == "alternative":
+                slot = aw / count
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_shadow))
+                for i, v in enumerate(values):
+                    skew = ((i * 17 + int(now * 9)) % 11 - 5) * slot * 0.055
+                    h = ah * (0.04 + v * (0.48 + ((i % 5) * 0.045)))
+                    x = area.left() + i * slot + skew + ox
+                    y = (area.bottom() - h if i % 2 else area.top() + ah * 0.10) + oy
+                    p.drawRect(QRectF(x + slot * 0.25, y, max(1.0, slot * min(0.86, 0.36 * style_shadow_size)), h))
+                p.restore(); return
+
+            if style in ("circle", "ellipse", "euphoria_motion", "circle_waveform", "rainbow_ring_dj", "round_base_audio", "energy_shield", "audio_ripple"):
+                rx_scale = 1.58 if style == "ellipse" else 1.0
+                ry_scale = 0.54 if style == "ellipse" else 1.0
+                core = min(radius, max_effect_radius * (0.48 if style == "ellipse" else 0.56))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(style_soft_shadow, max(1.0, 2.0 * style_shadow_size)))
+                p.drawEllipse(QPointF(cx + ox, cy + oy), core * rx_scale, core * ry_scale)
+                step = max(1, count // 84)
+                p.setPen(QPen(style_shadow, max(1.0, 1.5 * style_shadow_size)))
+                for i in range(0, count, step):
+                    v = values[i]
+                    ang = i / count * math.tau - math.pi / 2.0
+                    inner = core
+                    outer = min(max_effect_radius * 0.98, inner + short_side * (0.035 + v * 0.18))
+                    p.drawLine(QPointF(cx + ox + math.cos(ang) * inner * rx_scale, cy + oy + math.sin(ang) * inner * ry_scale), QPointF(cx + ox + math.cos(ang) * outer * rx_scale, cy + oy + math.sin(ang) * outer * ry_scale))
+                p.restore(); return
+
+            if style == "turntable":
+                disc_r = min(max_effect_radius * 0.58, short_side * 0.29)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_soft_shadow))
+                p.drawEllipse(QPointF(cx + ox, cy + oy), disc_r, disc_r)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(style_shadow, max(1.0, 1.2 * style_shadow_size)))
+                for k in range(4):
+                    rr = disc_r * (0.34 + k * 0.17)
+                    p.drawEllipse(QPointF(cx + ox, cy + oy), rr, rr)
+                p.restore(); return
+
+            if style == "spotlight_beat":
+                for k in range(7):
+                    ang = -math.pi * 0.86 + k * math.pi / 3.0 + math.sin(now * 0.70 + k) * (0.10 + bass * 0.10)
+                    p.setPen(QPen(style_soft_shadow, max(7.0, (10.0 + bass * 18.0) * style_shadow_size)))
+                    p.drawLine(QPointF(cx + ox, area.bottom() + oy), QPointF(cx + ox + math.cos(ang) * aw * 0.72, cy + oy + math.sin(ang) * ah * 0.84))
+                p.restore(); return
+
+            if style in ("audio_react", "minimal", "flat_spectrum", "luminance", "cyber", "dynamic_glitch", "digital_base_audio", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music"):
+                slot = aw / count
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_shadow if style not in ("minimal", "flat_spectrum") else style_soft_shadow))
+                for i, v in enumerate(values):
+                    h = ah * (0.04 + v * 0.84)
+                    x = area.left() + i * slot + ox
+                    y = area.bottom() - h + oy
+                    p.drawRoundedRect(QRectF(x + slot * 0.20, y, max(1.0, slot * min(0.90, 0.54 * style_shadow_size)), h), 3, 3)
+                p.restore(); return
+
+            if style == "retro_future":
+                horizon = area.top() + ah * 0.46 + oy
+                p.setPen(QPen(style_soft_shadow, max(1.0, 1.0 * style_shadow_size)))
+                for gy in range(7):
+                    y = horizon + (((gy / 6.0 + (now * 0.08) % 1.0) % 1.0) ** 1.7) * ah * 0.48
+                    p.drawLine(QPointF(area.left() + ox, y), QPointF(area.right() + ox, y))
+                slot = aw / count
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_shadow))
+                for i, v in enumerate(values):
+                    h = ah * (0.045 + v * 0.40)
+                    p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.18 + ox, horizon - h, max(1.0, slot * min(0.88, 0.56 * style_shadow_size)), h), 3, 3)
+                p.restore(); return
+
+            if style == "urban_timelapse":
+                slot = aw / count
+                p.setPen(QPen(style_shadow, max(1.0, 1.4 * style_shadow_size)))
+                for i, v in enumerate(values):
+                    trail = ((now * (28 + v * 42) + i * 13) % max(1.0, aw))
+                    x = area.left() + trail + ox
+                    y = area.top() + ah * (0.20 + (i % 9) / 12.0) + oy
+                    length = slot * (1.0 + v * 6.0)
+                    p.drawLine(QPointF(x - length, y), QPointF(x, y))
+                p.restore(); return
+
+            if style in ("music_beat_wall", "hologram", "hud_equalizer", "music_lower_third_audio", "music_logo_reveal"):
+                slot = aw / count
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(style_shadow))
+                if style in ("music_lower_third_audio", "music_logo_reveal"):
+                    panel_w = aw * (0.92 if style == "music_lower_third_audio" else 0.58)
+                    panel_h = ah * (0.32 if style == "music_lower_third_audio" else 0.30)
+                    px = area.left() + aw * 0.04 if style == "music_lower_third_audio" else cx - panel_w / 2.0
+                    py = area.bottom() - panel_h - ah * 0.06 if style == "music_lower_third_audio" else cy - panel_h / 2.0 - ah * 0.05
+                    p.drawRoundedRect(QRectF(px + ox, py + oy, panel_w, panel_h), 12, 12)
+                for i, v in enumerate(values):
+                    h = ah * (0.05 + v * 0.70)
+                    p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.18 + ox, area.bottom() - h + oy, max(1.0, slot * min(0.90, 0.58 * style_shadow_size)), h), 2, 2)
+                p.restore(); return
+
+            if style == "led_audio_wave":
+                slot = aw / count
+                dot = max(1.4, min(6.0, slot * 0.42 * style_shadow_size))
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_shadow))
+                for i, v in enumerate(values):
+                    y = cy + oy + math.sin(i * 0.25 + now * 2.4) * ah * 0.12
+                    steps = max(1, int(v * 6))
+                    for j in range(-steps, steps + 1):
+                        p.drawEllipse(QPointF(area.left() + i * slot + slot * 0.5 + ox, y + j * dot * 1.65), dot, dot)
+                p.restore(); return
+
+            if style in ("audio_tunnel", "neon_tunnel_wire", "futuristic_tunnel"):
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                for k in range(7):
+                    t = k / 6.0
+                    scale = 1.0 - t * 0.78
+                    rect = QRectF(cx - aw * scale * 0.40 + ox, cy - ah * scale * 0.33 + oy, aw * scale * 0.80, ah * scale * 0.66)
+                    pen = QPen(QColor(0, 0, 0, max(10, int(alpha * (1.0 - t * 0.55)))), max(1.0, (1.0 + (1.0 - t) * 2.0) * style_shadow_size))
+                    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    p.setPen(pen)
+                    p.drawRoundedRect(rect, 8, 8)
+                p.restore(); return
+
+            if style in ("nebula", "cosmic_fusion", "meteor_shower", "reactive_lights", "particle_audio_visualizer"):
+                step = max(1, count // 28)
+                for i in range(0, count, step):
+                    v = values[i]
+                    angle = i / count * math.tau + now * 0.08
+                    rr = min(max_effect_radius * 0.78, radius * (0.30 + (i % 7) * 0.045 + v * 0.34))
+                    self._draw_visualizer_soft_orb(p, QPointF(cx + ox + math.cos(angle) * rr, cy + oy + math.sin(angle * 1.25) * rr * 0.62), (3.0 + v * short_side * 0.040) * style_shadow_size, shadow, max(12, int(alpha * 0.60)))
+                p.restore(); return
+
+            if style == "matrix":
+                p.setFont(QFont("Consolas", max(8, min(14, int(ah / 13.5)))))
+                cols = max(6, min(48, count // 2))
+                p.setPen(soft_shadow)
+                for col in range(cols):
+                    x = area.left() + col * aw / max(1, cols) + ox
+                    y = area.top() + ((now * 8 + col * 17) % max(1.0, ah)) + oy
+                    p.drawText(QPointF(x, y), "0" if col % 2 else "1")
+                p.restore(); return
 
             if circular or elliptic:
                 rx_scale = 1.32 if elliptic else 1.0
@@ -534,12 +721,12 @@ class VisualizerWidget(BaseWidget):
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             p.setPen(Qt.PenStyle.NoPen)
 
-            circular = style in ("circle", "turntable", "spotlight_beat", "euphoria_motion", "luminance", "space", "energy_shield", "audio_ripple", "radar_scan", "circle_waveform")
+            circular = style in ("circle", "turntable", "spotlight_beat", "euphoria_motion", "luminance", "space", "energy_shield", "audio_ripple", "radar_scan", "circle_waveform", "rainbow_ring_dj", "round_base_audio")
             elliptic = style in ("ellipse", "parallax_waves")
             tunnel = style in ("audio_tunnel", "neon_tunnel_wire", "futuristic_tunnel")
-            wave = style in ("aurora", "neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse")
-            cloud = style in ("nebula", "cosmic_fusion", "meteor_shower", "reactive_lights")
-            wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "rainbow", "dynamic_glitch", "urban_timelapse", "melodic_vibe", "hologram", "matrix", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music")
+            wave = style in ("aurora", "neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse", "liquid_audio_spectrum")
+            cloud = style in ("nebula", "cosmic_fusion", "meteor_shower", "reactive_lights", "particle_audio_visualizer")
+            wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "rainbow", "dynamic_glitch", "urban_timelapse", "melodic_vibe", "hologram", "matrix", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music", "music_logo_reveal", "music_lower_third_audio", "digital_base_audio")
 
             if circular or elliptic:
                 rx_scale = 1.34 if elliptic else 1.0
@@ -692,6 +879,175 @@ class VisualizerWidget(BaseWidget):
                 p.setPen(QPen(QColor(190, 230, 255, 45 + ((i * 17) % 70)), 1))
                 p.drawPoint(QPointF(x, y))
 
+
+        if style == "rainbow_ring_dj":
+            ring_count = 5
+            for k in range(ring_count):
+                t = k / max(1, ring_count - 1)
+                rr = min(max_effect_radius * (0.28 + t * 0.58 + bass * 0.035), max_effect_radius * 0.94)
+                col = self._rainbow_color(t + now * 0.045, 185 + int(avg * 50), 0.92, 1.0)
+                p.setPen(QPen(col, max(1.0, (1.2 + (1.0 - t) * 2.3 + bass * 2.0) * width_scale)))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(QPointF(cx, cy), rr, rr)
+            step = max(1, count // 64)
+            for i in range(0, count, step):
+                v = values[i]
+                ang = i / count * math.tau - math.pi / 2.0 + now * 0.18
+                inner = max_effect_radius * 0.50
+                outer = min(max_effect_radius * 0.98, inner + short_side * (0.035 + v * 0.20))
+                col = self._rainbow_color(i / count + now * 0.07, 210 + int(v * 40))
+                pen = QPen(col, max(1.0, (1.4 + v * 3.8) * width_scale))
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                p.setPen(pen)
+                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            p.restore(); return
+
+        if style == "liquid_audio_spectrum":
+            # Smooth liquid-style spectrum: cubic Bezier curves, no sharp corners.
+            palettes = [QColor(base_color), self._rainbow_color(0.52 + now * 0.03, 210), self._rainbow_color(0.78 + now * 0.02, 190)]
+            for layer in range(3):
+                pts = []
+                phase = now * (1.05 + layer * 0.22)
+                smooth_prev = avg
+                for i, raw in enumerate(values):
+                    # light interpolation to avoid sharp FFT corners
+                    smooth_prev = smooth_prev * 0.72 + float(raw) * 0.28
+                    x = area.left() + aw * i / max(1, count - 1)
+                    wobble = math.sin(i * (0.10 + layer * 0.025) + phase) * ah * (0.040 + layer * 0.018)
+                    y = cy + wobble - (smooth_prev - avg) * ah * (0.26 + layer * 0.055)
+                    pts.append(QPointF(x, y))
+                col = QColor(palettes[layer % len(palettes)])
+                col.setAlpha(115 + int(avg * 105))
+                pen = QPen(col, max(1.0, (2.6 + layer * 1.3 + bass * 2.4) * width_scale))
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(pen)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                if len(pts) >= 2:
+                    path = QPainterPath(pts[0])
+                    for j in range(1, len(pts)):
+                        p0 = pts[j - 1]
+                        p1 = pts[j]
+                        mid_x = (p0.x() + p1.x()) * 0.5
+                        path.cubicTo(QPointF(mid_x, p0.y()), QPointF(mid_x, p1.y()), p1)
+                    p.drawPath(path)
+            fill = QColor(base_color); fill.setAlpha(26 + int(avg * 38))
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(fill))
+            base_h = ah * (0.10 + bass * 0.14)
+            p.drawRoundedRect(QRectF(area.left(), area.bottom() - base_h, aw, base_h), 12, 12)
+            p.restore(); return
+
+        if style == "music_logo_reveal":
+            text_value = str(getattr(self.cfg, "text", "") or getattr(self.cfg, "title", "Music") or "Music")[:28]
+            panel_w = aw * 0.58
+            panel_h = ah * 0.30
+            panel = QRectF(cx - panel_w / 2.0, cy - panel_h / 2.0 - ah * 0.05, panel_w, panel_h)
+            p.drawRoundedRect(panel, 14, 14)
+            p.setFont(QFont("Segoe UI", max(12, int(min(28, panel_h * 0.40))), QFont.Weight.Bold))
+            p.setPen(QColor(245, 250, 255, 210 + int(avg * 35)))
+            p.drawText(panel, Qt.AlignmentFlag.AlignCenter, text_value)
+            slot = aw / count
+            bar_base = min(area.bottom() - 6, panel.bottom() + ah * 0.18)
+            for i, v in enumerate(values):
+                x = area.left() + i * slot
+                h = ah * (0.025 + v * 0.18)
+                col = self._rainbow_color(i / count + now * 0.05, 180) if i % 3 == 0 else QColor(base_color)
+                col.setAlpha(120 + int(v * 100))
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(QRectF(x + slot * 0.22, bar_base - h, max(1.0, slot * min(0.76, 0.42 * width_scale)), h), 2, 2)
+            p.restore(); return
+
+        if style == "particle_audio_visualizer":
+            # Lightweight deterministic particle burst: particles move outward and fade.
+            step = max(1, count // 72)
+            cycle = 2.4
+            for i in range(0, count, step):
+                v = values[i]
+                if v <= 0.018:
+                    continue
+                seed_phase = (i * 0.61803398875) % 1.0
+                age = (now * (0.32 + bass * 0.18) + seed_phase) % 1.0
+                fade = 1.0 - age
+                angle = i / count * math.tau + seed_phase * math.pi * 0.65
+                start_r = max_effect_radius * (0.16 + (i % 7) * 0.018)
+                travel = max_effect_radius * (0.16 + v * 0.48) * age
+                orbit = min(max_effect_radius * 0.96, start_r + travel)
+                x = cx + math.cos(angle) * orbit
+                y = cy + math.sin(angle * 1.21) * orbit * 0.76
+                alpha = max(0, min(220, int((70 + v * 150) * fade)))
+                if alpha <= 4:
+                    continue
+                col = self._rainbow_color(i / count + now * 0.045, alpha, 0.86, 1.0)
+                size = max(1.2, (1.8 + v * 5.2) * width_scale * (0.45 + fade * 0.75))
+                if glow_enabled:
+                    self._draw_visualizer_soft_orb(p, QPointF(x, y), size * 2.3, col, max(10, int(alpha * 0.45)))
+                col.setAlpha(alpha)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col))
+                p.drawEllipse(QPointF(x, y), size, size)
+            p.restore(); return
+
+        if style == "music_lower_third_audio":
+            panel_h = ah * 0.32
+            panel = QRectF(area.left() + aw * 0.04, area.bottom() - panel_h - ah * 0.06, aw * 0.92, panel_h)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(10, 14, 24, 118 + int(avg * 46))))
+            p.drawRoundedRect(panel, 12, 12)
+            accent = QColor(base_color); accent.setAlpha(160 + int(bass * 70))
+            p.setBrush(QBrush(accent))
+            p.drawRoundedRect(QRectF(panel.left(), panel.top(), max(3.0, panel.width() * 0.018), panel.height()), 5, 5)
+            p.setFont(QFont("Segoe UI", max(9, int(panel.height() * 0.22)), QFont.Weight.Bold))
+            p.setPen(QColor(245, 248, 255, 215))
+            p.drawText(QRectF(panel.left() + 18, panel.top() + 4, panel.width() * 0.48, panel.height() * 0.44), Qt.AlignmentFlag.AlignVCenter, str(getattr(self.cfg, "title", "Music") or "Music")[:34])
+            slot = panel.width() * 0.45 / count
+            bx = panel.left() + panel.width() * 0.52
+            base_y = panel.bottom() - panel.height() * 0.18
+            for i, v in enumerate(values):
+                x = bx + i * slot
+                h = panel.height() * (0.08 + v * 0.64)
+                col = self._rainbow_color(i / count + now * 0.04, 170) if i % 4 == 0 else QColor(base_color)
+                col.setAlpha(115 + int(v * 120))
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(QRectF(x, base_y - h, max(1.0, slot * min(0.96, 0.55 * width_scale)), h), 2, 2)
+            p.restore(); return
+
+        if style == "digital_base_audio":
+            p.setPen(QPen(QColor(base_color.red(), base_color.green(), base_color.blue(), 32 + int(avg * 42)), 1))
+            for gy in range(1, 5):
+                y = area.top() + ah * gy / 5.0
+                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
+            low_n = max(4, count // 4)
+            slot = aw / low_n
+            for i in range(low_n):
+                v = values[i]
+                x = area.left() + i * slot
+                for j in range(6):
+                    if (j + 1) / 6.0 <= v + 0.08:
+                        col = QColor(base_color) if i % 3 else self._rainbow_color(0.52 + i / low_n * 0.16, 190)
+                        col.setAlpha(55 + int((j + 1) / 6.0 * 150))
+                        p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                        cell_h = ah * 0.105
+                        y = area.bottom() - (j + 1) * cell_h * 1.18
+                        p.drawRoundedRect(QRectF(x + slot * 0.16, y, max(1.0, slot * min(0.82, 0.58 * width_scale)), cell_h * 0.78), 2, 2)
+            p.restore(); return
+
+        if style == "round_base_audio":
+            base_r = min(max_effect_radius * 0.56, short_side * 0.28)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            ring_col = QColor(base_color); ring_col.setAlpha(105 + int(avg * 70))
+            p.setPen(QPen(ring_col, max(1.2, 2.0 * width_scale)))
+            p.drawEllipse(QPointF(cx, cy), base_r, base_r)
+            step = max(1, count // 80)
+            for i in range(0, count, step):
+                v = values[i]
+                ang = i / count * math.tau - math.pi / 2.0
+                inner = base_r
+                outer = min(max_effect_radius * 0.98, inner + short_side * (0.04 + v * 0.18))
+                col = QColor(base_color) if i % 2 else self._rainbow_color(i / count + now * 0.05, 205)
+                col.setAlpha(150 + int(v * 90))
+                p.setPen(QPen(col, max(1.0, (1.3 + v * 3.4) * width_scale)))
+                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            p.restore(); return
+
         if style == "aurora":
             colors = [QColor(40, 255, 210, 120), QColor(140, 90, 255, 110), QColor(255, 120, 210, 90)]
             for band in range(3):
@@ -744,7 +1100,7 @@ class VisualizerWidget(BaseWidget):
                     p.setPen(color); p.drawText(QPointF(x, y), digit)
             p.restore(); return
 
-        if style in ("energy_shield", "audio_ripple", "radar_scan", "circle_waveform"):
+        if style in ("energy_shield", "audio_ripple", "radar_scan", "circle_waveform", "rainbow_ring_dj", "round_base_audio"):
             rings = 5 if style != "circle_waveform" else 3
             for k in range(rings):
                 rr = min(max_effect_radius, short_side * (0.11 + k * 0.075 + bass * 0.035 + ((now * 0.12 + k * 0.06) % 0.045 if style == "audio_ripple" else 0.0)))
@@ -756,6 +1112,20 @@ class VisualizerWidget(BaseWidget):
                 else: col.setAlpha(alpha)
                 p.setPen(QPen(col, (1.2 + bass * 3.2) * width_scale)); p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawEllipse(QPointF(cx, cy), rr, rr)
+            if style == "energy_shield" and rings >= 1:
+                # Hexagonal shield mesh overlay.
+                shield_r = min(max_effect_radius * 0.82, radius * 1.45)
+                hex_pts = []
+                for h_i in range(6):
+                    a = math.tau * h_i / 6.0 - math.pi / 6.0
+                    hex_pts.append(QPointF(cx + math.cos(a) * shield_r, cy + math.sin(a) * shield_r))
+                hex_path = QPainterPath(hex_pts[0])
+                for pt in hex_pts[1:]:
+                    hex_path.lineTo(pt)
+                hex_path.closeSubpath()
+                p.setPen(QPen(QColor(80, 220, 255, 92 + int(bass * 80)), max(1.0, 1.2 * width_scale)))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawPath(hex_path)
             if style == "radar_scan":
                 ang = now * 1.8
                 p.setPen(QPen(QColor(120, 255, 160, 140), 3 + bass * 5))
@@ -840,6 +1210,345 @@ class VisualizerWidget(BaseWidget):
                 p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
                 if style == "minimal_beat": p.drawRect(QRectF(x + slot*0.35, area.bottom() - h, max(1.0, slot * min(0.98, 0.30 * width_scale)), h))
                 else: p.drawRoundedRect(QRectF(x + slot*0.16, area.bottom() - h, max(1.0, slot * min(0.98, 0.68 * width_scale)), h), 3, 3)
+            p.restore(); return
+
+
+        # Spec-refined first-wave skins. These branches intentionally override the older generic families below.
+        if style == "bass_drop":
+            # Horizontal heavy-bass spectrum: center line expands upward/downward. No circle, no logo, no vehicle.
+            slot = aw / count
+            center_y = cy
+            palette = [QColor(135, 60, 255), QColor(45, 150, 255), QColor(255, 70, 90)]
+            # subtle bass pulse line, horizontal only
+            pulse_alpha = 70 + int(bass * 120)
+            p.setPen(QPen(QColor(120, 60, 255, pulse_alpha), max(1.0, 2.0 * width_scale)))
+            p.drawLine(QPointF(area.left(), center_y), QPointF(area.right(), center_y))
+            bass_n = max(4, count // 4)
+            for i, v in enumerate(values):
+                # emphasize low band, keep highs present but calmer
+                low_boost = values[min(i, bass_n - 1)] if i < bass_n else v * 0.45
+                value = max(v * 0.35, low_boost)
+                h = ah * (0.035 + value * (0.34 + bass * 0.22))
+                x = area.left() + i * slot
+                col = QColor(palette[i % len(palette)])
+                col.setAlpha(120 + int(value * 120))
+                if glow_enabled and value > 0.04:
+                    glow_col = QColor(col); glow_col.setAlpha(30 + int(value * 70))
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(glow_col))
+                    p.drawRoundedRect(QRectF(x + slot * 0.12, center_y - h - 3, max(1.0, slot * min(0.95, 0.62 * width_scale)), h * 2 + 6), 5, 5)
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                bar_w = max(1.0, slot * min(0.92, 0.52 * width_scale))
+                p.drawRoundedRect(QRectF(x + slot * 0.24, center_y - h, bar_w, h), 3, 3)
+                p.drawRoundedRect(QRectF(x + slot * 0.24, center_y, bar_w, h), 3, 3)
+            p.restore(); return
+
+        if style == "melodic_vibe":
+            # Soft, slow, glowing curved waveform. No harsh flashes.
+            colors = [QColor(255, 120, 210, 150), QColor(160, 105, 255, 145), QColor(90, 205, 255, 130)]
+            for layer in range(3):
+                pts = []
+                smooth = avg
+                for i, raw in enumerate(values):
+                    smooth = smooth * 0.82 + float(raw) * 0.18
+                    x = area.left() + aw * i / max(1, count - 1)
+                    y = cy + math.sin(i * (0.10 + layer * 0.025) + now * (0.55 + layer * 0.12)) * ah * (0.045 + layer * 0.018) - (smooth - avg) * ah * (0.16 + layer * 0.045)
+                    pts.append(QPointF(x, y))
+                self._draw_visualizer_polyline(p, pts, colors[layer], (2.0 + layer * 1.1 + mid * 1.4) * width_scale, 82 + int(avg * 70))
+            p.restore(); return
+
+        if style == "alternative":
+            # Irregular, asymmetric, monochrome spectrum. No rainbow.
+            slot = aw / count
+            for i, v in enumerate(values):
+                skew = ((i * 17 + int(now * 9)) % 11 - 5) * slot * 0.055
+                h = ah * (0.04 + v * (0.48 + ((i % 5) * 0.045)))
+                x = area.left() + i * slot + skew
+                y = area.bottom() - h if i % 2 else area.top() + ah * 0.10
+                shade = 180 if i % 3 else 235
+                col = QColor(shade, shade, shade, 80 + int(v * 145))
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col))
+                p.drawRect(QRectF(x + slot * 0.25, y, max(1.0, slot * min(0.86, 0.36 * width_scale)), h))
+            p.restore(); return
+
+        if style == "circle":
+            # Single-color circular spectrum only. No background scene.
+            core = min(radius, max_effect_radius * 0.56)
+            step = max(1, count // 84)
+            for i in range(0, count, step):
+                v = values[i]
+                ang = i / count * math.tau - math.pi / 2.0
+                inner = core * (0.94 + avg * 0.05)
+                outer = min(max_effect_radius * 0.98, inner + short_side * (0.035 + v * 0.18))
+                col = QColor(base_color); col.setAlpha(145 + int(v * 100))
+                p.setPen(QPen(col, max(1.0, (1.25 + v * 3.0) * width_scale)))
+                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            p.restore(); return
+
+        if style == "ellipse":
+            # Horizontal elliptical spectrum; never a perfect circle.
+            rx_scale = 1.58
+            ry_scale = 0.54
+            core = min(radius, max_effect_radius * 0.48)
+            step = max(1, count // 84)
+            for i in range(0, count, step):
+                v = values[i]
+                ang = i / count * math.tau - math.pi / 2.0
+                inner = core
+                outer = min(max_effect_radius * 0.96, inner + short_side * (0.035 + v * 0.16))
+                col = QColor(70, 170, 255, 135 + int(v * 110))
+                p.setPen(QPen(col, max(1.0, (1.25 + v * 3.0) * width_scale)))
+                p.drawLine(QPointF(cx + math.cos(ang) * inner * rx_scale, cy + math.sin(ang) * inner * ry_scale), QPointF(cx + math.cos(ang) * outer * rx_scale, cy + math.sin(ang) * outer * ry_scale))
+            p.restore(); return
+
+        if style == "turntable":
+            # Record player UI: central black/silver disc + rotating outer spectrum. No vehicle.
+            disc_r = min(max_effect_radius * 0.58, short_side * 0.29)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(QColor(8, 9, 14, 220)))
+            p.drawEllipse(QPointF(cx, cy), disc_r, disc_r)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for k in range(4):
+                rr = disc_r * (0.34 + k * 0.17)
+                p.setPen(QPen(QColor(210, 220, 235, 45 + k * 18), max(0.8, 1.0 * width_scale)))
+                p.drawEllipse(QPointF(cx, cy), rr, rr)
+            p.setBrush(QBrush(QColor(225, 230, 240, 165))); p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(cx, cy), disc_r * 0.10, disc_r * 0.10)
+            step = max(1, count // 64)
+            for i in range(0, count, step):
+                v = values[i]
+                ang = i / count * math.tau - math.pi / 2.0 + now * 0.45
+                inner = disc_r * 0.92
+                outer = min(max_effect_radius * 0.98, inner + short_side * (0.032 + v * 0.14))
+                col = QColor(190, 205, 220, 125 + int(v * 110))
+                p.setPen(QPen(col, max(1.0, (1.1 + v * 3.0) * width_scale)))
+                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            p.restore(); return
+
+        if style == "spotlight_beat":
+            # Light is the main actor. No FFT bars.
+            for k in range(7):
+                ang = -math.pi * 0.86 + k * math.pi / 3.0 + math.sin(now * 0.70 + k) * (0.10 + bass * 0.10)
+                alpha = 22 + int(bass * 105) + (22 if k % 2 == 0 else 0)
+                col = QColor(255, 255, 255, alpha) if k % 2 == 0 else QColor(95, 165, 255, alpha)
+                p.setPen(QPen(col, max(7.0, (10.0 + bass * 18.0) * width_scale)))
+                p.drawLine(QPointF(cx, area.bottom()), QPointF(cx + math.cos(ang) * aw * 0.72, cy + math.sin(ang) * ah * 0.84))
+            p.restore(); return
+
+        if style == "audio_react":
+            # Simple FFT bars, direct response, automatic volume color. No excessive extras.
+            slot = aw / count
+            for i, v in enumerate(values):
+                hue = 0.58 - min(0.42, v * 0.42)
+                col = self._rainbow_color(hue + now * 0.012, 145 + int(v * 105), 0.80, 1.0)
+                x = area.left() + i * slot
+                h = ah * (0.04 + v * 0.86)
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(QRectF(x + slot * 0.20, area.bottom() - h, max(1.0, slot * min(0.86, 0.52 * width_scale)), h), 2, 2)
+            p.restore(); return
+
+        if style == "retro_future":
+            # Synthwave neon grid and horizon. No photorealism.
+            horizon = area.top() + ah * 0.46
+            grid_col = QColor(255, 80, 210, 50 + int(avg * 40))
+            p.setPen(QPen(grid_col, 1))
+            scroll = (now * 0.08) % 1.0
+            for gy in range(7):
+                y = horizon + (((gy / 6.0 + scroll) % 1.0) ** 1.7) * ah * 0.48
+                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
+            for gx in range(-5, 6):
+                x = cx + gx * aw * 0.10
+                p.drawLine(QPointF(x, horizon), QPointF(cx + gx * aw * 0.32, area.bottom()))
+            slot = aw / count
+            for i, v in enumerate(values):
+                h = ah * (0.045 + v * 0.40)
+                col = self._rainbow_color(0.78 + i / count * 0.16 + now * 0.025, 175)
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.18, horizon - h, max(1.0, slot * min(0.88, 0.56 * width_scale)), h), 3, 3)
+            p.restore(); return
+
+        if style == "rainbow":
+            # Rainbow horizontal waveform, not monochrome bars.
+            pts = []
+            smooth = avg
+            for i, raw in enumerate(values):
+                smooth = smooth * 0.76 + float(raw) * 0.24
+                x = area.left() + aw * i / max(1, count - 1)
+                y = cy + math.sin(i * 0.13 + now * 1.10) * ah * 0.07 - (smooth - avg) * ah * 0.24
+                pts.append(QPointF(x, y))
+            # segmented hue line
+            for i in range(1, len(pts)):
+                col = self._rainbow_color(i / max(1, len(pts)) + now * 0.08, 210)
+                p.setPen(QPen(col, max(1.0, 2.4 * width_scale)))
+                p.drawLine(pts[i - 1], pts[i])
+            p.restore(); return
+
+        if style == "minimal":
+            # Thin white lines only; no glow.
+            slot = aw / count
+            p.setPen(QPen(QColor(245, 245, 245, 190), max(1.0, 1.0 * width_scale)))
+            for i, v in enumerate(values):
+                x = area.left() + i * slot + slot * 0.5
+                h = ah * (0.035 + v * 0.74)
+                p.drawLine(QPointF(x, area.bottom()), QPointF(x, area.bottom() - h))
+            p.restore(); return
+
+        if style == "urban_timelapse":
+            # Horizontal flowing city light trails, orange/blue. No circular shape.
+            slot = aw / count
+            for i, v in enumerate(values):
+                trail = ((now * (28 + v * 42) + i * 13) % max(1.0, aw))
+                x = area.left() + trail
+                y = area.top() + ah * (0.20 + (i % 9) / 12.0)
+                length = slot * (1.0 + v * 6.0)
+                col = QColor(80, 170, 255, 70 + int(v * 110)) if i % 2 else QColor(255, 155, 55, 70 + int(v * 110))
+                p.setPen(QPen(col, max(1.0, (1.1 + v * 2.0) * width_scale)))
+                p.drawLine(QPointF(x - length, y), QPointF(x, y))
+            p.restore(); return
+
+        if style == "music_beat_wall":
+            # Dense RGB wall of bars/cells. No waveform lines.
+            slot = aw / count
+            levels = 7
+            for i, v in enumerate(values):
+                for j in range(levels):
+                    if (j + 1) / levels <= v + 0.10:
+                        col = self._rainbow_color((i / max(1, count)) * 0.72 + j * 0.04 + now * 0.025, 65 + int((j + 1) / levels * 155))
+                        p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                        cell_h = ah / levels * 0.72
+                        p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.16, area.bottom() - (j + 1) * ah / levels, max(1.0, slot * min(0.92, 0.68 * width_scale)), cell_h), 2, 2)
+            p.restore(); return
+
+        if style == "led_audio_wave":
+            # RGB LED dot wave. No smooth line.
+            slot = aw / count
+            dot = max(1.4, min(6.0, slot * 0.42 * width_scale))
+            for i, v in enumerate(values):
+                y = cy + math.sin(i * 0.25 + now * 2.4) * ah * 0.12
+                steps = max(1, int(v * 6))
+                for j in range(-steps, steps + 1):
+                    col = self._rainbow_color(i / count + now * 0.08, max(40, 190 - abs(j) * 22))
+                    p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                    p.drawEllipse(QPointF(area.left() + i * slot + slot * 0.5, y + j * dot * 1.65), dot, dot)
+            p.restore(); return
+
+        if style == "euphoria_motion":
+            # Glowing rainbow ring, no vehicle.
+            core = min(radius, max_effect_radius * 0.54)
+            if glow_enabled:
+                self._draw_visualizer_soft_orb(p, QPointF(cx, cy), core * 1.15, QColor(120, 120, 255, 75), 36 + int(avg * 70))
+            step = max(1, count // 96)
+            for i in range(0, count, step):
+                v = values[i]
+                ang = i / count * math.tau - math.pi / 2.0
+                inner = core * (0.92 + avg * 0.05)
+                outer = min(max_effect_radius * 0.99, inner + short_side * (0.04 + v * 0.18))
+                col = self._rainbow_color(i / count + now * 0.08, 220)
+                p.setPen(QPen(col, max(1.0, (1.5 + v * 3.8) * width_scale)))
+                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            p.restore(); return
+
+        if style == "luminance":
+            # Bright white/blue light lines. Avoid dark-dominant rendering.
+            if glow_enabled:
+                self._draw_visualizer_soft_orb(p, QPointF(cx, cy), max_effect_radius * (0.72 + bass * 0.18), QColor(200, 230, 255, 110), 50 + int(avg * 90))
+            slot = aw / count
+            for i, v in enumerate(values):
+                col = QColor(235, 248, 255, 145 + int(v * 110)) if i % 2 else QColor(130, 205, 255, 130 + int(v * 110))
+                h = ah * (0.05 + v * 0.82)
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.20, area.bottom() - h, max(1.0, slot * min(0.90, 0.58 * width_scale)), h), 3, 3)
+            p.restore(); return
+
+        if style == "parallax_waves":
+            # Multi-layer cyan waves; each layer moves at a different speed.
+            colors = [QColor(80, 240, 255, 120), QColor(70, 190, 255, 100), QColor(130, 255, 235, 90)]
+            speeds = [0.55, 0.82, 1.18]
+            for layer in range(3):
+                pts = []
+                smooth = avg
+                for i, raw in enumerate(values):
+                    smooth = smooth * 0.80 + float(raw) * 0.20
+                    x = area.left() + aw * i / max(1, count - 1)
+                    y = cy + math.sin(i * (0.10 + layer * 0.03) + now * speeds[layer]) * ah * (0.05 + layer * 0.03) - (smooth - avg) * ah * (0.14 + layer * 0.05)
+                    pts.append(QPointF(x, y + (layer - 1) * ah * 0.06))
+                self._draw_visualizer_polyline(p, pts, colors[layer], (1.8 + layer * 1.0) * width_scale, colors[layer].alpha())
+            p.restore(); return
+
+        if style == "hud_equalizer":
+            # Cyan SF HUD panel with memory ticks and scan. No rainbow.
+            hud_col = QColor(80, 255, 210, 70)
+            p.setPen(QPen(hud_col, 1))
+            for gy in range(6):
+                y = area.top() + ah * gy / 5.0
+                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
+            for gx in range(8):
+                x = area.left() + aw * gx / 7.0
+                p.drawLine(QPointF(x, area.bottom() - 8), QPointF(x, area.bottom()))
+            scan_y = area.top() + ((now * 55) % max(1.0, ah))
+            p.setPen(QPen(QColor(90, 255, 210, 120), max(1.0, 1.2 * width_scale)))
+            p.drawLine(QPointF(area.left(), scan_y), QPointF(area.right(), scan_y))
+            slot = aw / count
+            for i, v in enumerate(values):
+                h = ah * (0.05 + v * 0.78)
+                col = QColor(80, 255, 190, 145 + int(v * 90))
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.22, area.bottom() - h, max(1.0, slot * min(0.86, 0.52 * width_scale)), h), 2, 2)
+            p.restore(); return
+
+        if style == "space":
+            # Space background with stars and horizontal waveform. Avoid many planets.
+            for i in range(48):
+                x = area.left() + ((i * 73 + int(now * 22)) % int(max(1, aw)))
+                y = area.top() + ((i * 41 + int(now * 9)) % int(max(1, ah)))
+                p.setPen(QPen(QColor(130, 185, 255, 45 + (i % 5) * 18), 1))
+                p.drawPoint(QPointF(x, y))
+            pts = []
+            smooth = avg
+            for i, raw in enumerate(values):
+                smooth = smooth * 0.78 + float(raw) * 0.22
+                x = area.left() + aw * i / max(1, count - 1)
+                y = cy + math.sin(i * 0.11 + now * 0.70) * ah * 0.07 - (smooth - avg) * ah * 0.22
+                pts.append(QPointF(x, y))
+            self._draw_visualizer_polyline(p, pts, QColor(110, 160, 255, 150), 2.2 * width_scale, 150)
+            p.restore(); return
+
+        if style == "flat_spectrum":
+            # Lightweight flat FFT bars, single color, no glow.
+            slot = aw / count
+            col = QColor(base_color); col.setAlpha(205)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col))
+            for i, v in enumerate(values):
+                h = ah * (0.04 + v * 0.82)
+                p.drawRect(QRectF(area.left() + i * slot + slot * 0.18, area.bottom() - h, max(1.0, slot * min(0.92, 0.58 * width_scale)), h))
+            p.restore(); return
+
+        if style == "dynamic_glitch":
+            # RGB split glitch, intermittent but not constantly violent.
+            slot = aw / count
+            glitch_gate = (int(now * 8) % 4) == 0
+            for i, v in enumerate(values):
+                h = ah * (0.05 + v * 0.84)
+                jitter = (((i * 17 + int(now * 38)) % 7 - 3) * (1.0 + bass * 2.0)) if glitch_gate or i % 9 == 0 else 0.0
+                for shift, col in [(-1.7, QColor(255, 60, 90, 105)), (0.0, QColor(base_color)), (1.7, QColor(80, 220, 255, 105))]:
+                    col.setAlpha(78 + int(v * 130))
+                    p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                    p.drawRect(QRectF(area.left() + i * slot + slot * 0.18 + jitter + shift, area.bottom() - h, max(1.0, slot * min(0.90, 0.58 * width_scale)), h))
+            p.restore(); return
+
+        if style == "cyber":
+            # Cyan cyber UI: neon lines and HUD scan. No automobile.
+            p.setPen(QPen(QColor(0, 245, 255, 55), 1))
+            for gy in range(1, 5):
+                y = area.top() + ah * gy / 5.0
+                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
+            scan_x = area.left() + ((now * 70) % max(1.0, aw))
+            p.setPen(QPen(QColor(0, 245, 255, 110), max(1.0, 1.2 * width_scale)))
+            p.drawLine(QPointF(scan_x, area.top()), QPointF(scan_x, area.bottom()))
+            slot = aw / count
+            for i, v in enumerate(values):
+                h = ah * (0.06 + v * 0.84)
+                col = QColor(0, 245, 255, 135 + int(v * 105))
+                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.18, area.bottom() - h, max(1.0, slot * min(0.94, 0.62 * width_scale)), h), 3, 3)
             p.restore(); return
 
         # Existing first-wave style families.
