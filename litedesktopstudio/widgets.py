@@ -1285,7 +1285,7 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "ellipse":
-            # Horizontal elliptical spectrum; never a perfect circle.
+            # Horizontal elliptical spectrum; never a perfect circle. Uses the widget accent color (cfg.color).
             rx_scale = 1.58
             ry_scale = 0.54
             core = min(radius, max_effect_radius * 0.48)
@@ -1295,7 +1295,8 @@ class VisualizerWidget(BaseWidget):
                 ang = i / count * math.tau - math.pi / 2.0
                 inner = core
                 outer = min(max_effect_radius * 0.96, inner + short_side * (0.035 + v * 0.16))
-                col = QColor(70, 170, 255, 135 + int(v * 110))
+                col = QColor(base_color)
+                col.setAlpha(135 + int(v * 110))
                 p.setPen(QPen(col, max(1.0, (1.25 + v * 3.0) * width_scale)))
                 p.drawLine(QPointF(cx + math.cos(ang) * inner * rx_scale, cy + math.sin(ang) * inner * ry_scale), QPointF(cx + math.cos(ang) * outer * rx_scale, cy + math.sin(ang) * outer * ry_scale))
             p.restore(); return
