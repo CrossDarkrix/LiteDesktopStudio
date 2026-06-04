@@ -1255,7 +1255,6 @@ class EffectsOverlayEditorDialog(QDialog):
         self._theme_set_value("software_max_ripples", 36)
 
     def _theme_set_raw_extra(self, name: str, value):
-        self._theme_extra_settings = {}
         try:
             if not hasattr(self, "_theme_extra_settings") or self._theme_extra_settings is None:
                 self._theme_extra_settings = {}
