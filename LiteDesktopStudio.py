@@ -1591,12 +1591,49 @@ class EffectsOverlayWidget(BaseWidget):
         img.fill(QColor("#F8FFFF"))
         q = QPainter(img)
         try:
-            self._render_pamukkale_opaque_fallback(q, w, h)
+            q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            scene_id = str(scene_id or "")
+            if scene_id == "pamukkale":
+                # Subtle line-only downhill stains; no foreground objects or pool highlights.
+                terrace_y = top + h * 0.292
+                step = h * 0.033
+                previous = []
+                for row in range(10):
+                    depth = min(1.0, row / 9.0)
+                    current = []
+                    flow_count = 2 if depth < 0.50 else 3
+                    for i in range(flow_count):
+                        fx = left + w * (0.28 + 0.20 * i + math.sin(row * 0.66 + i) * 0.020)
+                        fy = terrace_y + h * (0.010 + 0.012 * depth)
+                        current.append((fx, fy))
+                    if previous:
+                        p.setPen(QPen(QColor(215, 247, 249, int(5 + 16 * depth)), max(1.0, h * (0.0010 + 0.0018 * depth))))
+                        p.setBrush(Qt.BrushStyle.NoBrush)
+                        for i, cur in enumerate(current):
+                            prev = previous[min(len(previous) - 1, i)]
+                            path = QPainterPath()
+                            path.moveTo(QPointF(prev[0], prev[1] + h * 0.008))
+                            mid_x = (prev[0] + cur[0]) * 0.5 + rnd.uniform(-w * 0.0035, w * 0.0035)
+                            path.cubicTo(QPointF(mid_x, prev[1] + h * 0.020), QPointF(mid_x, cur[1] - h * 0.020), QPointF(cur[0], cur[1] - h * 0.008))
+                            p.drawPath(path)
+                    previous = current
+                    terrace_y += step * rnd.uniform(0.990, 1.035)
+                    step *= 1.105
+
+            elif scene_id == "chichibugahama":
+                self._render_chichibugahama_static(q, w, h)
+            else:
+                grad = QLinearGradient(QPointF(0, 0), QPointF(0, h))
+                grad.setColorAt(0.0, QColor("#6EC6FF")); grad.setColorAt(1.0, QColor("#072A52"))
+                q.setPen(Qt.PenStyle.NoPen); q.setBrush(QBrush(grad)); q.drawRect(QRectF(0, 0, w, h))
         except Exception:
             try:
-                q.fillRect(QRectF(0, 0, w, h), QColor("#F8FFFF"))
+                self._render_pamukkale_opaque_fallback(q, w, h)
             except Exception:
-                pass
+                try:
+                    q.fillRect(QRectF(0, 0, w, h), QColor("#F8FFFF"))
+                except Exception:
+                    pass
         finally:
             q.end()
         return img
