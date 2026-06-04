@@ -488,7 +488,7 @@ class VisualizerWidget(BaseWidget):
                 p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_shadow))
                 for i, v in enumerate(values):
                     skew = ((i * 17 + int(now * 9)) % 11 - 5) * slot * 0.055
-                    h = ah * (0.04 + v * (0.48 + ((i % 5) * 0.045)))
+                    h = ah * (0.05 + v * (0.60 + ((i % 5) * 0.055)))
                     x = area.left() + i * slot + skew + ox
                     y = (area.bottom() - h if i % 2 else area.top() + ah * 0.10) + oy
                     p.drawRect(QRectF(x + slot * 0.25, y, max(1.0, slot * min(0.86, 0.36 * style_shadow_size)), h))
@@ -524,8 +524,8 @@ class VisualizerWidget(BaseWidget):
 
             if style == "spotlight_beat":
                 for k in range(7):
-                    ang = -math.pi * 0.86 + k * math.pi / 3.0 + math.sin(now * 0.70 + k) * (0.10 + bass * 0.10)
-                    p.setPen(QPen(style_soft_shadow, max(7.0, (10.0 + bass * 18.0) * style_shadow_size)))
+                    ang = -math.pi * 0.86 + k * math.pi / 3.0 + math.sin(now * 0.82 + k) * (0.12 + bass * 0.11)
+                    p.setPen(QPen(style_soft_shadow, max(7.0, (13.0 + bass * 25.0) * style_shadow_size)))
                     p.drawLine(QPointF(cx + ox, area.bottom() + oy), QPointF(cx + ox + math.cos(ang) * aw * 0.72, cy + oy + math.sin(ang) * ah * 0.84))
                 p.restore(); return
 
@@ -1215,341 +1215,296 @@ class VisualizerWidget(BaseWidget):
 
         # Spec-refined first-wave skins. These branches intentionally override the older generic families below.
         if style == "bass_drop":
-            # Horizontal heavy-bass spectrum: center line expands upward/downward. No circle, no logo, no vehicle.
-            slot = aw / count
-            center_y = cy
+            # Heavy bass: white circular structure, sticky 3-color waveform, inner accent particles, bass shake.
+            sx = math.sin(now * 28.0) * bass * short_side * 0.015
+            sy = math.cos(now * 24.0) * bass * short_side * 0.012
+            ccx, ccy = cx + sx, cy + sy
+            core = min(max_effect_radius * 0.54, short_side * (0.23 + bass * 0.10))
+            if glow_enabled:
+                self._draw_visualizer_soft_orb(p, QPointF(ccx, ccy), core * (1.25 + bass * 0.25), QColor(base_color.red(), base_color.green(), base_color.blue(), 88), 38 + int(bass * 74))
+            for k in range(30):
+                ph = (k * 0.61803398875 + now * 0.045) % 1.0
+                rr = core * (0.12 + ((k * 37) % 100) / 100.0 * 0.70)
+                aa = ph * math.tau + math.sin(now * 0.7 + k) * 0.18
+                pc = QColor(base_color); pc.setAlpha(35 + int(avg * 70))
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(pc))
+                p.drawEllipse(QPointF(ccx + math.cos(aa) * rr, ccy + math.sin(aa) * rr), 1.2 + bass * 1.5, 1.2 + bass * 1.5)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(255, 255, 255, 170 + int(bass * 55)), max(1.2, 2.1 * width_scale)))
+            p.drawEllipse(QPointF(ccx, ccy), core, core)
+            p.setPen(QPen(QColor(255,255,255,60 + int(bass * 50)), max(1.0, 1.0 * width_scale)))
+            p.drawEllipse(QPointF(ccx, ccy), core * 0.70, core * 0.70)
             palette = [QColor(135, 60, 255), QColor(45, 150, 255), QColor(255, 70, 90)]
-            # subtle bass pulse line, horizontal only
-            pulse_alpha = 70 + int(bass * 120)
-            p.setPen(QPen(QColor(120, 60, 255, pulse_alpha), max(1.0, 2.0 * width_scale)))
-            p.drawLine(QPointF(area.left(), center_y), QPointF(area.right(), center_y))
-            bass_n = max(4, count // 4)
-            for i, v in enumerate(values):
-                # emphasize low band, keep highs present but calmer
-                low_boost = values[min(i, bass_n - 1)] if i < bass_n else v * 0.45
-                value = max(v * 0.35, low_boost)
-                h = ah * (0.035 + value * (0.34 + bass * 0.22))
-                x = area.left() + i * slot
-                col = QColor(palette[i % len(palette)])
-                col.setAlpha(120 + int(value * 120))
-                if glow_enabled and value > 0.04:
-                    glow_col = QColor(col); glow_col.setAlpha(30 + int(value * 70))
-                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(glow_col))
-                    p.drawRoundedRect(QRectF(x + slot * 0.12, center_y - h - 3, max(1.0, slot * min(0.95, 0.62 * width_scale)), h * 2 + 6), 5, 5)
-                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                bar_w = max(1.0, slot * min(0.92, 0.52 * width_scale))
-                p.drawRoundedRect(QRectF(x + slot * 0.24, center_y - h, bar_w, h), 3, 3)
-                p.drawRoundedRect(QRectF(x + slot * 0.24, center_y, bar_w, h), 3, 3)
+            step = max(1, count // 96)
+            for i in range(0, count, step):
+                v=values[i]; ang=i/count*math.tau-math.pi/2.0+math.sin(now*2.0+i*0.08)*bass*0.10
+                stretch=short_side*(0.035+v*0.12+bass*0.12); inner=core*(0.94-v*0.05); outer=min(max_effect_radius*0.98, core+stretch)
+                c_inner=QColor(255,255,255,165+int(v*65)); c_outer=QColor(palette[(i//step)%3]); c_outer.setAlpha(170+int(v*70))
+                p.setPen(QPen(c_inner, max(1.0,(1.2+v*2.4)*width_scale)))
+                p.drawLine(QPointF(ccx+math.cos(ang)*inner, ccy+math.sin(ang)*inner), QPointF(ccx+math.cos(ang)*(inner+stretch*0.42), ccy+math.sin(ang)*(inner+stretch*0.42)))
+                p.setPen(QPen(c_outer, max(1.0,(1.5+v*4.2+bass*2.8)*width_scale)))
+                p.drawLine(QPointF(ccx+math.cos(ang)*(inner+stretch*0.36), ccy+math.sin(ang)*(inner+stretch*0.36)), QPointF(ccx+math.cos(ang)*outer, ccy+math.sin(ang)*outer))
             p.restore(); return
 
         if style == "melodic_vibe":
-            # Soft, slow, glowing curved waveform. No harsh flashes.
-            colors = [QColor(255, 120, 210, 150), QColor(160, 105, 255, 145), QColor(90, 205, 255, 130)]
-            for layer in range(3):
-                pts = []
-                smooth = avg
-                for i, raw in enumerate(values):
-                    smooth = smooth * 0.82 + float(raw) * 0.18
-                    x = area.left() + aw * i / max(1, count - 1)
-                    y = cy + math.sin(i * (0.10 + layer * 0.025) + now * (0.55 + layer * 0.12)) * ah * (0.045 + layer * 0.018) - (smooth - avg) * ah * (0.16 + layer * 0.045)
-                    pts.append(QPointF(x, y))
-                self._draw_visualizer_polyline(p, pts, colors[layer], (2.0 + layer * 1.1 + mid * 1.4) * width_scale, 82 + int(avg * 70))
+            # Cloud-like glowing space with denser spiral toward center.
+            for k in range(28):
+                ph=k/28.0; rr=max_effect_radius*(0.12+ph*0.86); aa=now*(0.18+ph*0.10)+ph*math.tau*2.2
+                x=cx+math.cos(aa)*rr*(0.36+ph*0.52); y=cy+math.sin(aa*1.13)*rr*(0.24+ph*0.38)
+                a=max(10,int((44+avg*48)*(1.0-ph*0.60)))
+                self._draw_visualizer_soft_orb(p,QPointF(x,y),short_side*(0.08+ph*0.055),QColor(255,255,255,a),a)
+            if glow_enabled:
+                ac=QColor(base_color); ac.setAlpha(34+int(avg*74)); self._draw_visualizer_soft_orb(p,QPointF(cx,cy),max_effect_radius*(0.72+bass*0.16),ac,ac.alpha())
             p.restore(); return
 
         if style == "alternative":
-            # Irregular, asymmetric, monochrome spectrum. No rainbow.
-            slot = aw / count
-            for i, v in enumerate(values):
-                skew = ((i * 17 + int(now * 9)) % 11 - 5) * slot * 0.055
-                h = ah * (0.04 + v * (0.48 + ((i % 5) * 0.045)))
-                x = area.left() + i * slot + skew
-                y = area.bottom() - h if i % 2 else area.top() + ah * 0.10
-                shade = 180 if i % 3 else 235
-                col = QColor(shade, shade, shade, 80 + int(v * 145))
-                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col))
-                p.drawRect(QRectF(x + slot * 0.25, y, max(1.0, slot * min(0.86, 0.36 * width_scale)), h))
+            # Horizontal smooth waveform built from softened rods and dotted ends. Slightly larger musical sway.
+            pts=[]; smooth=avg
+            for i,raw in enumerate(values):
+                smooth=smooth*0.78+float(raw)*0.22; x=area.left()+aw*i/max(1,count-1); y=cy+math.sin(i*0.08+now*0.82)*ah*0.16-(smooth-avg)*ah*0.30; pts.append(QPointF(x,y))
+            stride=max(1,count//74); p.setPen(Qt.PenStyle.NoPen)
+            for i in range(0,len(pts),stride):
+                v=values[min(i,count-1)]; shade=205 if i%2 else 245; col=QColor(shade,shade,shade,100+int(v*125)); p.setBrush(QBrush(col))
+                rod_h=5.6*width_scale; rod_w=max(2.0,aw/max(40,count)*0.92); p.drawRoundedRect(QRectF(pts[i].x()-rod_w*0.5,pts[i].y()-rod_h*0.5,rod_w,rod_h),3,3)
+                if i==0 or i+stride>=len(pts): p.drawEllipse(pts[i],rod_h*0.76,rod_h*0.76)
             p.restore(); return
 
         if style == "circle":
-            # Single-color circular spectrum only. No background scene.
-            core = min(radius, max_effect_radius * 0.56)
-            step = max(1, count // 84)
-            for i in range(0, count, step):
-                v = values[i]
-                ang = i / count * math.tau - math.pi / 2.0
-                inner = core * (0.94 + avg * 0.05)
-                outer = min(max_effect_radius * 0.98, inner + short_side * (0.035 + v * 0.18))
-                col = QColor(base_color); col.setAlpha(145 + int(v * 100))
-                p.setPen(QPen(col, max(1.0, (1.25 + v * 3.0) * width_scale)))
-                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            # Seamless smooth circular waveform: first/last coordinates are identical and only outer/inner loops are stroked.
+            core = min(radius, max_effect_radius * 0.52)
+            rot = now * 0.18
+            sample_count = max(96, min(224, count))
+            outer_pts = []
+            inner_pts = []
+            first_outer = None
+            first_inner = None
+            for s in range(sample_count + 1):
+                if s == sample_count and first_outer is not None and first_inner is not None:
+                    # Reuse exact first coordinates at 360° to remove the numerical seam completely.
+                    outer_pts.append(QPointF(first_outer))
+                    inner_pts.append(QPointF(first_inner))
+                    continue
+                src = int(s * count / sample_count) % count
+                v = values[src]
+                ang = s / sample_count * math.tau - math.pi / 2.0 + rot
+                wobble = math.sin(now * 1.2 + s * 0.12) * 0.022
+                inner = core * (0.90 + avg * 0.04 + wobble)
+                outer = min(max_effect_radius * 0.98, core + short_side * (0.045 + v * 0.18))
+                op = QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer)
+                ip = QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner)
+                if s == 0:
+                    first_outer = QPointF(op)
+                    first_inner = QPointF(ip)
+                outer_pts.append(op)
+                inner_pts.append(ip)
+            if outer_pts and inner_pts:
+                fill_path = QPainterPath(outer_pts[0])
+                for pt in outer_pts[1:]:
+                    fill_path.lineTo(pt)
+                for pt in reversed(inner_pts):
+                    fill_path.lineTo(pt)
+                fill_path.closeSubpath()
+                fill = QColor(base_color)
+                fill.setAlpha(98 + int(avg * 85))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(fill))
+                p.drawPath(fill_path)
+
+                # Stroke outer and inner loops separately. This avoids drawing a radial seam line.
+                edge = QColor(base_color)
+                edge.setAlpha(160 + int(avg * 70))
+                pen = QPen(edge, max(1.0, 1.65 * width_scale))
+                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(pen)
+                outer_path = QPainterPath(outer_pts[0])
+                for pt in outer_pts[1:]:
+                    outer_path.lineTo(pt)
+                outer_path.closeSubpath()
+                inner_path = QPainterPath(inner_pts[0])
+                for pt in inner_pts[1:]:
+                    inner_path.lineTo(pt)
+                inner_path.closeSubpath()
+                p.drawPath(outer_path)
+                p.drawPath(inner_path)
             p.restore(); return
 
         if style == "ellipse":
-            # Horizontal elliptical spectrum; never a perfect circle. Uses the widget accent color (cfg.color).
-            rx_scale = 1.58
-            ry_scale = 0.54
-            core = min(radius, max_effect_radius * 0.48)
-            step = max(1, count // 84)
-            for i in range(0, count, step):
-                v = values[i]
-                ang = i / count * math.tau - math.pi / 2.0
-                inner = core
-                outer = min(max_effect_radius * 0.96, inner + short_side * (0.035 + v * 0.16))
-                col = QColor(base_color)
-                col.setAlpha(135 + int(v * 110))
-                p.setPen(QPen(col, max(1.0, (1.25 + v * 3.0) * width_scale)))
-                p.drawLine(QPointF(cx + math.cos(ang) * inner * rx_scale, cy + math.sin(ang) * inner * ry_scale), QPointF(cx + math.cos(ang) * outer * rx_scale, cy + math.sin(ang) * outer * ry_scale))
+            # Horizontal elliptical spectrum; uses widget accent color.
+            rx_scale=1.58; ry_scale=0.54; core=min(radius,max_effect_radius*0.48); step=max(1,count//84)
+            for i in range(0,count,step):
+                v=values[i]; ang=i/count*math.tau-math.pi/2.0; inner=core; outer=min(max_effect_radius*0.96,inner+short_side*(0.035+v*0.16)); col=QColor(base_color); col.setAlpha(135+int(v*110)); p.setPen(QPen(col,max(1.0,(1.25+v*3.0)*width_scale))); p.drawLine(QPointF(cx+math.cos(ang)*inner*rx_scale,cy+math.sin(ang)*inner*ry_scale),QPointF(cx+math.cos(ang)*outer*rx_scale,cy+math.sin(ang)*outer*ry_scale))
             p.restore(); return
 
         if style == "turntable":
-            # Record player UI: central black/silver disc + rotating outer spectrum. No vehicle.
-            disc_r = min(max_effect_radius * 0.58, short_side * 0.29)
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(QColor(8, 9, 14, 220)))
-            p.drawEllipse(QPointF(cx, cy), disc_r, disc_r)
+            # Reflective rotating record with grooves, outer bars and accent center.
+            disc_r=min(max_effect_radius*0.62,short_side*0.31); grad=QRadialGradient(QPointF(cx,cy),disc_r); grad.setColorAt(0.0,QColor(245,248,255,235)); grad.setColorAt(0.20,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(0.45,QColor(26,28,35,230)); grad.setColorAt(1.0,QColor(4,5,8,240)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),disc_r,disc_r)
             p.setBrush(Qt.BrushStyle.NoBrush)
-            for k in range(4):
-                rr = disc_r * (0.34 + k * 0.17)
-                p.setPen(QPen(QColor(210, 220, 235, 45 + k * 18), max(0.8, 1.0 * width_scale)))
-                p.drawEllipse(QPointF(cx, cy), rr, rr)
-            p.setBrush(QBrush(QColor(225, 230, 240, 165))); p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(cx, cy), disc_r * 0.10, disc_r * 0.10)
-            step = max(1, count // 64)
-            for i in range(0, count, step):
-                v = values[i]
-                ang = i / count * math.tau - math.pi / 2.0 + now * 0.45
-                inner = disc_r * 0.92
-                outer = min(max_effect_radius * 0.98, inner + short_side * (0.032 + v * 0.14))
-                col = QColor(190, 205, 220, 125 + int(v * 110))
-                p.setPen(QPen(col, max(1.0, (1.1 + v * 3.0) * width_scale)))
-                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            for k in range(5):
+                rr=disc_r*(0.34+k*0.13+math.sin(now*1.2+k)*0.006); p.setPen(QPen(QColor(210,220,235,55+k*14),max(0.8,1.0*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
+            step=max(1,count//72)
+            for i in range(0,count,step):
+                v=values[i]; ang=i/count*math.tau-math.pi/2.0+now*0.55; inner=disc_r*0.90; outer=min(max_effect_radius*0.98,inner+short_side*(0.024+v*0.13)); p.setPen(QPen(QColor(230,235,245,115+int(v*115)),max(1.0,(1.0+v*2.8)*width_scale))); p.drawLine(QPointF(cx+math.cos(ang)*inner,cy+math.sin(ang)*inner),QPointF(cx+math.cos(ang)*outer,cy+math.sin(ang)*outer))
             p.restore(); return
 
         if style == "spotlight_beat":
-            # Light is the main actor. No FFT bars.
-            for k in range(7):
-                ang = -math.pi * 0.86 + k * math.pi / 3.0 + math.sin(now * 0.70 + k) * (0.10 + bass * 0.10)
-                alpha = 22 + int(bass * 105) + (22 if k % 2 == 0 else 0)
-                col = QColor(255, 255, 255, alpha) if k % 2 == 0 else QColor(95, 165, 255, alpha)
-                p.setPen(QPen(col, max(7.0, (10.0 + bass * 18.0) * width_scale)))
-                p.drawLine(QPointF(cx, area.bottom()), QPointF(cx + math.cos(ang) * aw * 0.72, cy + math.sin(ang) * ah * 0.84))
+            # Two blurred elliptical dotted rings moving inverted from each other. Strong dot-to-bar stretch, calmer ring pulse.
+            for ring in range(2):
+                # Keep the bar stretch strong, but reduce whole-ring breathing so the inner ring stays visually inside the outer ring.
+                ring_pulse = 1.0 + bass * (0.025 + ring * 0.012)
+                rx=max_effect_radius*(0.54+ring*0.22)*ring_pulse; ry=rx*(0.45 + bass*0.018); phase=now*(0.36 if ring==0 else -0.32)
+                for k in range(42):
+                    v=values[(k*count//42)%count]
+                    ang=k/42*math.tau+phase+math.sin(now*1.20+k*0.17)*v*0.050
+                    stretch=1.0+v*4.85+bass*0.90
+                    x=cx+math.cos(ang)*rx; y=cy+math.sin(ang)*ry*(-1 if ring else 1)
+                    col=QColor(base_color) if ring else QColor(245,248,255); col.setAlpha(72+int(v*175))
+                    if glow_enabled: self._draw_visualizer_soft_orb(p,QPointF(x,y),5.0+v*16.0,col,30+int(v*78))
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col))
+                    bar_w=max(3.8,4.95*width_scale)
+                    bar_h=bar_w*stretch
+                    p.drawRoundedRect(QRectF(x-bar_w*0.5,y-bar_h*0.5,bar_w,bar_h),3,3)
             p.restore(); return
 
         if style == "audio_react":
-            # Simple FFT bars, direct response, automatic volume color. No excessive extras.
-            slot = aw / count
-            for i, v in enumerate(values):
-                hue = 0.58 - min(0.42, v * 0.42)
-                col = self._rainbow_color(hue + now * 0.012, 145 + int(v * 105), 0.80, 1.0)
-                x = area.left() + i * slot
-                h = ah * (0.04 + v * 0.86)
-                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRoundedRect(QRectF(x + slot * 0.20, area.bottom() - h, max(1.0, slot * min(0.86, 0.52 * width_scale)), h), 2, 2)
+            # Translucent blurred circle with white wavy contour.
+            if glow_enabled: self._draw_visualizer_soft_orb(p,QPointF(cx,cy),max_effect_radius*0.76,QColor(base_color.red(),base_color.green(),base_color.blue(),85),42+int(avg*70))
+            p.setBrush(QBrush(QColor(base_color.red(),base_color.green(),base_color.blue(),36+int(avg*35)))); p.setPen(QPen(QColor(255,255,255,60),max(1.0,1.0*width_scale))); p.drawEllipse(QPointF(cx,cy),radius*1.15,radius*1.15)
+            pts=[]; step=max(1,count//128)
+            for i in range(0,count,step):
+                v=values[i]; ang=i/count*math.tau-math.pi/2.0; rr=radius*1.10+short_side*(0.025+v*0.15)+math.sin(now*1.7+i*0.10)*short_side*0.012; pts.append(QPointF(cx+math.cos(ang)*rr,cy+math.sin(ang)*rr))
+            if pts:
+                path=QPainterPath(pts[0]); [path.lineTo(pt) for pt in pts[1:]]; path.closeSubpath(); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(255,255,255,160+int(avg*70)),max(1.0,2.0*width_scale))); p.drawPath(path)
             p.restore(); return
 
         if style == "retro_future":
-            # Synthwave neon grid and horizon. No photorealism.
-            horizon = area.top() + ah * 0.46
-            grid_col = QColor(255, 80, 210, 50 + int(avg * 40))
-            p.setPen(QPen(grid_col, 1))
-            scroll = (now * 0.08) % 1.0
-            for gy in range(7):
-                y = horizon + (((gy / 6.0 + scroll) % 1.0) ** 1.7) * ah * 0.48
-                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
-            for gx in range(-5, 6):
-                x = cx + gx * aw * 0.10
-                p.drawLine(QPointF(x, horizon), QPointF(cx + gx * aw * 0.32, area.bottom()))
-            slot = aw / count
-            for i, v in enumerate(values):
-                h = ah * (0.045 + v * 0.40)
-                col = self._rainbow_color(0.78 + i / count * 0.16 + now * 0.025, 175)
-                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.18, horizon - h, max(1.0, slot * min(0.88, 0.56 * width_scale)), h), 3, 3)
+            # Two travelling accent neon lines fading backward.
+            gap=aw*0.08
+            for side in (-1,1):
+                base_x=cx+side*gap; prev=None
+                for j in range(18):
+                    t=j/17.0; y=area.bottom()-t*ah; x=base_x+math.sin(now*1.1+t*6.0+side)*aw*0.025; col=QColor(base_color); col.setAlpha(max(18,int((1.0-t)*130+avg*55))); p.setPen(QPen(col,max(1.0,(2.6-t*1.4)*width_scale)))
+                    if prev: p.drawLine(prev,QPointF(x,y))
+                    prev=QPointF(x,y)
             p.restore(); return
 
         if style == "rainbow":
-            # Rainbow horizontal waveform, not monochrome bars.
-            pts = []
-            smooth = avg
-            for i, raw in enumerate(values):
-                smooth = smooth * 0.76 + float(raw) * 0.24
-                x = area.left() + aw * i / max(1, count - 1)
-                y = cy + math.sin(i * 0.13 + now * 1.10) * ah * 0.07 - (smooth - avg) * ah * 0.24
-                pts.append(QPointF(x, y))
-            # segmented hue line
-            for i in range(1, len(pts)):
-                col = self._rainbow_color(i / max(1, len(pts)) + now * 0.08, 210)
-                p.setPen(QPen(col, max(1.0, 2.4 * width_scale)))
-                p.drawLine(pts[i - 1], pts[i])
+            # Rainbow bars with upward particles and lower reflection.
+            slot=aw/count
+            for i,v in enumerate(values):
+                x=area.left()+i*slot; h=ah*(0.05+v*0.72); col=self._rainbow_color(i/count+now*0.08,205); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col)); bw=max(1.0,slot*min(0.92,0.58*width_scale)); p.drawRoundedRect(QRectF(x+slot*0.20,cy-h,bw,h),3,3)
+                ref=QColor(col); ref.setAlpha(50+int(v*45)); p.setBrush(QBrush(ref)); p.drawRoundedRect(QRectF(x+slot*0.20,cy+2,bw,h*0.45),3,3)
+                if i%max(1,count//48)==0 and v>0.03:
+                    age=(now*0.55+i*0.031)%1.0; pc=QColor(col); pc.setAlpha(max(0,int((1.0-age)*130))); p.setBrush(QBrush(pc)); p.drawEllipse(QPointF(x+slot*0.5,cy-h-age*ah*0.18),1.5+v*2.0,1.5+v*2.0)
             p.restore(); return
 
         if style == "minimal":
-            # Thin white lines only; no glow.
-            slot = aw / count
-            p.setPen(QPen(QColor(245, 245, 245, 190), max(1.0, 1.0 * width_scale)))
-            for i, v in enumerate(values):
-                x = area.left() + i * slot + slot * 0.5
-                h = ah * (0.035 + v * 0.74)
-                p.drawLine(QPointF(x, area.bottom()), QPointF(x, area.bottom() - h))
+            # Centered smooth tight bars, accent color.
+            slot=aw/count; col=QColor(base_color); col.setAlpha(195); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col))
+            for i,v in enumerate(values):
+                h=ah*(0.025+v*0.46); p.drawRoundedRect(QRectF(area.left()+i*slot+slot*0.28,cy-h*0.5,max(1.0,slot*min(0.80,0.44*width_scale)),h),2,2)
             p.restore(); return
 
         if style == "urban_timelapse":
-            # Horizontal flowing city light trails, orange/blue. No circular shape.
-            slot = aw / count
-            for i, v in enumerate(values):
-                trail = ((now * (28 + v * 42) + i * 13) % max(1.0, aw))
-                x = area.left() + trail
-                y = area.top() + ah * (0.20 + (i % 9) / 12.0)
-                length = slot * (1.0 + v * 6.0)
-                col = QColor(80, 170, 255, 70 + int(v * 110)) if i % 2 else QColor(255, 155, 55, 70 + int(v * 110))
-                p.setPen(QPen(col, max(1.0, (1.1 + v * 2.0) * width_scale)))
-                p.drawLine(QPointF(x - length, y), QPointF(x, y))
+            # Lines with bouncing spheres at tips.
+            lanes=min(18,max(8,count//5))
+            for i in range(lanes):
+                v=values[int(i*count/lanes)]; y=area.top()+ah*(0.16+(i%lanes)/max(1,lanes-1)*0.68); x0=area.left()+((now*(35+i*2)+i*31)%max(1.0,aw)); length=aw*(0.10+v*0.18); col=QColor(80,170,255,100+int(v*90)) if i%2 else QColor(255,155,55,100+int(v*90)); p.setPen(QPen(col,max(1.0,(1.2+v*2.2)*width_scale))); p.drawLine(QPointF(x0-length,y),QPointF(x0,y)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col)); p.drawEllipse(QPointF(x0,y+math.sin(now*2.0+i)*ah*0.025),2.0+v*3.0,2.0+v*3.0)
             p.restore(); return
 
         if style == "music_beat_wall":
-            # Dense RGB wall of bars/cells. No waveform lines.
-            slot = aw / count
-            levels = 7
-            for i, v in enumerate(values):
-                for j in range(levels):
-                    if (j + 1) / levels <= v + 0.10:
-                        col = self._rainbow_color((i / max(1, count)) * 0.72 + j * 0.04 + now * 0.025, 65 + int((j + 1) / levels * 155))
-                        p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                        cell_h = ah / levels * 0.72
-                        p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.16, area.bottom() - (j + 1) * ah / levels, max(1.0, slot * min(0.92, 0.68 * width_scale)), cell_h), 2, 2)
+            # Semi-transparent bars that blend into background.
+            slot=aw/count
+            for i,v in enumerate(values):
+                h=ah*(0.06+v*0.76); col=QColor(base_color); col.setAlpha(38+int(v*72)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col)); p.drawRoundedRect(QRectF(area.left()+i*slot+slot*0.16,area.bottom()-h,max(1.0,slot*min(0.92,0.64*width_scale)),h),3,3)
             p.restore(); return
 
         if style == "led_audio_wave":
-            # RGB LED dot wave. No smooth line.
-            slot = aw / count
-            dot = max(1.4, min(6.0, slot * 0.42 * width_scale))
-            for i, v in enumerate(values):
-                y = cy + math.sin(i * 0.25 + now * 2.4) * ah * 0.12
-                steps = max(1, int(v * 6))
-                for j in range(-steps, steps + 1):
-                    col = self._rainbow_color(i / count + now * 0.08, max(40, 190 - abs(j) * 22))
-                    p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                    p.drawEllipse(QPointF(area.left() + i * slot + slot * 0.5, y + j * dot * 1.65), dot, dot)
+            # Two center rails with one accent waveform and fading endpoint dots.
+            rail_gap=ah*0.10; p.setPen(QPen(QColor(base_color.red(),base_color.green(),base_color.blue(),70),max(1.0,1.0*width_scale))); p.drawLine(QPointF(area.left(),cy-rail_gap),QPointF(area.right(),cy-rail_gap)); p.drawLine(QPointF(area.left(),cy+rail_gap),QPointF(area.right(),cy+rail_gap))
+            pts=[]; smooth=avg
+            for i,raw in enumerate(values):
+                smooth=smooth*0.78+raw*0.22; x=area.left()+aw*i/max(1,count-1); y=cy+math.sin(i*0.15+now*1.6)*ah*0.055-(smooth-avg)*ah*0.20; pts.append(QPointF(x,y))
+            self._draw_visualizer_polyline(p,pts,QColor(base_color),2.0*width_scale,145)
+            for i in range(0,len(pts),max(1,len(pts)//18)):
+                age=(now*0.7+i*0.03)%1.0; c=QColor(base_color); c.setAlpha(int((1.0-age)*125)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(c)); p.drawEllipse(pts[i],2.0,2.0)
             p.restore(); return
 
         if style == "euphoria_motion":
-            # Glowing rainbow ring, no vehicle.
-            core = min(radius, max_effect_radius * 0.54)
-            if glow_enabled:
-                self._draw_visualizer_soft_orb(p, QPointF(cx, cy), core * 1.15, QColor(120, 120, 255, 75), 36 + int(avg * 70))
-            step = max(1, count // 96)
-            for i in range(0, count, step):
-                v = values[i]
-                ang = i / count * math.tau - math.pi / 2.0
-                inner = core * (0.92 + avg * 0.05)
-                outer = min(max_effect_radius * 0.99, inner + short_side * (0.04 + v * 0.18))
-                col = self._rainbow_color(i / count + now * 0.08, 220)
-                p.setPen(QPen(col, max(1.0, (1.5 + v * 3.8) * width_scale)))
-                p.drawLine(QPointF(cx + math.cos(ang) * inner, cy + math.sin(ang) * inner), QPointF(cx + math.cos(ang) * outer, cy + math.sin(ang) * outer))
+            # Six neon white horizontal bars that shake with music.
+            for k in range(6):
+                v=values[int(k*count/6)]; y=cy+(k-2.5)*ah*0.095+math.sin(now*3.0+k)*bass*ah*0.025; length=aw*(0.22+v*0.34+bass*0.10); col=QColor(250,250,255,135+int(v*100)); p.setPen(QPen(col,max(2.0,(3.0+v*6.0)*width_scale))); p.drawLine(QPointF(cx-length*0.5,y),QPointF(cx+length*0.5,y))
             p.restore(); return
 
         if style == "luminance":
-            # Bright white/blue light lines. Avoid dark-dominant rendering.
-            if glow_enabled:
-                self._draw_visualizer_soft_orb(p, QPointF(cx, cy), max_effect_radius * (0.72 + bass * 0.18), QColor(200, 230, 255, 110), 50 + int(avg * 90))
-            slot = aw / count
-            for i, v in enumerate(values):
-                col = QColor(235, 248, 255, 145 + int(v * 110)) if i % 2 else QColor(130, 205, 255, 130 + int(v * 110))
-                h = ah * (0.05 + v * 0.82)
-                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.20, area.bottom() - h, max(1.0, slot * min(0.90, 0.58 * width_scale)), h), 3, 3)
+            # Filled slow gradient waveform, accent to white toward right.
+            top_pts=[]; bottom_pts=[]; smooth=avg
+            for i,raw in enumerate(values):
+                smooth=smooth*0.80+raw*0.20; x=area.left()+aw*i/max(1,count-1); amp=ah*(0.08+smooth*0.28); y=cy+math.sin(i*0.09+now*0.65)*ah*0.055; top_pts.append(QPointF(x,y-amp)); bottom_pts.append(QPointF(x,y+amp))
+            if top_pts:
+                path=QPainterPath(top_pts[0]); [path.lineTo(pt) for pt in top_pts[1:]]; [path.lineTo(pt) for pt in reversed(bottom_pts)]; path.closeSubpath(); grad=QLinearGradient(QPointF(area.left(),cy),QPointF(area.right(),cy)); c0=QColor(base_color); c0.setAlpha(125); grad.setColorAt(0.0,c0); grad.setColorAt(1.0,QColor(255,255,255,170)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawPath(path)
             p.restore(); return
 
         if style == "parallax_waves":
-            # Multi-layer cyan waves; each layer moves at a different speed.
-            colors = [QColor(80, 240, 255, 120), QColor(70, 190, 255, 100), QColor(130, 255, 235, 90)]
-            speeds = [0.55, 0.82, 1.18]
-            for layer in range(3):
-                pts = []
-                smooth = avg
-                for i, raw in enumerate(values):
-                    smooth = smooth * 0.80 + float(raw) * 0.20
-                    x = area.left() + aw * i / max(1, count - 1)
-                    y = cy + math.sin(i * (0.10 + layer * 0.03) + now * speeds[layer]) * ah * (0.05 + layer * 0.03) - (smooth - avg) * ah * (0.14 + layer * 0.05)
-                    pts.append(QPointF(x, y + (layer - 1) * ah * 0.06))
-                self._draw_visualizer_polyline(p, pts, colors[layer], (1.8 + layer * 1.0) * width_scale, colors[layer].alpha())
+            # Center circle with two mochi-like waves.
+            core=min(radius,max_effect_radius*0.40); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(255,255,255,125),max(1.0,1.2*width_scale))); p.drawEllipse(QPointF(cx,cy),core,core)
+            for layer in range(2):
+                pts=[]; step=max(1,count//128)
+                for i in range(0,count,step):
+                    v=values[i]; ang=i/count*math.tau-math.pi/2.0+now*(0.10+layer*0.06); rr=core*(1.08+layer*0.22)+short_side*(0.035+v*(0.12+layer*0.04)); pts.append(QPointF(cx+math.cos(ang)*rr,cy+math.sin(ang)*rr))
+                col=QColor(base_color if layer==0 else QColor(255,255,255)); col.setAlpha(145-layer*25)
+                if pts:
+                    path=QPainterPath(pts[0]); [path.lineTo(pt) for pt in pts[1:]]; path.closeSubpath(); p.setPen(QPen(col,max(1.0,(2.4+layer)*width_scale))); p.drawPath(path)
             p.restore(); return
 
         if style == "hud_equalizer":
-            # Cyan SF HUD panel with memory ticks and scan. No rainbow.
-            hud_col = QColor(80, 255, 210, 70)
-            p.setPen(QPen(hud_col, 1))
-            for gy in range(6):
-                y = area.top() + ah * gy / 5.0
-                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
-            for gx in range(8):
-                x = area.left() + aw * gx / 7.0
-                p.drawLine(QPointF(x, area.bottom() - 8), QPointF(x, area.bottom()))
-            scan_y = area.top() + ((now * 55) % max(1.0, ah))
-            p.setPen(QPen(QColor(90, 255, 210, 120), max(1.0, 1.2 * width_scale)))
-            p.drawLine(QPointF(area.left(), scan_y), QPointF(area.right(), scan_y))
-            slot = aw / count
-            for i, v in enumerate(values):
-                h = ah * (0.05 + v * 0.78)
-                col = QColor(80, 255, 190, 145 + int(v * 90))
-                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.22, area.bottom() - h, max(1.0, slot * min(0.86, 0.52 * width_scale)), h), 2, 2)
-            p.restore(); return
+            # Seven circular HUD layers.
+            for layer in range(7):
+                rr=max_effect_radius*(0.20+layer*0.095); col=QColor(base_color); col.setAlpha(max(25,120-layer*10)); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(col if layer<5 else QColor(255,255,255,70),max(1.0,(1.0+layer*0.18)*width_scale)))
+                if layer>=4:
+                    for k in range(44):
+                        if k%2==0:
+                            a=k/44*math.tau+now*0.08; v=values[(k*count//44)%count]; p.drawLine(QPointF(cx+math.cos(a)*rr,cy+math.sin(a)*rr),QPointF(cx+math.cos(a)*(rr+v*short_side*0.05),cy+math.sin(a)*(rr+v*short_side*0.05)))
+                else: p.drawEllipse(QPointF(cx,cy),rr,rr)
+            p.setPen(QPen(QColor(255,255,255,135),max(2.0,2.4*width_scale))); p.drawLine(QPointF(cx-max_effect_radius*0.34,cy),QPointF(cx+max_effect_radius*0.34,cy)); p.restore(); return
 
         if style == "space":
-            # Space background with stars and horizontal waveform. Avoid many planets.
-            for i in range(48):
-                x = area.left() + ((i * 73 + int(now * 22)) % int(max(1, aw)))
-                y = area.top() + ((i * 41 + int(now * 9)) % int(max(1, ah)))
-                p.setPen(QPen(QColor(130, 185, 255, 45 + (i % 5) * 18), 1))
-                p.drawPoint(QPointF(x, y))
-            pts = []
-            smooth = avg
-            for i, raw in enumerate(values):
-                smooth = smooth * 0.78 + float(raw) * 0.22
-                x = area.left() + aw * i / max(1, count - 1)
-                y = cy + math.sin(i * 0.11 + now * 0.70) * ah * 0.07 - (smooth - avg) * ah * 0.22
-                pts.append(QPointF(x, y))
-            self._draw_visualizer_polyline(p, pts, QColor(110, 160, 255, 150), 2.2 * width_scale, 150)
+            # Center white-bar waveform with thin particles around it.
+            for i in range(54):
+                x=area.left()+((i*73+int(now*20))%int(max(1,aw))); y=area.top()+((i*41+int(now*8))%int(max(1,ah))); p.setPen(QPen(QColor(150,180,255,34+(i%4)*14),1)); p.drawPoint(QPointF(x,y))
+            slot=aw/count
+            for i,v in enumerate(values):
+                h=ah*(0.03+v*0.34); p.setPen(QPen(QColor(255,255,255,145+int(v*80)),max(1.0,1.2*width_scale))); x=area.left()+i*slot+slot*0.5; p.drawLine(QPointF(x,cy-h),QPointF(x,cy+h))
             p.restore(); return
 
         if style == "flat_spectrum":
-            # Lightweight flat FFT bars, single color, no glow.
-            slot = aw / count
-            col = QColor(base_color); col.setAlpha(205)
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col))
-            for i, v in enumerate(values):
-                h = ah * (0.04 + v * 0.82)
-                p.drawRect(QRectF(area.left() + i * slot + slot * 0.18, area.bottom() - h, max(1.0, slot * min(0.92, 0.58 * width_scale)), h))
+            # Fast rotating center circle, surrounding bars, accent waveform and bouncing spheres. Overall size slightly enlarged.
+            size_scale=1.18
+            core=min(max_effect_radius*0.33,short_side*0.18); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(base_color.red(),base_color.green(),base_color.blue(),95),max(1.0,1.2*width_scale))); p.drawArc(QRectF(cx-core,cy-core,core*2,core*2),int((now*900)%5760),2000)
+            step=max(1,count//84)
+            for i in range(0,count,step):
+                v=values[i]; a=i/count*math.tau-math.pi/2; inner=core*1.24; outer=min(max_effect_radius*0.94,inner+short_side*((0.035+v*0.13)*size_scale)); col=QColor(base_color); col.setAlpha(70+int(v*95)); p.setPen(QPen(col,max(1.0,(1.0+v*2.0)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer)); p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer),(1.5+v*2.2)*size_scale,(1.5+v*2.2)*size_scale)
             p.restore(); return
 
         if style == "dynamic_glitch":
-            # RGB split glitch, intermittent but not constantly violent.
-            slot = aw / count
-            glitch_gate = (int(now * 8) % 4) == 0
-            for i, v in enumerate(values):
-                h = ah * (0.05 + v * 0.84)
-                jitter = (((i * 17 + int(now * 38)) % 7 - 3) * (1.0 + bass * 2.0)) if glitch_gate or i % 9 == 0 else 0.0
-                for shift, col in [(-1.7, QColor(255, 60, 90, 105)), (0.0, QColor(base_color)), (1.7, QColor(80, 220, 255, 105))]:
-                    col.setAlpha(78 + int(v * 130))
-                    p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                    p.drawRect(QRectF(area.left() + i * slot + slot * 0.18 + jitter + shift, area.bottom() - h, max(1.0, slot * min(0.90, 0.58 * width_scale)), h))
+            # Dark frosted jagged rainbow waveform moving left.
+            pts=[]
+            for i,v in enumerate(values):
+                x=area.left()+((aw*i/max(1,count-1)-(now*34%max(1,aw)))%aw); y=cy+((-1)**i)*ah*(0.025+v*0.20); pts.append(QPointF(x,y))
+            for i in range(1,len(pts)):
+                col=self._rainbow_color(i/max(1,len(pts))+now*0.02,90,0.55,0.8); p.setPen(QPen(col,max(1.0,2.2*width_scale))); p.drawLine(pts[i-1],pts[i])
             p.restore(); return
 
         if style == "cyber":
-            # Cyan cyber UI: neon lines and HUD scan. No automobile.
-            p.setPen(QPen(QColor(0, 245, 255, 55), 1))
-            for gy in range(1, 5):
-                y = area.top() + ah * gy / 5.0
-                p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
-            scan_x = area.left() + ((now * 70) % max(1.0, aw))
-            p.setPen(QPen(QColor(0, 245, 255, 110), max(1.0, 1.2 * width_scale)))
-            p.drawLine(QPointF(scan_x, area.top()), QPointF(scan_x, area.bottom()))
-            slot = aw / count
-            for i, v in enumerate(values):
-                h = ah * (0.06 + v * 0.84)
-                col = QColor(0, 245, 255, 135 + int(v * 105))
-                p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRoundedRect(QRectF(area.left() + i * slot + slot * 0.18, area.bottom() - h, max(1.0, slot * min(0.94, 0.62 * width_scale)), h), 3, 3)
+            # Long color-shifting line with downward bars and falling fading particles.
+            base_y=area.top()+ah*0.28; slot=aw/count
+            for i,v in enumerate(values):
+                x=area.left()+i*slot; col=self._rainbow_color(i/count*0.85+now*0.035,150+int(v*80),0.85,1.0); p.setPen(QPen(col,max(1.0,1.6*width_scale)))
+                if i>0: p.drawLine(QPointF(x-slot,base_y+math.sin((i-1)*0.08+now)*ah*0.025),QPointF(x,base_y+math.sin(i*0.08+now)*ah*0.025))
+                h=ah*(0.04+v*0.55); p.setPen(QPen(col,max(1.0,1.3*width_scale))); p.drawLine(QPointF(x,base_y),QPointF(x,base_y+h))
+                if i%max(1,count//36)==0:
+                    age=(now*0.65+i*0.021)%1.0; pc=QColor(col); pc.setAlpha(int((1.0-age)*120)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(pc)); p.drawEllipse(QPointF(x,base_y+h+age*ah*0.16),1.5+v*2.0,1.5+v*2.0)
             p.restore(); return
 
         # Existing first-wave style families.
