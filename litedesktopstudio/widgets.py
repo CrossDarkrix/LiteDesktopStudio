@@ -1131,13 +1131,6 @@ class VisualizerWidget(BaseWidget):
             for j in range(9): v=values[int(j*count/9)]; x=cx+(j-4)*short_side*0.025; h=short_side*(0.10+v*0.26); c=QColor(255,255,255,75+int(v*70)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(c)); p.drawRoundedRect(QRectF(x-2*width_scale,cy-h/2,4*width_scale,h),3,3)
             p.restore(); return
 
-        if style == "audio_ripple":
-            rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.55); rg.setColorAt(0,QColor(0,0,0,88)); rg.setColorAt(1,QColor(base_color.red(),base_color.green(),base_color.blue(),48)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(rg)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.45,max_effect_radius*0.45)
-            col=QColor(base_color); col.setAlpha(165)
-            for k in range(56):
-                v=values[int(k*count/56)]; a=k/56*math.tau; r=max_effect_radius*(0.47+v*0.16)+(((k*37)%11)-5)*short_side*0.004; length=short_side*(0.018+v*0.09); w=max(1.4,(1.5+v*3)*width_scale); _cap(cx,cy,a,r,length,w,col)
-            p.restore(); return
-
         if style == "nebula":
             c=QColor(base_color); c.setAlpha(105)
             for k in range(64):
@@ -1476,10 +1469,10 @@ class VisualizerWidget(BaseWidget):
                     p.setPen(color); p.drawText(QPointF(x, y), digit)
             p.restore(); return
 
-        if style in ("energy_shield", "audio_ripple", "radar_scan", "circle_waveform", "rainbow_ring_dj", "round_base_audio"):
+        if style in ("energy_shield", "radar_scan", "circle_waveform", "rainbow_ring_dj", "round_base_audio"):
             rings = 5 if style != "circle_waveform" else 3
             for k in range(rings):
-                rr = min(max_effect_radius, short_side * (0.11 + k * 0.075 + bass * 0.035 + ((now * 0.12 + k * 0.06) % 0.045 if style == "audio_ripple" else 0.0)))
+                rr = min(max_effect_radius, short_side * (0.11 + k * 0.075 + bass * 0.035))
                 alpha = max(18, 115 - k * 17 + int(avg * 70))
                 col = QColor(base_color)
                 if style == "energy_shield": col = QColor(60, 210, 255, alpha)
@@ -2080,19 +2073,213 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "audio_ripple":
-            # Accent lightning jagged ring around a translucent dark circle.
-            rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.55); rg.setColorAt(0.0,QColor(0,0,0,86)); rg.setColorAt(1.0,QColor(base_color.red(),base_color.green(),base_color.blue(),48))
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(rg)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.45,max_effect_radius*0.45)
-            pts=[]; sample=max(64,min(160,count))
-            for s in range(sample+1):
-                v=values[int((s%sample)*count/sample)%count]
-                jag=math.sin(s*2.71+now*5.0)*short_side*0.025+((s*37)%11-5)*short_side*0.003
-                a=s/sample*math.tau-math.pi/2.0
-                r=max_effect_radius*(0.49+v*0.18)+jag
-                pts.append(QPointF(cx+math.cos(a)*r,cy+math.sin(a)*r))
-            col=QColor(base_color); col.setAlpha(185)
-            self._draw_visualizer_polyline(p,pts,col,2.3*width_scale,185)
-            if glow_enabled: self._draw_visualizer_polyline(p,pts,col,5.6*width_scale,54)
+            # Audio Ripple: Circular Waveform Spectrum.
+            # Base circle stays readable; spike tips move inward/outward with moderated speed.
+            # Use the widget accent color instead of a fixed mint color.
+            # Alpha variants below keep the existing glow / afterimage balance.
+            mint = QColor(base_color)
+            mint.setAlpha(235)
+            mint_glow_1 = QColor(base_color)
+            mint_glow_1.setAlpha(20)
+            mint_glow_2 = QColor(base_color)
+            mint_glow_2.setAlpha(40)
+            mint_after = QColor(base_color)
+            mint_after.setAlpha(32)
+
+            background_radius = max_effect_radius * 0.52
+            bg = QRadialGradient(QPointF(cx, cy), background_radius * 1.18)
+            bg.setColorAt(0.00, QColor(0, 0, 0, 224))
+            bg.setColorAt(0.62, QColor(0, 15, 18, 172))
+            bg.setColorAt(1.00, QColor(0, 54, 50, 58))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(bg))
+            p.drawEllipse(QPointF(cx, cy), background_radius, background_radius)
+
+            # Soft plexus background.
+            plex_nodes = []
+            plex_count = 32
+            for n in range(plex_count):
+                hx = ((n * 37) % 101) / 100.0
+                hy = ((n * 61 + 17) % 101) / 100.0
+                x = area.left() + aw * hx + math.sin(now * 0.10 + n * 1.47) * short_side * 0.010
+                y = area.top() + ah * hy + math.cos(now * 0.09 + n * 1.13) * short_side * 0.010
+                if (x - cx) * (x - cx) + (y - cy) * (y - cy) < (background_radius * 0.92) ** 2:
+                    push = background_radius * 1.20 / max(1.0, math.hypot(x - cx, y - cy))
+                    x = cx + (x - cx) * push
+                    y = cy + (y - cy) * push
+                plex_nodes.append(QPointF(x, y))
+
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(mint.red(), mint.green(), mint.blue(), 20 + int(avg * 22)), max(0.45, 0.60 * width_scale)))
+            link_limit2 = (short_side * 0.27) ** 2
+            for i, a_pt in enumerate(plex_nodes):
+                for j in range(i + 1, min(plex_count, i + 6)):
+                    b_pt = plex_nodes[j]
+                    dx = a_pt.x() - b_pt.x()
+                    dy = a_pt.y() - b_pt.y()
+                    if dx * dx + dy * dy < link_limit2:
+                        p.drawLine(a_pt, b_pt)
+
+            for n, pt in enumerate(plex_nodes):
+                pulse = 0.50 + 0.50 * math.sin(now * 1.10 + n * 0.73)
+                dot_col = QColor(mint.red(), mint.green(), mint.blue(), int(24 + pulse * 40 + avg * 22))
+                self._draw_visualizer_soft_orb(p, pt, short_side * (0.0032 + pulse * 0.0025), dot_col, dot_col.alpha())
+
+            circle_gap = max(3.0, short_side * 0.016)
+            base_radius = background_radius + circle_gap
+            max_wave_radius = max_effect_radius * 0.88
+            inner_wave_radius = max(4.0, background_radius * 0.22)
+            available_push = max(8.0, max_wave_radius - base_radius)
+            deformation_scale = 0.48
+            sensitivity = min(150.0, max(50.0, available_push * 0.60))
+            sample_count = max(100, min(256, count if count > 0 else 128))
+
+            # Symmetric FFT mode: first half + mirrored second half.
+            half_count = max(2, sample_count // 2)
+            fft_half = []
+            for i in range(half_count):
+                src_i = int(i * max(1, count // 2 - 1) / max(1, half_count - 1))
+                fft_half.append(values[src_i])
+            raw_fft_values = fft_half + list(reversed(fft_half))
+            sample_count = len(raw_fft_values)
+
+            # Base waveform remains smoothed so the circular silhouette does not collapse.
+            previous_smoothed = getattr(self, "_audio_ripple_smoothed", None)
+            if not isinstance(previous_smoothed, list) or len(previous_smoothed) != sample_count:
+                previous_smoothed = list(raw_fft_values)
+            temporal_smoothed = []
+            for i, current_value in enumerate(raw_fft_values):
+                temporal_smoothed.append(previous_smoothed[i] * 0.85 + current_value * 0.15)
+            self._audio_ripple_smoothed = temporal_smoothed
+
+            fft_values = []
+            for i, current_value in enumerate(temporal_smoothed):
+                prev2_v = temporal_smoothed[i - 2]
+                prev_v = temporal_smoothed[i - 1]
+                next_v = temporal_smoothed[(i + 1) % sample_count]
+                next2_v = temporal_smoothed[(i + 2) % sample_count]
+                fft_values.append(prev2_v * 0.10 + prev_v * 0.20 + current_value * 0.40 + next_v * 0.20 + next2_v * 0.10)
+
+            local_peak = max(raw_fft_values) if raw_fft_values else 0.0
+            smoothed_peak = max(fft_values) if fft_values else 0.0
+            volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
+
+            points = []
+            for i, fft_value in enumerate(fft_values):
+                angle = -math.pi / 2.0 + (i / sample_count) * math.tau
+                prev_v = fft_values[i - 1]
+                next_v = fft_values[(i + 1) % sample_count]
+                local_contrast = max(0.0, fft_value - (prev_v + next_v) * 0.5)
+                spike_gate = max(0.0, min(1.0, (fft_value - 0.64) / 0.36))
+
+                # Keep the main waveform glued to the background circle.
+                # FFT deformation is used as a trigger/strength signal for snap tips,
+                # not as a continuous outward lift of the whole line.
+                base_amplitude = 0.0
+
+                mirror_i = min(i, sample_count - 1 - i)
+                seed = ((mirror_i * 37 + 13) % 97) / 97.0
+
+                raw_value = raw_fft_values[i]
+                raw_prev = raw_fft_values[i - 1]
+                raw_next = raw_fft_values[(i + 1) % sample_count]
+                raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
+
+                # Audio-reactive gates.
+                # transient_gate responds to sudden rises; level_gate keeps loud sustained sounds alive;
+                # peak_gate gives the full ring a stronger hit only when the music is actually peaking.
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[i]) / 0.22))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate))
+                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                audio_reactivity = max(0.0, min(1.0, audio_reactivity))
+                # Squaring suppresses idle/fallback noise, so tips do not move constantly.
+                audio_reactivity = audio_reactivity * audio_reactivity
+
+                # Snap tip motion: バチッ、スッ.  The clock still provides the sharp impulse shape,
+                # but its visibility and strength are now gated by the actual audio energy above.
+                tip_speed = 0.32 + seed * 0.22 + audio_reactivity * 0.55
+                snap_cycle = now * tip_speed + seed * 5.0 + mirror_i * 0.031
+                snap_phase = snap_cycle - math.floor(snap_cycle)
+
+                if snap_phase < 0.050:
+                    snap_envelope = snap_phase / 0.050
+                elif snap_phase < 0.210:
+                    snap_envelope = 1.0 - (snap_phase - 0.050) / 0.160
+                else:
+                    snap_envelope = 0.0
+                snap_envelope = max(0.0, min(1.0, snap_envelope))
+                snap_envelope *= audio_reactivity
+
+                # Direction changes per impulse, not continuously inside the impulse.
+                snap_index = int(math.floor(snap_cycle))
+                tip_sign = -1.0 if ((snap_index + mirror_i * 3) % 5) < 2 else 1.0
+
+                tip_energy = max(raw_value, raw_contrast * 3.2, spike_gate)
+                tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
+
+                # Baseline stays exactly on base_radius; only audio-triggered tip impulses move.
+                radius = base_radius + tip_sign * tip_amount
+                radius = max(inner_wave_radius, min(radius, max_wave_radius))
+                points.append(QPointF(cx + math.cos(angle) * radius, cy + math.sin(angle) * radius))
+
+            def _make_offset_path(offset):
+                path = QPainterPath()
+                if not points:
+                    return path
+                first = points[0]
+                first_len = max(1.0, math.hypot(first.x() - cx, first.y() - cy))
+                path.moveTo(QPointF(first.x() + (first.x() - cx) / first_len * offset,
+                                    first.y() + (first.y() - cy) / first_len * offset))
+                for pt in points[1:]:
+                    length = max(1.0, math.hypot(pt.x() - cx, pt.y() - cy))
+                    path.lineTo(QPointF(pt.x() + (pt.x() - cx) / length * offset,
+                                        pt.y() + (pt.y() - cy) / length * offset))
+                path.closeSubpath()
+                return path
+
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for offset, alpha_scale in ((0.0, 1.00), (short_side * 0.010, 0.58), (short_side * 0.020, 0.36), (short_side * 0.030, 0.22)):
+                path_offset = _make_offset_path(offset)
+                if offset > 0.0:
+                    trail_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), int(mint_after.alpha() * alpha_scale)), max(1.0, 1.25 * width_scale))
+                    trail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    trail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    p.setPen(trail_pen)
+                    p.drawPath(path_offset)
+                    continue
+
+                glow_pen_1 = QPen(QColor(mint.red(), mint.green(), mint.blue(), mint_glow_1.alpha()), max(8.0, 8.0 * width_scale + bass * 4.0))
+                glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_1)
+                p.drawPath(path_offset)
+
+                glow_pen_2 = QPen(QColor(mint.red(), mint.green(), mint.blue(), mint_glow_2.alpha()), max(5.0, 5.0 * width_scale + bass * 2.0))
+                glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_2)
+                p.drawPath(path_offset)
+
+                core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
+                core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(core_pen)
+                p.drawPath(path_offset)
+
+            label = str(getattr(self.cfg, "text", "") or "").strip()
+            if label:
+                lines = [line.strip() for line in label.splitlines() if line.strip()]
+                p.setPen(QColor(mint.red(), mint.green(), mint.blue(), 215))
+                base_fs = max(8, int(background_radius * 0.20))
+                p.setFont(QFont("Segoe UI", base_fs, QFont.Weight.DemiBold))
+                line_h = base_fs * 1.22
+                total_h = line_h * len(lines[:3])
+                start_y = cy - total_h * 0.5 + base_fs
+                for li, line in enumerate(lines[:3]):
+                    p.drawText(QRectF(cx - background_radius * 0.82, start_y + li * line_h - base_fs, background_radius * 1.64, line_h),
+                               Qt.AlignmentFlag.AlignCenter, line)
+
             p.restore(); return
 
         if style == "nebula":
