@@ -174,6 +174,8 @@ class VisualizerWidget(BaseWidget):
         self._last_visualizer_frame_time = 0.0
         self._visualizer_frame_cache = None
         self._visualizer_frame_cache_key = None
+        self._last_media_thumbnail_bytes = None
+        self._media_thumbnail_pixmap = None
 
     def _ensure_peak_levels(self, count):
         if len(self._peak_levels) != count:
@@ -199,7 +201,33 @@ class VisualizerWidget(BaseWidget):
         except:
             fps = 60
         fps = max(1, min(240, fps))
+        try:
+            # The flat spectrum inner hologram layer has a continuously rotating transform.
+            # Keep only this style at a higher redraw cadence so the rotation does not step visibly
+            # when the user has a low FPS limit configured for spectrum bars.
+            if self._visualizer_style() == "flat_spectrum":
+                fps = max(fps, 120)
+        except Exception:
+            pass
         return 1.0 / fps
+
+    def _flat_spectrum_inner_rotation_degrees(self, now: float) -> float:
+        """Return a stable, smooth counter-clockwise rotation angle for flat_spectrum's inner layer."""
+        try:
+            now = float(now)
+        except Exception:
+            now = time.time()
+        speed = 163.0
+        try:
+            last_now = float(getattr(self, "_flat_spectrum_inner_rotation_time", now))
+            angle = float(getattr(self, "_flat_spectrum_inner_rotation_angle", (now * speed) % 360.0))
+            dt = max(0.0, min(1.0 / 20.0, now - last_now))
+            angle = (angle + speed * dt) % 360.0
+            self._flat_spectrum_inner_rotation_time = now
+            self._flat_spectrum_inner_rotation_angle = angle
+            return angle
+        except Exception:
+            return ((now * speed) % 360.0)
 
 
     def _visualizer_effect_padding(self) -> float:
@@ -327,8 +355,34 @@ class VisualizerWidget(BaseWidget):
         }
         value = aliases.get(value, value if value else "classic")
         removed_visualizer_styles = {
-            "energy_shield", "radar_scan", "meteor_shower", "futuristic_tunnel",
-            "electric_pulse", "parallax_waves", "beat_fluorescent_app",
+            "alternative",
+            "audio_react",
+            "audio_tunnel",
+            "audio_tunnel_sphere",
+            "bass_drop",
+            "beat_fluorescent_app",
+            "circle",
+            "circle_waveform",
+            "dynamic_glitch",
+            "electric_pulse",
+            "energy_shield",
+            "euphoria_motion",
+            "futuristic_tunnel",
+            "led_audio_wave",
+            "liquid_audio_spectrum",
+            "lofi_vibes",
+            "matrix",
+            "melodic_vibe",
+            "meteor_shower",
+            "music_logo_reveal",
+            "nebula",
+            "neon_tunnel_wire",
+            "parallax_waves",
+            "particle_audio_visualizer",
+            "radar_scan",
+            "rainbow_ring_dj",
+            "retro_future",
+            "urban_timelapse",
         }
         if value in removed_visualizer_styles:
             return "classic"
@@ -837,7 +891,488 @@ class VisualizerWidget(BaseWidget):
             except Exception:
                 pass
 
-    def _paint_visualizer_styled(self, p: QPainter, bars, style: str, r: QRectF, area: QRectF, base_color: QColor, now: float):
+
+
+    def _hud_clamp01(self, value: float) -> float:
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except Exception:
+            return 0.0
+
+    def _hud_project_point(self, rect: QRectF, x: float, y: float, z: float):
+        """
+        Lightweight mathematical perspective projection for the HUD equalizer skin.
+
+        World coordinates:
+            x: left/right on the hologram floor
+            y: height above the floor
+            z: depth; small z is foreground, large z is background
+
+        Returns:
+            (QPointF, scale) where scale is larger in the foreground and smaller in depth.
+        """
+        aw = max(1.0, float(rect.width()))
+        ah = max(1.0, float(rect.height()))
+        left = float(rect.left())
+        top = float(rect.top())
+        cx = float(rect.center().x())
+        bottom = float(rect.bottom())
+
+        z = max(0.05, float(z))
+        depth_scale = 1.0 / (1.0 + z * 0.235)
+        # Floor converges toward the horizon as z grows.
+        horizon_y = top + ah * 0.165
+        floor_front_y = bottom - ah * 0.075
+        floor_t = z / (z + 3.45)
+        floor_y = floor_front_y + (horizon_y - floor_front_y) * floor_t
+
+        # Subtle yaw makes the whole hologram feel like a tilted 3D game UI plane.
+        yaw_offset = z * aw * 0.023
+        sx = cx + x * aw * 0.47 * depth_scale + yaw_offset
+        sy = floor_y - y * ah * 0.42 * depth_scale
+        return QPointF(sx, sy), depth_scale
+
+    def _hud_path_from_points_cubic(self, points):
+        """Create an organic smooth cubic path from projected points; no polyline graph look."""
+        path = QPainterPath()
+        if not points:
+            return path
+        path.moveTo(points[0])
+        if len(points) == 1:
+            return path
+        for i in range(1, len(points)):
+            p0 = points[i - 1]
+            p1 = points[i]
+            pm = points[i - 2] if i >= 2 else p0
+            pn = points[i + 1] if i + 1 < len(points) else p1
+            c1 = QPointF(
+                p0.x() + (p1.x() - pm.x()) * 0.165,
+                p0.y() + (p1.y() - pm.y()) * 0.165,
+            )
+            c2 = QPointF(
+                p1.x() - (pn.x() - p0.x()) * 0.165,
+                p1.y() - (pn.y() - p0.y()) * 0.165,
+            )
+            path.cubicTo(c1, c2, p1)
+        return path
+
+    def _draw_hud_neon_path(
+        self,
+        p: QPainter,
+        path: QPainterPath,
+        color: QColor,
+        core_width: float = 2.0,
+        glow_scale: float = 1.0,
+        dashed: bool = False,
+        dash_offset: float = 0.0,
+    ):
+        """Multi-pass neon: wide transparent strokes -> bright narrow core stroke."""
+        p.save()
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        layers = (
+            (18.0 * glow_scale, 0.055),
+            (12.0 * glow_scale, 0.095),
+            (7.0 * glow_scale, 0.180),
+            (4.0 * glow_scale, 0.360),
+            (max(1.0, core_width), 1.000),
+        )
+        for width, alpha_f in layers:
+            c = QColor(color)
+            c.setAlphaF(max(0.0, min(1.0, alpha_f)))
+            pen = QPen(c, max(0.75, width))
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            if dashed:
+                pen.setStyle(Qt.PenStyle.DashLine)
+                pen.setDashOffset(float(dash_offset))
+            p.setPen(pen)
+            p.drawPath(path)
+        p.restore()
+
+    def _hud_draw_projected_poly(self, p: QPainter, points, edge_color: QColor, fill_color: QColor = None, core_width: float = 1.4):
+        if not points:
+            return
+        path = QPainterPath(points[0])
+        for pt in points[1:]:
+            path.lineTo(pt)
+        path.closeSubpath()
+        p.save()
+        if fill_color is not None:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(fill_color))
+            p.drawPath(path)
+        self._draw_hud_neon_path(p, path, edge_color, core_width=core_width, glow_scale=0.65)
+        p.restore()
+
+    def _hud_projected_ring_path(self, rect: QRectF, cx: float, cy: float, cz: float, radius: float, now: float, phase: float = 0.0, samples: int = 72):
+        pts = []
+        for i in range(samples + 1):
+            a = (i / samples) * math.tau + phase
+            # A tilted target plane: x uses cos, y/z share sin, so projection creates real perspective.
+            wx = cx + math.cos(a) * radius
+            wy = cy + math.sin(a) * radius * 0.34
+            wz = cz + math.sin(a) * radius * 0.42
+            pt, _ = self._hud_project_point(rect, wx, wy, wz)
+            pts.append(pt)
+        return self._hud_path_from_points_cubic(pts)
+
+    def _paint_hud_equalizer_scene(
+        self,
+        p: QPainter,
+        values,
+        area: QRectF,
+        base_color: QColor,
+        now: float,
+        width_scale: float,
+    ):
+        """
+        HUDオーディオイコライザ風・円形プロトタイプ v2。
+
+        今回の修正:
+            - リング群全体を横から見たように縦圧縮し、さらに約8度傾けて奥行き感を出す。
+            - 各半透明リングに、ゆっくり一定周期で回転するハイライト/ノッチを追加する。
+            - 音楽バーは短くし、密度を上げ、アクセントカラーのみで統一する。
+            - 追加リングは大円リング上・音楽バー上に重ねず、内側領域に収める。
+            - 背景は透明にし、リングと音楽バーだけで近未来感を出す。
+            - 各リングは軽量なマルチパス霧ブラーで、半透明な雲のように滲ませる。
+            - 軽量化のため、リング構造は維持しつつ、バーと装飾だけを必要最小限にする。
+        """
+        values = [self._hud_clamp01(v) for v in values]
+        count = max(1, len(values))
+
+        aw = max(1.0, float(area.width()))
+        ah = max(1.0, float(area.height()))
+        left = float(area.left())
+        top = float(area.top())
+        right = float(area.right())
+        bottom = float(area.bottom())
+        short_side = max(1.0, min(aw, ah))
+
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        try:
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        except Exception:
+            pass
+
+        scene_rect = QRectF(left, top, aw, ah)
+        ring_rect = QRectF(left + aw * 0.05, top + ah * 0.06, aw * 0.90, ah * 0.88)
+
+        # 背景は透明。円と音楽バーだけで近未来感を出す。
+        # ここでは塗りつぶしを行わず、既存のARGBキャッシュ透明度を活かす。
+        p.setPen(Qt.PenStyle.NoPen)
+
+        cx = float(ring_rect.center().x())
+        cy = float(ring_rect.center().y())
+
+        # 音楽バーを短くする分、密度を上げても全体が窮屈になりにくい。
+        max_bar_len = short_side * 0.055
+        bar_gap = short_side * 0.014
+        outer_r = min(ring_rect.width(), ring_rect.height()) * 0.372
+        outer_r = min(outer_r, short_side * 0.430 - max_bar_len)
+        outer_r = max(18.0, outer_r)
+
+        main_band_w = max(8.0, outer_r * 0.145)
+        main_inner_r = max(1.0, outer_r - main_band_w)
+
+        accent = QColor(base_color)
+        if not accent.isValid():
+            accent = QColor(0, 245, 255)
+        accent.setAlpha(230)
+        cyan = QColor(0, 245, 255)
+        magenta = QColor(255, 42, 225)
+        green = QColor(80, 255, 130)
+
+        def _ring_path(x0: float, y0: float, radius: float, band: float) -> QPainterPath:
+            path = QPainterPath()
+            path.setFillRule(Qt.FillRule.OddEvenFill)
+            r0 = max(1.0, float(radius))
+            inner = max(0.5, r0 - max(1.0, float(band)))
+            path.addEllipse(QPointF(x0, y0), r0, r0)
+            path.addEllipse(QPointF(x0, y0), inner, inner)
+            return path
+
+        def _arc_path(x0: float, y0: float, radius: float, start_rad: float, span_rad: float, samples: int = 18) -> QPainterPath:
+            path = QPainterPath()
+            samples = max(3, int(samples))
+            for i in range(samples + 1):
+                t = i / float(samples)
+                a = start_rad + span_rad * t
+                pt = QPointF(x0 + math.cos(a) * radius, y0 + math.sin(a) * radius)
+                if i == 0:
+                    path.moveTo(pt)
+                else:
+                    path.lineTo(pt)
+            return path
+
+        def _draw_rotating_ring_marks(
+            x0: float,
+            y0: float,
+            radius: float,
+            band: float,
+            color: QColor,
+            rotation: float,
+            alpha: int,
+            mark_count: int = 3,
+        ):
+            # 円自体は回転しても見た目が変わらないため、一定間隔の短い弧/ノッチを回す。
+            # samplesを少なめにし、軽量な疑似回転表現にする。
+            p.save()
+            mark_r = max(1.0, radius - band * 0.42)
+            for i in range(max(1, mark_count)):
+                a = rotation + i * math.tau / float(mark_count)
+                span = math.tau * 0.045
+                c = QColor(color)
+                c.setAlpha(max(0, min(255, alpha)))
+                arc = _arc_path(x0, y0, mark_r, a, span, samples=10)
+                self._draw_hud_neon_path(
+                    p,
+                    arc,
+                    c,
+                    core_width=max(0.35, 0.85 * width_scale),
+                    glow_scale=0.16,
+                )
+                # 小さなノッチ。リング幅の内側に収める。
+                r0 = max(1.0, radius - band * 0.88)
+                r1 = max(r0 + 1.0, radius - band * 0.10)
+                notch = QPainterPath(QPointF(x0 + math.cos(a) * r0, y0 + math.sin(a) * r0))
+                notch.lineTo(QPointF(x0 + math.cos(a) * r1, y0 + math.sin(a) * r1))
+                self._draw_hud_neon_path(
+                    p,
+                    notch,
+                    QColor(255, 255, 255, min(220, alpha + 50)),
+                    core_width=max(0.45, 0.65 * width_scale),
+                    glow_scale=0.12,
+                )
+            p.restore()
+
+        def _draw_frosted_ring(
+            x0: float,
+            y0: float,
+            radius: float,
+            band: float,
+            fill_alpha: int,
+            edge_color: QColor,
+            edge_alpha: int,
+            rotation: float,
+            mark_count: int,
+            glow: bool = True,
+        ):
+            """Draw a transparent frosted ring with lightweight multi-pass mist blur."""
+            path = _ring_path(x0, y0, radius, band)
+            p.save()
+            p.setPen(Qt.PenStyle.NoPen)
+
+            # 霧ブラー層: 本物の画像ブラーは重くなりやすいため、
+            # 半径と帯幅を少しずつ広げた低透明度リングを複数回重ねて、
+            # 雲のように滲む半透明リングを軽量に作る。
+            fog_color = QColor(edge_color)
+            white_fog = QColor(230, 250, 255)
+            fog_layers = (
+                (0.22, 0.20, 0.115),
+                (0.78, 0.80, 0.085),
+                (0.18, 2.45, 0.060),
+                (0.62, 3.15, 0.040),
+                (1.10, 3.95, 0.026),
+            )
+            for spread_mul, band_mul, alpha_mul in fog_layers:
+                spread = max(1.0, band * spread_mul)
+                fog_band = max(1.0, band * band_mul)
+                fog_radius = max(1.0, radius + spread * 0.34)
+                c = QColor(fog_color)
+                c.setAlpha(max(2, min(80, int(fill_alpha * alpha_mul))))
+                p.setBrush(QBrush(c))
+                p.drawPath(_ring_path(x0, y0, fog_radius, fog_band))
+
+                wc = QColor(white_fog)
+                wc.setAlpha(max(1, min(52, int(fill_alpha * alpha_mul * 0.56))))
+                p.setBrush(QBrush(wc))
+                p.drawPath(_ring_path(x0, y0, max(1.0, fog_radius - band * 0.18), max(1.0, fog_band * 0.54)))
+
+            # 幅広の霧アーク。完全な円ではなく、雲の濃淡がゆっくり流れるように見せる。
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for i in range(4):
+                a = rotation * (0.74 + i * 0.05) + i * math.tau / 4.0
+                span = math.tau * (0.15 + 0.025 * (i % 2))
+                arc = _arc_path(x0, y0, max(1.0, radius - band * (0.34 + i * 0.035)), a, span, samples=12)
+                ac = QColor(edge_color)
+                ac.setAlpha(max(2, min(38, int(fill_alpha * (0.070 - i * 0.008)))))
+                pen = QPen(ac, max(1.0, band * (0.62 - i * 0.055)))
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(pen)
+                p.drawPath(arc)
+
+            # 中心のガラス本体。前回より少し薄くし、霧層と混ざるようにする。
+            p.setPen(Qt.PenStyle.NoPen)
+            core_alpha = max(18, min(170, int(fill_alpha * 0.58)))
+            p.setBrush(QBrush(QColor(210, 245, 255, core_alpha)))
+            p.drawPath(path)
+
+            # すりガラスの色むら。固定ベタ塗りではなく、淡い帯として残す。
+            tint = QColor(edge_color)
+            tint.setAlpha(max(6, min(48, int(fill_alpha * 0.18))))
+            p.setBrush(QBrush(tint))
+            p.drawPath(_ring_path(x0, y0, radius - band * 0.18, band * 0.30))
+
+            # 外縁・内縁の細い光。霧化しても輪郭が完全に消えないよう弱めに残す。
+            edge = QColor(edge_color)
+            edge.setAlpha(max(0.05, int(edge_alpha * 0.74)))
+            outer = QPainterPath()
+            outer.addEllipse(QPointF(x0, y0), radius, radius)
+            inner = QPainterPath()
+            inner.addEllipse(QPointF(x0, y0), max(1.0, radius - band), max(1.0, radius - band))
+            if glow:
+                self._draw_hud_neon_path(p, outer, edge, core_width=max(0.45, 0.88 * width_scale), glow_scale=0.24)
+                self._draw_hud_neon_path(p, inner, QColor(255, 255, 255, max(50, min(165, int(edge_alpha * 0.82)))), core_width=max(0.35, 0.66 * width_scale), glow_scale=0.14)
+            else:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(edge, max(0.65, 0.86 * width_scale)))
+                p.drawPath(outer)
+                p.setPen(QPen(QColor(255, 255, 255, max(50, min(165, int(edge_alpha * 0.82)))), max(0.48, 0.62 * width_scale)))
+                p.drawPath(inner)
+
+            # 回転ノッチも霧の中に溶ける程度に弱める。
+            _draw_rotating_ring_marks(
+                x0,
+                y0,
+                radius,
+                band,
+                edge_color,
+                rotation,
+                alpha=max(2, min(120, int(edge_alpha * 0.24))),
+                mark_count=mark_count,
+            )
+            p.restore()
+
+        # ここからリング群全体を横から見たHUDディスクのように傾ける。
+        # 8度ほど回転させつつ、縦方向を強めに圧縮してサイドビュー寄りの奥行きを作る。
+        p.save()
+        p.setClipRect(scene_rect.adjusted(-2, -2, 2, 2))
+        p.translate(cx, cy)
+        p.rotate(2.22)
+        p.scale(1.0, 0.62)
+        p.translate(-cx, -cy)
+
+        # Z0: リング背後の薄いブルーム。
+        halo = QRadialGradient(QPointF(cx, cy), outer_r * 1.38)
+        halo.setColorAt(0.0, QColor(0, 245, 255, 34))
+        halo.setColorAt(0.46, QColor(255, 42, 225, 14))
+        halo.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(halo))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(cx, cy), outer_r * 1.38, outer_r * 1.38)
+
+        # Z1: 100%のすりガラス帯状円。回転マークは最もゆっくり。
+        _draw_frosted_ring(
+            cx,
+            cy,
+            outer_r,
+            main_band_w,
+            fill_alpha=153,
+            edge_color=cyan,
+            edge_alpha=145,
+            rotation=now * 0.18,
+            mark_count=4,
+            glow=True,
+        )
+
+        # Z2: 外側音楽バー。短く、密度高め、アクセントカラーのみ。
+        bar_count = 112
+        base_r = outer_r + bar_gap
+        for i in range(bar_count):
+            u = i / float(bar_count)
+            a = u * math.tau - math.pi / 2.0
+            idx = int((i / max(1, bar_count - 1)) * (count - 1))
+            v = values[idx]
+            pulse = 0.5 + 0.5 * math.sin(now * 2.0 + i * 0.29)
+            length = short_side * (0.010 + v * 0.038 + pulse * 0.004)
+            r0 = base_r
+            r1 = base_r + length
+            x0 = cx + math.cos(a) * r0
+            y0 = cy + math.sin(a) * r0
+            x1 = cx + math.cos(a) * r1
+            y1 = cy + math.sin(a) * r1
+            c = QColor(accent)
+            c.setAlpha(100 + int(v * 92))
+            bar_path = QPainterPath(QPointF(x0, y0))
+            bar_path.lineTo(QPointF(x1, y1))
+            self._draw_hud_neon_path(
+                p,
+                bar_path,
+                c,
+                core_width=max(0.75, (0.80 + v * 1.05) * width_scale),
+                glow_scale=0.20,
+            )
+
+        # Z3: 内側30%リング。回転方向を大円と逆にする。
+        inner30_r = min(outer_r * 0.30, main_inner_r * 0.40)
+        inner30_band = max(5.0, inner30_r * 0.22)
+        _draw_frosted_ring(
+            cx,
+            cy,
+            inner30_r,
+            inner30_band,
+            fill_alpha=128,
+            edge_color=green,
+            edge_alpha=128,
+            rotation=-now * 0.28,
+            mark_count=3,
+            glow=True,
+        )
+
+        # Z4: 48%リングを上方向へ3層。各層は一定間隔・一定速度差で回転。
+        stack_r = min(outer_r * 0.48, main_inner_r * 0.58)
+        stack_band = max(5.0, stack_r * 0.135)
+        desired_gap = max(5.0, outer_r * 0.085)
+        max_gap = max(5.0, (main_inner_r - stack_r - 2.0) / 2.25)
+        stack_gap = min(desired_gap, max_gap)
+        stack_colors = [magenta, cyan, green]
+        for layer in range(3):
+            y = cy - stack_gap * (2 - layer)
+            x = cx + math.sin(now * 0.34 + layer * 0.8) * outer_r * 0.008
+            edge = stack_colors[layer % 3]
+            alpha = 82 + layer * 16
+            _draw_frosted_ring(
+                x,
+                y,
+                stack_r * (0.985 + layer * 0.012),
+                stack_band,
+                fill_alpha=62 + layer * 9,
+                edge_color=edge,
+                edge_alpha=alpha,
+                rotation=now * (0.22 + layer * 0.07) + layer * math.tau / 3.0,
+                mark_count=3,
+                glow=True,
+            )
+            # 立体感用の短いハイライト。リング内側に収める。
+            highlight = QPainterPath(QPointF(x - stack_r * 0.42, y - stack_r * 0.08))
+            highlight.cubicTo(
+                QPointF(x - stack_r * 0.18, y - stack_r * 0.18),
+                QPointF(x + stack_r * 0.18, y - stack_r * 0.18),
+                QPointF(x + stack_r * 0.42, y - stack_r * 0.08),
+            )
+            self._draw_hud_neon_path(
+                p,
+                highlight,
+                QColor(255, 255, 255, 105),
+                core_width=max(0.48, 0.62 * width_scale),
+                glow_scale=0.13,
+            )
+
+        # 中央アクセントも変換内で描くので、全体の傾きに馴染む。
+        p.setPen(Qt.PenStyle.NoPen)
+        for k, col in enumerate((accent, cyan, green)):
+            dot_r = max(1.2, short_side * (0.0040 + k * 0.0010))
+            c = QColor(col)
+            c.setAlpha(105 - k * 18)
+            p.setBrush(QBrush(c))
+            p.drawEllipse(QPointF(cx + (k - 1) * dot_r * 2.7, cy), dot_r, dot_r)
+
+        p.restore()
+        p.restore()
+
+    def _paint_visualizer_styled(self, p: QPainter, bars, style: str, r: QRectF, area: QRectF, base_color: QColor, now: float, ctx: Dict = None):
         values = [max(0.0, min(1.0, float(v))) for v in bars]
         count = max(1, len(values))
         avg, bass, mid = self._visualizer_energy(values)
@@ -918,6 +1453,14 @@ class VisualizerWidget(BaseWidget):
         if style == "turntable":
             disc=min(max_effect_radius*0.62,short_side*0.31); grad=QRadialGradient(QPointF(cx,cy),disc); grad.setColorAt(0,QColor(245,248,255,235)); grad.setColorAt(0.2,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(1,QColor(4,5,8,240)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),disc,disc); p.setBrush(Qt.BrushStyle.NoBrush)
             for k in range(5): p.setPen(QPen(QColor(220,230,245,45+k*15),1)); p.drawEllipse(QPointF(cx,cy),disc*(0.34+k*0.13),disc*(0.34+k*0.13))
+            turntable_cover_radius=max(1.0,disc*0.84-10.0)
+            turntable_cover_rect=QRectF(cx-turntable_cover_radius,cy-turntable_cover_radius,turntable_cover_radius*2.0,turntable_cover_radius*2.0)
+            p.save()
+            try:
+                p.translate(cx,cy); p.rotate(math.degrees(now*0.55)); p.translate(-cx,-cy)
+                self._draw_visualizer_media_thumbnail_cover(p,turntable_cover_rect,ctx,clip_radius=turntable_cover_radius,fallback_accent=base_color)
+            finally:
+                p.restore()
             step=max(1,count//74)
             for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2+now*0.55; _cap(cx,cy,a,disc*0.90,short_side*(0.025+v*0.13),max(1.8,(2+v*4)*width_scale),QColor(230,235,245,110+int(v*110)))
             p.restore(); return
@@ -979,11 +1522,8 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "hud_equalizer":
-            for layer in range(7):
-                rr=max_effect_radius*(0.20+layer*0.095); col=QColor(base_color); col.setAlpha(max(35,125-layer*10)); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(col, max(1.0,(1+layer*0.18)*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
-                if layer>=4:
-                    for k in range(0,44,2): v=values[(k*count//44)%count]; a=k/44*math.tau; _cap(cx,cy,a,rr,short_side*(0.012+v*0.05),max(1.3,2*width_scale),col)
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(QColor(255,255,255,135))); p.drawRoundedRect(QRectF(cx-max_effect_radius*0.34,cy-2,max_effect_radius*0.68,4),2,2); p.restore(); return
+            self._paint_hud_equalizer_scene(p, values, area, base_color, now, width_scale)
+            p.restore(); return
 
         if style == "space":
             for i in range(54): _dot(area.left()+((i*73+int(now*20))%int(max(1,aw))), area.top()+((i*41+int(now*8))%int(max(1,ah))), 1, QColor(150,180,255,34+(i%4)*14))
@@ -992,8 +1532,209 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "flat_spectrum":
-            size_scale=1.18; core=min(max_effect_radius*0.33,short_side*0.18); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(base_color.red(),base_color.green(),base_color.blue(),95),max(1,1.2*width_scale))); p.drawArc(QRectF(cx-core,cy-core,core*2,core*2),int((now*900)%5760),2000); step=max(1,count//84)
-            for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2; inner=core*1.24; length=short_side*((0.035+v*0.13)*size_scale); col=QColor(base_color); col.setAlpha(70+int(v*95)); _cap(cx,cy,a,inner,length,max(1.5,(2+v*4)*width_scale),col); _dot(cx+math.cos(a)*(inner+length),cy+math.sin(a)*(inner+length),(1.5+v*2.2)*size_scale,col)
+            # Flat Audio Spectrum custom composition.
+            # - Outer line: audio-ripple style circular waveform, copied locally so audio_ripple itself is untouched.
+            # - Inner layer: hologram-style rings / radial ticks, rotated counter-clockwise only inside this style.
+            # - Center: no hologram music bars; use a translucent circle instead.
+            mint = QColor(base_color)
+            mint.setAlpha(235)
+            outer_base_radius = max_effect_radius * 0.70
+            outer_max_radius = max_effect_radius * 0.92
+            outer_min_radius = max_effect_radius * 0.54
+            sample_count = max(100, min(256, count if count > 0 else 128))
+            half_count = max(2, sample_count // 2)
+            fft_half = []
+            for si in range(half_count):
+                src_i = int(si * max(1, count // 2 - 1) / max(1, half_count - 1))
+                fft_half.append(values[src_i])
+            raw_fft_values = fft_half + list(reversed(fft_half))
+            sample_count = len(raw_fft_values)
+            previous_smoothed = getattr(self, "_flat_spectrum_audio_ripple_smoothed", None)
+            if not isinstance(previous_smoothed, list) or len(previous_smoothed) != sample_count:
+                previous_smoothed = list(raw_fft_values)
+            temporal_smoothed = []
+            for si, current_value in enumerate(raw_fft_values):
+                temporal_smoothed.append(previous_smoothed[si] * 0.85 + current_value * 0.15)
+            self._flat_spectrum_audio_ripple_smoothed = temporal_smoothed
+            fft_values = []
+            for si, current_value in enumerate(temporal_smoothed):
+                fft_values.append(
+                    temporal_smoothed[si - 2] * 0.10
+                    + temporal_smoothed[si - 1] * 0.20
+                    + current_value * 0.40
+                    + temporal_smoothed[(si + 1) % sample_count] * 0.20
+                    + temporal_smoothed[(si + 2) % sample_count] * 0.10
+                )
+            local_peak = max(raw_fft_values) if raw_fft_values else 0.0
+            smoothed_peak = max(fft_values) if fft_values else 0.0
+            volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
+            available_push = max(8.0, outer_max_radius - outer_base_radius)
+            outer_points = []
+            for si, fft_value in enumerate(fft_values):
+                angle = -math.pi / 2.0 + (si / sample_count) * math.tau
+                prev_v = fft_values[si - 1]
+                next_v = fft_values[(si + 1) % sample_count]
+                local_contrast = max(0.0, fft_value - (prev_v + next_v) * 0.5)
+                spike_gate = max(0.0, min(1.0, (fft_value - 0.64) / 0.36))
+                mirror_i = min(si, sample_count - 1 - si)
+                seed = ((mirror_i * 37 + 13) % 97) / 97.0
+                raw_value = raw_fft_values[si]
+                raw_prev = raw_fft_values[si - 1]
+                raw_next = raw_fft_values[(si + 1) % sample_count]
+                raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.22))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate))
+                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                audio_reactivity = max(0.0, min(1.0, audio_reactivity))
+                audio_reactivity = audio_reactivity * audio_reactivity
+                tip_speed = 0.32 + seed * 0.22 + audio_reactivity * 0.55
+                snap_cycle = now * tip_speed + seed * 5.0 + mirror_i * 0.031
+                snap_phase = snap_cycle - math.floor(snap_cycle)
+                if snap_phase < 0.050:
+                    snap_envelope = snap_phase / 0.050
+                elif snap_phase < 0.210:
+                    snap_envelope = 1.0 - (snap_phase - 0.050) / 0.160
+                else:
+                    snap_envelope = 0.0
+                snap_envelope = max(0.0, min(1.0, snap_envelope)) * audio_reactivity
+                snap_index = int(math.floor(snap_cycle))
+                tip_sign = -1.0 if ((snap_index + mirror_i * 3) % 5) < 2 else 1.0
+                tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
+                tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
+                rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
+                outer_points.append(QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr))
+            if outer_points:
+                outer_path = QPainterPath(outer_points[0])
+                for pt in outer_points[1:]:
+                    outer_path.lineTo(pt)
+                outer_path.closeSubpath()
+                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                    offset_path = QPainterPath()
+                    first = outer_points[0]
+                    first_len = max(1.0, math.hypot(first.x() - cx, first.y() - cy))
+                    offset_path.moveTo(QPointF(first.x() + (first.x() - cx) / first_len * offset, first.y() + (first.y() - cy) / first_len * offset))
+                    for pt in outer_points[1:]:
+                        plen = max(1.0, math.hypot(pt.x() - cx, pt.y() - cy))
+                        offset_path.lineTo(QPointF(pt.x() + (pt.x() - cx) / plen * offset, pt.y() + (pt.y() - cy) / plen * offset))
+                    offset_path.closeSubpath()
+                    trail_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), int(32 * alpha_scale)), max(1.0, 1.25 * width_scale))
+                    trail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    trail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    p.setPen(trail_pen)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.drawPath(offset_path)
+                glow_pen_1 = QPen(QColor(mint.red(), mint.green(), mint.blue(), 20), max(8.0, 8.0 * width_scale + bass * 4.0))
+                glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_1)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawPath(outer_path)
+                glow_pen_2 = QPen(QColor(mint.red(), mint.green(), mint.blue(), 40), max(5.0, 5.0 * width_scale + bass * 2.0))
+                glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_2)
+                p.drawPath(outer_path)
+                core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
+                core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(core_pen)
+                p.drawPath(outer_path)
+
+            p.save()
+            try:
+                p.translate(cx, cy)
+                p.rotate(self._flat_spectrum_inner_rotation_degrees(now))
+                p.translate(-cx, -cy)
+                inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
+                acc = QColor(base_color)
+                acc.setAlpha(105)
+                rg = QRadialGradient(QPointF(cx, cy), max_effect_radius * 0.56)
+                rg.setColorAt(0.0, QColor(0, 0, 0, 70))
+                rg.setColorAt(0.50, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
+                rg.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 0))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(rg))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.50, max_effect_radius * 0.50)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(acc, 1.4 * width_scale))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.41, max_effect_radius * 0.41)
+                p.setPen(QPen(inv, 1.0 * width_scale))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.53, max_effect_radius * 0.53)
+                hologram_outer_circle_radius = max_effect_radius * 0.53
+                hologram_max_bar_overhang_px = 50.0
+                hologram_inner_bar_alpha = 210
+                hologram_outer_bar_alpha = int(255 * 0.40)
+                for hi in range(0, count, max(1, count // 72)):
+                    v = values[hi]
+                    a = hi / count * math.tau - math.pi / 2.0
+                    base_inner = max_effect_radius * 0.44
+                    max_outer = hologram_outer_circle_radius + hologram_max_bar_overhang_px
+                    max_len = min(40.0, max(3.0, max_outer - base_inner))
+                    min_bar_len = min(max_len, max(2.0, short_side * 0.025))
+                    max_bar_len = max(min_bar_len, max_len)
+                    threshold = max(0.12, avg * 1.20)
+                    band_signal = max(float(v), bass * 0.72)
+                    peak_amount = max(0.0, min(1.0, (band_signal - threshold) / max(0.001, 1.0 - threshold)))
+                    peak_amount = peak_amount * peak_amount * (3.0 - 2.0 * peak_amount)
+                    wave = 0.92 + 0.08 * math.sin(now * (2.8 + peak_amount * 3.0) + hi * 0.31)
+                    motion = max(0.0, min(1.0, peak_amount * wave))
+                    bar_len = min(max_len, min_bar_len + (max_bar_len - min_bar_len) * motion)
+                    inner = base_inner
+                    outer = min(max_outer, inner + bar_len)
+                    if outer <= inner:
+                        continue
+                    steps = max(1, int(math.ceil(outer - inner)))
+                    pen_width = max(1.4, min(5.0, 2.6 * width_scale))
+                    for hs in range(steps):
+                        r1 = inner + hs
+                        r2 = min(outer, inner + hs + 1.0)
+                        if r2 <= r1:
+                            continue
+                        t = hs / max(1, steps - 1)
+                        alpha = int(hologram_inner_bar_alpha * (1.0 - t) + hologram_outer_bar_alpha * t)
+                        c = QColor(base_color)
+                        c.setAlpha(alpha)
+                        p.setPen(QPen(c, pen_width))
+                        p.drawLine(QPointF(cx + math.cos(a) * r1, cy + math.sin(a) * r1), QPointF(cx + math.cos(a) * r2, cy + math.sin(a) * r2))
+            finally:
+                p.restore()
+
+            center_radius = max(5.0, max_effect_radius * 0.23)
+
+            # Flat Spectrum cover layer:
+            #   bottom: translucent accent field
+            #   middle: current media cover image
+            #   top/surrounding: hologram music bars and outer spectrum line
+            # The cover now reaches from just under the music bars down through the center circle.
+            cover_outer_radius = max(center_radius + 2.0, max_effect_radius * 0.44 - 10.0)
+            cover_grad = QRadialGradient(QPointF(cx, cy), cover_outer_radius)
+            cover_grad.setColorAt(0.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 78))
+            cover_grad.setColorAt(0.58, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
+            cover_grad.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 16))
+            p.setPen(QPen(QColor(base_color.red(), base_color.green(), base_color.blue(), 92), max(1.0, 1.0 * width_scale)))
+            p.setBrush(QBrush(cover_grad))
+            p.drawEllipse(QPointF(cx, cy), cover_outer_radius, cover_outer_radius)
+
+            cover_rect = QRectF(
+                cx - cover_outer_radius,
+                cy - cover_outer_radius,
+                cover_outer_radius * 2.0,
+                cover_outer_radius * 2.0,
+            )
+            has_cover_image = self._draw_visualizer_media_thumbnail_cover(
+                p,
+                cover_rect,
+                ctx,
+                clip_radius=cover_outer_radius,
+                fallback_accent=mint,
+            )
+
+            # Keep a subtle center-circle accent when a cover exists, but do not hide the artwork.
+            if has_cover_image:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(255, 255, 255, 42), max(1.0, 1.0 * width_scale)))
+                p.drawEllipse(QPointF(cx, cy), center_radius, center_radius)
             p.restore(); return
 
         if style == "dynamic_glitch":
@@ -1127,8 +1868,81 @@ class VisualizerWidget(BaseWidget):
 
         if style == "hologram":
             inv=QColor(255-base_color.red(),255-base_color.green(),255-base_color.blue(),105); acc=QColor(base_color); acc.setAlpha(105); rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.62); rg.setColorAt(0,QColor(0,0,0,78)); rg.setColorAt(0.5,QColor(base_color.red(),base_color.green(),base_color.blue(),45)); rg.setColorAt(1,QColor(base_color.red(),base_color.green(),base_color.blue(),0)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(rg)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.55,max_effect_radius*0.55); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(acc,1.4*width_scale)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.45,max_effect_radius*0.45); p.setPen(QPen(inv,1.0*width_scale)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.58,max_effect_radius*0.58)
-            for i in range(0,count,max(1,count//72)): v=values[i]; a=i/count*math.tau-math.pi/2; c=QColor(base_color); c.setAlpha(70+int(v*80)); _cap(cx,cy,a,max_effect_radius*0.48,short_side*(0.035+v*0.25),max(1.6,(2+v*5)*width_scale),c)
-            for j in range(9): v=values[int(j*count/9)]; x=cx+(j-4)*short_side*0.025; h=short_side*(0.10+v*0.26); c=QColor(255,255,255,75+int(v*70)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(c)); p.drawRoundedRect(QRectF(x-2*width_scale,cy-h/2,4*width_scale,h),3,3)
+            hologram_outer_circle_radius=max_effect_radius*0.58
+            hologram_max_bar_overhang_px=10.0
+            hologram_inner_bar_alpha=235
+            hologram_outer_bar_alpha=int(255*0.40)
+            for i in range(0,count,max(1,count//72)):
+                v=values[i]
+                a=i/count*math.tau-math.pi/2
+                base_inner=max_effect_radius*0.48
+                max_outer=hologram_outer_circle_radius+hologram_max_bar_overhang_px
+                max_len=max(0.0,max_outer-base_inner)
+                min_bar_len=min(max_len,max(2.0,short_side*0.025))
+                max_bar_len=max(min_bar_len,max_len)
+                threshold=max(0.12,avg*1.20)
+                band_signal=max(float(v),bass*0.72)
+                peak_amount=max(0.0,min(1.0,(band_signal-threshold)/max(0.001,1.0-threshold)))
+                peak_amount=peak_amount*peak_amount*(3.0-2.0*peak_amount)
+                wave=0.92+0.08*math.sin(now*(2.8+peak_amount*3.0)+i*0.31)
+                motion=max(0.0,min(1.0,peak_amount*wave))
+                bar_len=min(max_len,min_bar_len+(max_bar_len-min_bar_len)*motion)
+                inner=base_inner
+                outer=min(max_outer,inner+bar_len)
+                if outer <= inner:
+                    continue
+                steps=max(1,int(math.ceil(outer-inner)))
+                pen_width=max(7.0,min(5.0,2.6*width_scale))
+                for s in range(steps):
+                    r1=inner+s
+                    r2=min(outer,inner+s+1.0)
+                    if r2 <= r1:
+                        continue
+                    t=s/max(1,steps-1)
+                    alpha=int(hologram_inner_bar_alpha*(1.0-t)+hologram_outer_bar_alpha*t)
+                    c=QColor(base_color)
+                    c.setAlpha(alpha)
+                    p.setPen(QPen(c,pen_width))
+                    p.drawLine(QPointF(cx+math.cos(a)*r1,cy+math.sin(a)*r1),QPointF(cx+math.cos(a)*r2,cy+math.sin(a)*r2))
+            hologram_inner_circle_radius=max_effect_radius*0.45
+
+            # Hologram center layer order:
+            #   bottom: translucent accent-color hologram field and rings above
+            #   middle: current media cover image, fitted 10px inside the center circle
+            #   top: center music bars drawn below
+            hologram_cover_inset=min(10.0,max(0.0,hologram_inner_circle_radius-2.0))
+            hologram_cover_radius=max(1.0,hologram_inner_circle_radius-hologram_cover_inset)
+            hologram_cover_rect=QRectF(
+                cx-hologram_cover_radius,
+                cy-hologram_cover_radius,
+                hologram_cover_radius*2.0,
+                hologram_cover_radius*2.0,
+            )
+            self._draw_visualizer_media_thumbnail_cover(
+                p,
+                hologram_cover_rect,
+                ctx,
+                clip_radius=hologram_cover_radius,
+                fallback_accent=acc,
+            )
+
+            center_bar_limit=max(1.0,hologram_inner_circle_radius-5.0)
+            center_span_width=center_bar_limit*2.0
+            center_bars=max(3,int(count*center_span_width/max(1.0,aw)))
+            center_slot=center_span_width/center_bars
+            center_bar_w=max(1.0,center_slot*0.28*width_scale)
+            for j in range(center_bars):
+                src_i=min(count-1,int(j*count/max(1,center_bars)))
+                v=values[src_i]
+                x=cx-center_bar_limit+j*center_slot+(center_slot-center_bar_w)*0.5
+                bar_center_x=x+center_bar_w*0.5
+                bar_edge_dx=abs(bar_center_x-cx)+center_bar_w*0.5
+                max_inner_circle_h=2.0*math.sqrt(max(0.0,center_bar_limit*center_bar_limit-bar_edge_dx*bar_edge_dx))
+                h=min(max_inner_circle_h,ah*(0.018+v*0.24))
+                c=QColor(255,255,255,75+int(v*70))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(c))
+                p.drawRoundedRect(QRectF(x,cy-h/2,center_bar_w,h),2,2)
             p.restore(); return
 
         if style == "nebula":
@@ -1174,10 +1988,16 @@ class VisualizerWidget(BaseWidget):
 
         if style == "neon_soundwave":
             for k in range(3): rr=max_effect_radius*(0.26+k*0.15); col=QColor(base_color); col.setAlpha(68); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(col,max(1,(2-k*0.25)*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
+            neon_cover_radius=max(1.0,max_effect_radius*0.53)
+            neon_cover_rect=QRectF(cx-neon_cover_radius,cy-neon_cover_radius,neon_cover_radius*2.0,neon_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,neon_cover_rect,ctx,clip_radius=neon_cover_radius,fallback_accent=base_color)
             for i in range(0,count,max(1,count//72)): v=values[i]; a=i/count*math.tau-math.pi/2+now*0.38; col=QColor(base_color); col.setAlpha(100+int(v*70)); _cap(cx,cy,a,max_effect_radius*0.53,short_side*(0.035+v*0.17),max(1.6,(2+v*4)*width_scale),col); _dot(cx+math.cos(a)*max_effect_radius*0.73,cy+math.sin(a)*max_effect_radius*0.73,2,QColor(base_color.red(),base_color.green(),base_color.blue(),70))
             p.restore(); return
 
         if style == "glow_beat_music":
+            glow_cover_radius=max(1.0,max_effect_radius*0.46)
+            glow_cover_rect=QRectF(cx-glow_cover_radius,cy-glow_cover_radius,glow_cover_radius*2.0,glow_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,glow_cover_rect,ctx,clip_radius=glow_cover_radius,fallback_accent=base_color)
             for k in range(60): ph=(k*0.618+now*0.9)%1; a=k*2.399+now*0.3; rr=max_effect_radius*0.08+ph*max_effect_radius*0.55; _dot(cx+math.cos(a)*rr,cy+math.sin(a)*rr,1.1+ph*1.4,QColor(255,255,255,max(0,int((1-ph)*140))))
             for i in range(0,count,max(1,count//84)): v=values[i]; a=i/count*math.tau-math.pi/2; col=QColor(255,255,255,82+int(v*120)); _cap(cx,cy,a,max_effect_radius*0.46,short_side*(0.04+v*0.23),max(1.8,(2.5+v*5)*width_scale),col); _dot(cx+math.cos(a)*(max_effect_radius*0.46-5),cy+math.sin(a)*(max_effect_radius*0.46-5),1.6,QColor(255,255,255,70+int(v*80)))
             p.restore(); return
@@ -1188,7 +2008,16 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "reactive_lights":
-            cr=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.28); cr.setColorAt(0,QColor(255,255,255,120)); cr.setColorAt(1,QColor(255,255,255,20)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(cr)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.25,max_effect_radius*0.25)
+            reactive_center_radius=max_effect_radius*0.25
+            cr=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.28); cr.setColorAt(0,QColor(255,255,255,120)); cr.setColorAt(1,QColor(255,255,255,20)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(cr)); p.drawEllipse(QPointF(cx,cy),reactive_center_radius,reactive_center_radius)
+
+            # Reactive Lights cover layer:
+            #   bottom: existing translucent white center circle
+            #   middle: current media cover image on the white circle
+            #   top: radial reactive light bars and slow outer rings
+            reactive_cover_rect=QRectF(cx-reactive_center_radius,cy-reactive_center_radius,reactive_center_radius*2.0,reactive_center_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,reactive_cover_rect,ctx,clip_radius=reactive_center_radius,fallback_accent=base_color)
+
             for k in range(17): v=values[int(k*count/17)]; a=k/17*math.tau-math.pi/2+now*0.08; col=QColor(base_color); col.setAlpha(120+int(v*100)); _cap(cx,cy,a,max_effect_radius*0.30,short_side*(0.04+v*0.22),max(1.8,(2+v*4)*width_scale),col)
             p.setBrush(Qt.BrushStyle.NoBrush)
             for r_i in range(4): col=QColor(base_color); col.setAlpha(52-r_i*7); p.setPen(QPen(col,1)); rr=max_effect_radius*(0.86+r_i*0.035); p.drawEllipse(QPointF(cx,cy),rr,rr)
@@ -1196,13 +2025,33 @@ class VisualizerWidget(BaseWidget):
 
         if style == "electro_dubstep":
             core=max_effect_radius*0.36; inner_col=QColor(max(0,base_color.red()-50),max(0,base_color.green()-50),max(0,base_color.blue()-50),90); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(inner_col)); p.drawEllipse(QPointF(cx,cy),core*(1+avg*0.10),core*(1+avg*0.10))
+
+            # Electro Dubstep cover layer:
+            #   bottom: existing accent-color center circle
+            #   middle: current media cover image pasted on the center accent circle
+            #   top: assertive dubstep bars
+            electro_cover_radius=max(1.0,core*(1+avg*0.10))
+            electro_cover_rect=QRectF(cx-electro_cover_radius,cy-electro_cover_radius,electro_cover_radius*2.0,electro_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,electro_cover_rect,ctx,clip_radius=electro_cover_radius,fallback_accent=base_color)
+
             for i in range(0,count,max(1,count//90)): v=values[i]; a=i/count*math.tau-math.pi/2; col=QColor(base_color); col.setAlpha(110+int(v*95)); _cap(cx,cy,a,core+2,short_side*(0.05+v*0.26),max(1.8,(2.5+v*5)*width_scale),col)
             p.restore(); return
 
         if style == "minimal_beat":
             outer=max_effect_radius*0.82; p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(base_color.red(),base_color.green(),base_color.blue(),90),1.2*width_scale)); p.drawEllipse(QPointF(cx,cy),outer,outer); p.drawEllipse(QPointF(cx,cy),outer-5,outer-5)
             for s in range(96): v=values[int(s*count/96)]; a=s/96*math.tau-math.pi/2; rr=outer-2.5+(((-1)**s)*short_side*(0.006+v*0.025)); _dot(cx+math.cos(a)*rr,cy+math.sin(a)*rr,1.1,QColor(base_color.red(),base_color.green(),base_color.blue(),105))
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(QColor(0,0,0,82))); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.32,max_effect_radius*0.32)
+            minimal_inner_radius=max_effect_radius*0.32
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(QColor(0,0,0,82))); p.drawEllipse(QPointF(cx,cy),minimal_inner_radius,minimal_inner_radius)
+
+            # Minimal Beat cover layer:
+            #   bottom: existing black inner circle
+            #   middle: current media cover image, fitted 10px inside that black circle
+            #   top: accent-color beat bars around the inner circle
+            minimal_cover_inset=min(10.0,max(0.0,minimal_inner_radius-2.0))
+            minimal_cover_radius=max(1.0,minimal_inner_radius-minimal_cover_inset)
+            minimal_cover_rect=QRectF(cx-minimal_cover_radius,cy-minimal_cover_radius,minimal_cover_radius*2.0,minimal_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,minimal_cover_rect,ctx,clip_radius=minimal_cover_radius,fallback_accent=base_color)
+
             for i in range(0,count,max(1,count//80)): v=values[i]; a=i/count*math.tau-math.pi/2; col=QColor(base_color); col.setAlpha(205); _cap(cx,cy,a,max_effect_radius*0.38,short_side*(0.035+v*0.19),max(1.5,(2+v*4)*width_scale),col)
             p.restore(); return
 
@@ -1216,6 +2065,15 @@ class VisualizerWidget(BaseWidget):
 
         if style == "cosmic_fusion":
             rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.46); rg.setColorAt(0,QColor(255,255,255,46)); rg.setColorAt(0.6,QColor(base_color.red(),base_color.green(),base_color.blue(),42)); rg.setColorAt(1,QColor(255,255,255,20)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(rg)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.46,max_effect_radius*0.46)
+
+            # Cosmic Fusion cover layer:
+            #   bottom: existing white/accent translucent circles
+            #   middle: current media cover image covering the full inside of the music bars
+            #   top: rainbow music bars
+            cosmic_cover_radius=max(1.0,max_effect_radius*0.46)
+            cosmic_cover_rect=QRectF(cx-cosmic_cover_radius,cy-cosmic_cover_radius,cosmic_cover_radius*2.0,cosmic_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,cosmic_cover_rect,ctx,clip_radius=cosmic_cover_radius,fallback_accent=base_color)
+
             for i in range(0,count,max(1,count//96)): v=values[i]; a=i/count*math.tau-math.pi/2; col=self._rainbow_color(i/count+now*0.04,205); _cap(cx,cy,a,max_effect_radius*0.48,short_side*(0.045+v*0.24),max(1.8,(2.5+v*5)*width_scale),col)
             p.restore(); return
 
@@ -1707,11 +2565,21 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "turntable":
-            # Reflective rotating record with grooves, outer bars and accent center.
+            # Reflective rotating record with grooves, rotating media cover, and outer bars.
             disc_r=min(max_effect_radius*0.62,short_side*0.31); grad=QRadialGradient(QPointF(cx,cy),disc_r); grad.setColorAt(0.0,QColor(245,248,255,235)); grad.setColorAt(0.20,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(0.45,QColor(26,28,35,230)); grad.setColorAt(1.0,QColor(4,5,8,240)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),disc_r,disc_r)
             p.setBrush(Qt.BrushStyle.NoBrush)
             for k in range(5):
                 rr=disc_r*(0.34+k*0.13+math.sin(now*1.2+k)*0.006); p.setPen(QPen(QColor(210,220,235,55+k*14),max(0.8,1.0*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
+            turntable_cover_radius=max(1.0,disc_r*0.84-10.0)
+            turntable_cover_rect=QRectF(cx-turntable_cover_radius,cy-turntable_cover_radius,turntable_cover_radius*2.0,turntable_cover_radius*2.0)
+            p.save()
+            try:
+                p.translate(cx,cy)
+                p.rotate(math.degrees(now*0.55))
+                p.translate(-cx,-cy)
+                self._draw_visualizer_media_thumbnail_cover(p,turntable_cover_rect,ctx,clip_radius=turntable_cover_radius,fallback_accent=base_color)
+            finally:
+                p.restore()
             step=max(1,count//72)
             for i in range(0,count,step):
                 v=values[i]; ang=i/count*math.tau-math.pi/2.0+now*0.55; inner=disc_r*0.90; outer=min(max_effect_radius*0.98,inner+short_side*(0.024+v*0.13)); p.setPen(QPen(QColor(230,235,245,115+int(v*115)),max(1.0,(1.0+v*2.8)*width_scale))); p.drawLine(QPointF(cx+math.cos(ang)*inner,cy+math.sin(ang)*inner),QPointF(cx+math.cos(ang)*outer,cy+math.sin(ang)*outer))
@@ -1828,15 +2696,8 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "hud_equalizer":
-            # Seven circular HUD layers.
-            for layer in range(7):
-                rr=max_effect_radius*(0.20+layer*0.095); col=QColor(base_color); col.setAlpha(max(25,120-layer*10)); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(col if layer<5 else QColor(255,255,255,70),max(1.0,(1.0+layer*0.18)*width_scale)))
-                if layer>=4:
-                    for k in range(44):
-                        if k%2==0:
-                            a=k/44*math.tau+now*0.08; v=values[(k*count//44)%count]; p.drawLine(QPointF(cx+math.cos(a)*rr,cy+math.sin(a)*rr),QPointF(cx+math.cos(a)*(rr+v*short_side*0.05),cy+math.sin(a)*(rr+v*short_side*0.05)))
-                else: p.drawEllipse(QPointF(cx,cy),rr,rr)
-            p.setPen(QPen(QColor(255,255,255,135),max(2.0,2.4*width_scale))); p.drawLine(QPointF(cx-max_effect_radius*0.34,cy),QPointF(cx+max_effect_radius*0.34,cy)); p.restore(); return
+            self._paint_hud_equalizer_scene(p, values, area, base_color, now, width_scale)
+            p.restore(); return
 
         if style == "space":
             # Center white-bar waveform with thin particles around it.
@@ -1848,12 +2709,182 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "flat_spectrum":
-            # Fast rotating center circle, surrounding bars, accent waveform and bouncing spheres. Overall size slightly enlarged.
-            size_scale=1.18
-            core=min(max_effect_radius*0.33,short_side*0.18); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(base_color.red(),base_color.green(),base_color.blue(),95),max(1.0,1.2*width_scale))); p.drawArc(QRectF(cx-core,cy-core,core*2,core*2),int((now*900)%5760),2000)
-            step=max(1,count//84)
-            for i in range(0,count,step):
-                v=values[i]; a=i/count*math.tau-math.pi/2; inner=core*1.24; outer=min(max_effect_radius*0.94,inner+short_side*((0.035+v*0.13)*size_scale)); col=QColor(base_color); col.setAlpha(70+int(v*95)); p.setPen(QPen(col,max(1.0,(1.0+v*2.0)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer)); p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer),(1.5+v*2.2)*size_scale,(1.5+v*2.2)*size_scale)
+            # Flat Audio Spectrum custom composition.
+            # - Outer line: audio-ripple style circular waveform, copied locally so audio_ripple itself is untouched.
+            # - Inner layer: hologram-style rings / radial ticks, rotated counter-clockwise only inside this style.
+            # - Center: no hologram music bars; use a translucent circle instead.
+            mint = QColor(base_color)
+            mint.setAlpha(235)
+            outer_base_radius = max_effect_radius * 0.70
+            outer_max_radius = max_effect_radius * 0.92
+            outer_min_radius = max_effect_radius * 0.54
+            sample_count = max(100, min(256, count if count > 0 else 128))
+            half_count = max(2, sample_count // 2)
+            fft_half = []
+            for si in range(half_count):
+                src_i = int(si * max(1, count // 2 - 1) / max(1, half_count - 1))
+                fft_half.append(values[src_i])
+            raw_fft_values = fft_half + list(reversed(fft_half))
+            sample_count = len(raw_fft_values)
+            previous_smoothed = getattr(self, "_flat_spectrum_audio_ripple_smoothed", None)
+            if not isinstance(previous_smoothed, list) or len(previous_smoothed) != sample_count:
+                previous_smoothed = list(raw_fft_values)
+            temporal_smoothed = []
+            for si, current_value in enumerate(raw_fft_values):
+                temporal_smoothed.append(previous_smoothed[si] * 0.85 + current_value * 0.15)
+            self._flat_spectrum_audio_ripple_smoothed = temporal_smoothed
+            fft_values = []
+            for si, current_value in enumerate(temporal_smoothed):
+                fft_values.append(
+                    temporal_smoothed[si - 2] * 0.10
+                    + temporal_smoothed[si - 1] * 0.20
+                    + current_value * 0.40
+                    + temporal_smoothed[(si + 1) % sample_count] * 0.20
+                    + temporal_smoothed[(si + 2) % sample_count] * 0.10
+                )
+            local_peak = max(raw_fft_values) if raw_fft_values else 0.0
+            smoothed_peak = max(fft_values) if fft_values else 0.0
+            volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
+            available_push = max(8.0, outer_max_radius - outer_base_radius)
+            outer_points = []
+            for si, fft_value in enumerate(fft_values):
+                angle = -math.pi / 2.0 + (si / sample_count) * math.tau
+                prev_v = fft_values[si - 1]
+                next_v = fft_values[(si + 1) % sample_count]
+                local_contrast = max(0.0, fft_value - (prev_v + next_v) * 0.5)
+                spike_gate = max(0.0, min(1.0, (fft_value - 0.64) / 0.36))
+                mirror_i = min(si, sample_count - 1 - si)
+                seed = ((mirror_i * 37 + 13) % 97) / 97.0
+                raw_value = raw_fft_values[si]
+                raw_prev = raw_fft_values[si - 1]
+                raw_next = raw_fft_values[(si + 1) % sample_count]
+                raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.22))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate))
+                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                audio_reactivity = max(0.0, min(1.0, audio_reactivity))
+                audio_reactivity = audio_reactivity * audio_reactivity
+                tip_speed = 0.32 + seed * 0.22 + audio_reactivity * 0.55
+                snap_cycle = now * tip_speed + seed * 5.0 + mirror_i * 0.031
+                snap_phase = snap_cycle - math.floor(snap_cycle)
+                if snap_phase < 0.050:
+                    snap_envelope = snap_phase / 0.050
+                elif snap_phase < 0.210:
+                    snap_envelope = 1.0 - (snap_phase - 0.050) / 0.160
+                else:
+                    snap_envelope = 0.0
+                snap_envelope = max(0.0, min(1.0, snap_envelope)) * audio_reactivity
+                snap_index = int(math.floor(snap_cycle))
+                tip_sign = -1.0 if ((snap_index + mirror_i * 3) % 5) < 2 else 1.0
+                tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
+                tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
+                rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
+                outer_points.append(QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr))
+            if outer_points:
+                outer_path = QPainterPath(outer_points[0])
+                for pt in outer_points[1:]:
+                    outer_path.lineTo(pt)
+                outer_path.closeSubpath()
+                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                    offset_path = QPainterPath()
+                    first = outer_points[0]
+                    first_len = max(1.0, math.hypot(first.x() - cx, first.y() - cy))
+                    offset_path.moveTo(QPointF(first.x() + (first.x() - cx) / first_len * offset, first.y() + (first.y() - cy) / first_len * offset))
+                    for pt in outer_points[1:]:
+                        plen = max(1.0, math.hypot(pt.x() - cx, pt.y() - cy))
+                        offset_path.lineTo(QPointF(pt.x() + (pt.x() - cx) / plen * offset, pt.y() + (pt.y() - cy) / plen * offset))
+                    offset_path.closeSubpath()
+                    trail_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), int(32 * alpha_scale)), max(1.0, 1.25 * width_scale))
+                    trail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    trail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    p.setPen(trail_pen)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.drawPath(offset_path)
+                glow_pen_1 = QPen(QColor(mint.red(), mint.green(), mint.blue(), 20), max(8.0, 8.0 * width_scale + bass * 4.0))
+                glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_1)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawPath(outer_path)
+                glow_pen_2 = QPen(QColor(mint.red(), mint.green(), mint.blue(), 40), max(5.0, 5.0 * width_scale + bass * 2.0))
+                glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_2)
+                p.drawPath(outer_path)
+                core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
+                core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(core_pen)
+                p.drawPath(outer_path)
+
+            p.save()
+            try:
+                p.translate(cx, cy)
+                p.rotate(self._flat_spectrum_inner_rotation_degrees(now))
+                p.translate(-cx, -cy)
+                inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
+                acc = QColor(base_color)
+                acc.setAlpha(105)
+                rg = QRadialGradient(QPointF(cx, cy), max_effect_radius * 0.56)
+                rg.setColorAt(0.0, QColor(0, 0, 0, 70))
+                rg.setColorAt(0.50, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
+                rg.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 0))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(rg))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.50, max_effect_radius * 0.50)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(acc, 1.4 * width_scale))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.41, max_effect_radius * 0.41)
+                p.setPen(QPen(inv, 1.0 * width_scale))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.53, max_effect_radius * 0.53)
+                hologram_outer_circle_radius = max_effect_radius * 0.53
+                hologram_max_bar_overhang_px = 10.0
+                hologram_inner_bar_alpha = 235
+                hologram_outer_bar_alpha = int(255 * 0.40)
+                for hi in range(0, count, max(1, count // 72)):
+                    v = values[hi]
+                    a = hi / count * math.tau - math.pi / 2.0
+                    base_inner = max_effect_radius * 0.44
+                    max_outer = hologram_outer_circle_radius + hologram_max_bar_overhang_px
+                    max_len = min(30.0, max(0.0, max_outer - base_inner))
+                    min_bar_len = min(max_len, max(2.0, short_side * 0.025))
+                    max_bar_len = max(min_bar_len, max_len)
+                    threshold = max(0.12, avg * 1.20)
+                    band_signal = max(float(v), bass * 0.72)
+                    peak_amount = max(0.0, min(1.0, (band_signal - threshold) / max(0.001, 1.0 - threshold)))
+                    peak_amount = peak_amount * peak_amount * (3.0 - 2.0 * peak_amount)
+                    wave = 0.92 + 0.08 * math.sin(now * (2.8 + peak_amount * 3.0) + hi * 0.31)
+                    motion = max(0.0, min(1.0, peak_amount * wave))
+                    bar_len = min(max_len, min_bar_len + (max_bar_len - min_bar_len) * motion)
+                    inner = base_inner
+                    outer = min(max_outer, inner + bar_len)
+                    if outer <= inner:
+                        continue
+                    steps = max(1, int(math.ceil(outer - inner)))
+                    pen_width = max(1.4, min(5.0, 2.6 * width_scale))
+                    for hs in range(steps):
+                        r1 = inner + hs
+                        r2 = min(outer, inner + hs + 1.0)
+                        if r2 <= r1:
+                            continue
+                        t = hs / max(1, steps - 1)
+                        alpha = int(hologram_inner_bar_alpha * (1.0 - t) + hologram_outer_bar_alpha * t)
+                        c = QColor(base_color)
+                        c.setAlpha(alpha)
+                        p.setPen(QPen(c, pen_width))
+                        p.drawLine(QPointF(cx + math.cos(a) * r1, cy + math.sin(a) * r1), QPointF(cx + math.cos(a) * r2, cy + math.sin(a) * r2))
+            finally:
+                p.restore()
+
+            center_radius = max(5.0, max_effect_radius * 0.23)
+            center_grad = QRadialGradient(QPointF(cx, cy), center_radius)
+            center_grad.setColorAt(0.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 78))
+            center_grad.setColorAt(0.62, QColor(base_color.red(), base_color.green(), base_color.blue(), 44))
+            center_grad.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 18))
+            p.setPen(QPen(QColor(base_color.red(), base_color.green(), base_color.blue(), 92), max(1.0, 1.0 * width_scale)))
+            p.setBrush(QBrush(center_grad))
+            p.drawEllipse(QPointF(cx, cy), center_radius, center_radius)
             p.restore(); return
 
         if style == "dynamic_glitch":
@@ -1931,6 +2962,14 @@ class VisualizerWidget(BaseWidget):
         if style == "turntable":
             disc_r=min(max_effect_radius*0.62,short_side*0.31); grad=QRadialGradient(QPointF(cx,cy),disc_r); grad.setColorAt(0,QColor(245,248,255,235)); grad.setColorAt(0.20,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(0.45,QColor(26,28,35,230)); grad.setColorAt(1,QColor(4,5,8,240)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),disc_r,disc_r); p.setBrush(Qt.BrushStyle.NoBrush)
             for k in range(5): rr=disc_r*(0.34+k*0.13+math.sin(now*1.2+k)*0.006); p.setPen(QPen(QColor(210,220,235,55+k*14),max(0.8,1.0*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
+            turntable_cover_radius=max(1.0,disc_r*0.84-10.0)
+            turntable_cover_rect=QRectF(cx-turntable_cover_radius,cy-turntable_cover_radius,turntable_cover_radius*2.0,turntable_cover_radius*2.0)
+            p.save()
+            try:
+                p.translate(cx,cy); p.rotate(math.degrees(now*0.55)); p.translate(-cx,-cy)
+                self._draw_visualizer_media_thumbnail_cover(p,turntable_cover_rect,ctx,clip_radius=turntable_cover_radius,fallback_accent=base_color)
+            finally:
+                p.restore()
             step=max(1,count//72)
             for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2+now*0.55; inner=disc_r*0.90; outer=min(max_effect_radius*0.98,inner+short_side*(0.024+v*0.13)); p.setPen(QPen(QColor(230,235,245,115+int(v*115)),max(1.0,(1+v*2.8)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
             p.restore(); return
@@ -1998,13 +3037,8 @@ class VisualizerWidget(BaseWidget):
             path=QPainterPath(top[0]); [path.lineTo(pt) for pt in top[1:]]; [path.lineTo(pt) for pt in reversed(bottom)]; path.closeSubpath(); grad=QLinearGradient(QPointF(area.left(),cy),QPointF(area.right(),cy)); c0=QColor(base_color); c0.setAlpha(125); grad.setColorAt(0,c0); grad.setColorAt(1,QColor(255,255,255,170)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawPath(path); p.restore(); return
 
         if style == "hud_equalizer":
-            for layer in range(7):
-                rr=max_effect_radius*(0.20+layer*0.095); col=QColor(base_color); col.setAlpha(max(25,120-layer*10)); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(col if layer<5 else QColor(255,255,255,70),max(1.0,(1+layer*0.18)*width_scale)))
-                if layer>=4:
-                    for k in range(44):
-                        if k%2==0: a=k/44*math.tau+now*0.08; v=values[(k*count//44)%count]; p.drawLine(QPointF(cx+math.cos(a)*rr,cy+math.sin(a)*rr),QPointF(cx+math.cos(a)*(rr+v*short_side*0.05),cy+math.sin(a)*(rr+v*short_side*0.05)))
-                else: p.drawEllipse(QPointF(cx,cy),rr,rr)
-            p.setPen(QPen(QColor(255,255,255,135),max(2,2.4*width_scale))); p.drawLine(QPointF(cx-max_effect_radius*0.34,cy),QPointF(cx+max_effect_radius*0.34,cy)); p.restore(); return
+            self._paint_hud_equalizer_scene(p, values, area, base_color, now, width_scale)
+            p.restore(); return
 
         if style == "space":
             for i in range(54): x=area.left()+((i*73+int(now*20))%int(max(1,aw))); y=area.top()+((i*41+int(now*8))%int(max(1,ah))); p.setPen(QPen(QColor(150,180,255,34+(i%4)*14),1)); p.drawPoint(QPointF(x,y))
@@ -2013,8 +3047,182 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "flat_spectrum":
-            size_scale=1.18; core=min(max_effect_radius*0.33,short_side*0.18); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(base_color.red(),base_color.green(),base_color.blue(),95),max(1.0,1.2*width_scale))); p.drawArc(QRectF(cx-core,cy-core,core*2,core*2),int((now*900)%5760),2000); step=max(1,count//84)
-            for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2; inner=core*1.24; outer=min(max_effect_radius*0.94,inner+short_side*((0.035+v*0.13)*size_scale)); col=QColor(base_color); col.setAlpha(70+int(v*95)); p.setPen(QPen(col,max(1.0,(1+v*2)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer)); p.setBrush(QBrush(col)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer),(1.5+v*2.2)*size_scale,(1.5+v*2.2)*size_scale)
+            # Flat Audio Spectrum custom composition.
+            # - Outer line: audio-ripple style circular waveform, copied locally so audio_ripple itself is untouched.
+            # - Inner layer: hologram-style rings / radial ticks, rotated counter-clockwise only inside this style.
+            # - Center: no hologram music bars; use a translucent circle instead.
+            mint = QColor(base_color)
+            mint.setAlpha(235)
+            outer_base_radius = max_effect_radius * 0.70
+            outer_max_radius = max_effect_radius * 0.92
+            outer_min_radius = max_effect_radius * 0.54
+            sample_count = max(100, min(256, count if count > 0 else 128))
+            half_count = max(2, sample_count // 2)
+            fft_half = []
+            for si in range(half_count):
+                src_i = int(si * max(1, count // 2 - 1) / max(1, half_count - 1))
+                fft_half.append(values[src_i])
+            raw_fft_values = fft_half + list(reversed(fft_half))
+            sample_count = len(raw_fft_values)
+            previous_smoothed = getattr(self, "_flat_spectrum_audio_ripple_smoothed", None)
+            if not isinstance(previous_smoothed, list) or len(previous_smoothed) != sample_count:
+                previous_smoothed = list(raw_fft_values)
+            temporal_smoothed = []
+            for si, current_value in enumerate(raw_fft_values):
+                temporal_smoothed.append(previous_smoothed[si] * 0.85 + current_value * 0.15)
+            self._flat_spectrum_audio_ripple_smoothed = temporal_smoothed
+            fft_values = []
+            for si, current_value in enumerate(temporal_smoothed):
+                fft_values.append(
+                    temporal_smoothed[si - 2] * 0.10
+                    + temporal_smoothed[si - 1] * 0.20
+                    + current_value * 0.40
+                    + temporal_smoothed[(si + 1) % sample_count] * 0.20
+                    + temporal_smoothed[(si + 2) % sample_count] * 0.10
+                )
+            local_peak = max(raw_fft_values) if raw_fft_values else 0.0
+            smoothed_peak = max(fft_values) if fft_values else 0.0
+            volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
+            available_push = max(8.0, outer_max_radius - outer_base_radius)
+            outer_points = []
+            for si, fft_value in enumerate(fft_values):
+                angle = -math.pi / 2.0 + (si / sample_count) * math.tau
+                prev_v = fft_values[si - 1]
+                next_v = fft_values[(si + 1) % sample_count]
+                local_contrast = max(0.0, fft_value - (prev_v + next_v) * 0.5)
+                spike_gate = max(0.0, min(1.0, (fft_value - 0.64) / 0.36))
+                mirror_i = min(si, sample_count - 1 - si)
+                seed = ((mirror_i * 37 + 13) % 97) / 97.0
+                raw_value = raw_fft_values[si]
+                raw_prev = raw_fft_values[si - 1]
+                raw_next = raw_fft_values[(si + 1) % sample_count]
+                raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.22))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate))
+                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                audio_reactivity = max(0.0, min(1.0, audio_reactivity))
+                audio_reactivity = audio_reactivity * audio_reactivity
+                tip_speed = 0.32 + seed * 0.22 + audio_reactivity * 0.55
+                snap_cycle = now * tip_speed + seed * 5.0 + mirror_i * 0.031
+                snap_phase = snap_cycle - math.floor(snap_cycle)
+                if snap_phase < 0.050:
+                    snap_envelope = snap_phase / 0.050
+                elif snap_phase < 0.210:
+                    snap_envelope = 1.0 - (snap_phase - 0.050) / 0.160
+                else:
+                    snap_envelope = 0.0
+                snap_envelope = max(0.0, min(1.0, snap_envelope)) * audio_reactivity
+                snap_index = int(math.floor(snap_cycle))
+                tip_sign = -1.0 if ((snap_index + mirror_i * 3) % 5) < 2 else 1.0
+                tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
+                tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
+                rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
+                outer_points.append(QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr))
+            if outer_points:
+                outer_path = QPainterPath(outer_points[0])
+                for pt in outer_points[1:]:
+                    outer_path.lineTo(pt)
+                outer_path.closeSubpath()
+                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                    offset_path = QPainterPath()
+                    first = outer_points[0]
+                    first_len = max(1.0, math.hypot(first.x() - cx, first.y() - cy))
+                    offset_path.moveTo(QPointF(first.x() + (first.x() - cx) / first_len * offset, first.y() + (first.y() - cy) / first_len * offset))
+                    for pt in outer_points[1:]:
+                        plen = max(1.0, math.hypot(pt.x() - cx, pt.y() - cy))
+                        offset_path.lineTo(QPointF(pt.x() + (pt.x() - cx) / plen * offset, pt.y() + (pt.y() - cy) / plen * offset))
+                    offset_path.closeSubpath()
+                    trail_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), int(32 * alpha_scale)), max(1.0, 1.25 * width_scale))
+                    trail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    trail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    p.setPen(trail_pen)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.drawPath(offset_path)
+                glow_pen_1 = QPen(QColor(mint.red(), mint.green(), mint.blue(), 20), max(8.0, 8.0 * width_scale + bass * 4.0))
+                glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_1)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawPath(outer_path)
+                glow_pen_2 = QPen(QColor(mint.red(), mint.green(), mint.blue(), 40), max(5.0, 5.0 * width_scale + bass * 2.0))
+                glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow_pen_2)
+                p.drawPath(outer_path)
+                core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
+                core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(core_pen)
+                p.drawPath(outer_path)
+
+            p.save()
+            try:
+                p.translate(cx, cy)
+                p.rotate(self._flat_spectrum_inner_rotation_degrees(now))
+                p.translate(-cx, -cy)
+                inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
+                acc = QColor(base_color)
+                acc.setAlpha(105)
+                rg = QRadialGradient(QPointF(cx, cy), max_effect_radius * 0.56)
+                rg.setColorAt(0.0, QColor(0, 0, 0, 70))
+                rg.setColorAt(0.50, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
+                rg.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 0))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(rg))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.50, max_effect_radius * 0.50)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(acc, 1.4 * width_scale))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.41, max_effect_radius * 0.41)
+                p.setPen(QPen(inv, 1.0 * width_scale))
+                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.53, max_effect_radius * 0.53)
+                hologram_outer_circle_radius = max_effect_radius * 0.53
+                hologram_max_bar_overhang_px = 10.0
+                hologram_inner_bar_alpha = 235
+                hologram_outer_bar_alpha = int(255 * 0.40)
+                for hi in range(0, count, max(1, count // 72)):
+                    v = values[hi]
+                    a = hi / count * math.tau - math.pi / 2.0
+                    base_inner = max_effect_radius * 0.44
+                    max_outer = hologram_outer_circle_radius + hologram_max_bar_overhang_px
+                    max_len = min(30.0, max(0.0, max_outer - base_inner))
+                    min_bar_len = min(max_len, max(2.0, short_side * 0.025))
+                    max_bar_len = max(min_bar_len, max_len)
+                    threshold = max(0.12, avg * 1.20)
+                    band_signal = max(float(v), bass * 0.72)
+                    peak_amount = max(0.0, min(1.0, (band_signal - threshold) / max(0.001, 1.0 - threshold)))
+                    peak_amount = peak_amount * peak_amount * (3.0 - 2.0 * peak_amount)
+                    wave = 0.92 + 0.08 * math.sin(now * (2.8 + peak_amount * 3.0) + hi * 0.31)
+                    motion = max(0.0, min(1.0, peak_amount * wave))
+                    bar_len = min(max_len, min_bar_len + (max_bar_len - min_bar_len) * motion)
+                    inner = base_inner
+                    outer = min(max_outer, inner + bar_len)
+                    if outer <= inner:
+                        continue
+                    steps = max(1, int(math.ceil(outer - inner)))
+                    pen_width = max(1.4, min(5.0, 2.6 * width_scale))
+                    for hs in range(steps):
+                        r1 = inner + hs
+                        r2 = min(outer, inner + hs + 1.0)
+                        if r2 <= r1:
+                            continue
+                        t = hs / max(1, steps - 1)
+                        alpha = int(hologram_inner_bar_alpha * (1.0 - t) + hologram_outer_bar_alpha * t)
+                        c = QColor(base_color)
+                        c.setAlpha(alpha)
+                        p.setPen(QPen(c, pen_width))
+                        p.drawLine(QPointF(cx + math.cos(a) * r1, cy + math.sin(a) * r1), QPointF(cx + math.cos(a) * r2, cy + math.sin(a) * r2))
+            finally:
+                p.restore()
+
+            center_radius = max(5.0, max_effect_radius * 0.23)
+            center_grad = QRadialGradient(QPointF(cx, cy), center_radius)
+            center_grad.setColorAt(0.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 78))
+            center_grad.setColorAt(0.62, QColor(base_color.red(), base_color.green(), base_color.blue(), 44))
+            center_grad.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 18))
+            p.setPen(QPen(QColor(base_color.red(), base_color.green(), base_color.blue(), 92), max(1.0, 1.0 * width_scale)))
+            p.setBrush(QBrush(center_grad))
+            p.drawEllipse(QPointF(cx, cy), center_radius, center_radius)
             p.restore(); return
 
         if style == "dynamic_glitch":
@@ -2063,13 +3271,60 @@ class VisualizerWidget(BaseWidget):
             p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(acc,max(1.0,1.4*width_scale))); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.45,max_effect_radius*0.45)
             p.setPen(QPen(inv,max(1.0,1.0*width_scale))); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.58,max_effect_radius*0.58)
             step=max(1,count//72)
+            hologram_outer_circle_radius=max_effect_radius*0.58
+            hologram_max_bar_overhang_px=10.0
+            hologram_inner_bar_alpha=235
+            hologram_outer_bar_alpha=int(255*0.40)
             for i in range(0,count,step):
-                v=values[i]; a=i/count*math.tau-math.pi/2.0; inner=max_effect_radius*0.48; outer=min(max_effect_radius*0.95,inner+short_side*(0.035+v*0.25))
-                col=QColor(base_color); col.setAlpha(70+int(v*80))
-                p.setPen(QPen(col,max(1.0,(1.0+v*3.4)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
-            bars=9
+                v=values[i]
+                a=i/count*math.tau-math.pi/2.0
+                base_inner=max_effect_radius*0.48
+                max_outer=hologram_outer_circle_radius+hologram_max_bar_overhang_px
+                max_len=max(0.0,max_outer-base_inner)
+                min_bar_len=min(max_len,max(2.0,short_side*0.025))
+                max_bar_len=max(min_bar_len,max_len)
+                threshold=max(0.12,avg*1.20)
+                band_signal=max(float(v),bass*0.72)
+                peak_amount=max(0.0,min(1.0,(band_signal-threshold)/max(0.001,1.0-threshold)))
+                peak_amount=peak_amount*peak_amount*(3.0-2.0*peak_amount)
+                wave=0.92+0.08*math.sin(now*(2.8+peak_amount*3.0)+i*0.31)
+                motion=max(0.0,min(1.0,peak_amount*wave))
+                bar_len=min(max_len,min_bar_len+(max_bar_len-min_bar_len)*motion)
+                inner=base_inner
+                outer=min(max_outer,inner+bar_len)
+                if outer <= inner:
+                    continue
+                steps=max(1,int(math.ceil(outer-inner)))
+                pen_width=max(2.0,min(3.0,2.6*width_scale))
+                for s in range(steps):
+                    r1=inner+s
+                    r2=min(outer,inner+s+1.0)
+                    if r2 <= r1:
+                        continue
+                    t=s/max(1,steps-1)
+                    alpha=int(hologram_inner_bar_alpha*(1.0-t)+hologram_outer_bar_alpha*t)
+                    col=QColor(base_color)
+                    col.setAlpha(alpha)
+                    p.setPen(QPen(col,pen_width))
+                    p.drawLine(QPointF(cx+math.cos(a)*r1,cy+math.sin(a)*r1),QPointF(cx+math.cos(a)*r2,cy+math.sin(a)*r2))
+            hologram_inner_circle_radius=max_effect_radius*0.45
+            center_bar_limit=max(1.0,hologram_inner_circle_radius-5.0)
+            center_span_width=center_bar_limit*2.0
+            bars=max(3,int(count*center_span_width/max(1.0,aw)))
+            center_slot=center_span_width/bars
+            center_bar_w=max(1.0,center_slot*0.28*width_scale)
             for j in range(bars):
-                v=values[int(j*count/bars)]; x=cx+(j-(bars-1)/2)*short_side*0.025; h=short_side*(0.10+v*0.26); col=QColor(255,255,255,75+int(v*70)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col)); p.drawRoundedRect(QRectF(x-2*width_scale,cy-h*0.5,4*width_scale,h),3,3)
+                src_i=min(count-1,int(j*count/max(1,bars)))
+                v=values[src_i]
+                x=cx-center_bar_limit+j*center_slot+(center_slot-center_bar_w)*0.5
+                bar_center_x=x+center_bar_w*0.5
+                bar_edge_dx=abs(bar_center_x-cx)+center_bar_w*0.5
+                max_inner_circle_h=2.0*math.sqrt(max(0.0,center_bar_limit*center_bar_limit-bar_edge_dx*bar_edge_dx))
+                h=min(max_inner_circle_h,ah*(0.018+v*0.24))
+                col=QColor(255,255,255,75+int(v*70))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(col))
+                p.drawRoundedRect(QRectF(x,cy-h*0.5,center_bar_w,h),2,2)
             p.restore(); return
 
         if style == "audio_ripple":
@@ -2124,6 +3379,25 @@ class VisualizerWidget(BaseWidget):
                 pulse = 0.50 + 0.50 * math.sin(now * 1.10 + n * 0.73)
                 dot_col = QColor(mint.red(), mint.green(), mint.blue(), int(24 + pulse * 40 + avg * 22))
                 self._draw_visualizer_soft_orb(p, pt, short_side * (0.0032 + pulse * 0.0025), dot_col, dot_col.alpha())
+
+            # Layer order for Audio Ripple:
+            #   bottom: translucent circular accent field
+            #   middle: current media cover image, fitted 10px inside that circle
+            #   top: jagged audio ripple line drawn below
+            cover_inset = 10.0
+            cover_rect = QRectF(
+                cx - background_radius + cover_inset,
+                cy - background_radius + cover_inset,
+                max(1.0, background_radius * 2.0 - cover_inset * 2.0),
+                max(1.0, background_radius * 2.0 - cover_inset * 2.0),
+            )
+            has_cover_image = self._draw_visualizer_media_thumbnail_cover(
+                p,
+                cover_rect,
+                ctx,
+                clip_radius=background_radius - cover_inset,
+                fallback_accent=mint,
+            )
 
             circle_gap = max(3.0, short_side * 0.016)
             base_radius = background_radius + circle_gap
@@ -2268,7 +3542,7 @@ class VisualizerWidget(BaseWidget):
                 p.drawPath(path_offset)
 
             label = str(getattr(self.cfg, "text", "") or "").strip()
-            if label:
+            if label and not has_cover_image:
                 lines = [line.strip() for line in label.splitlines() if line.strip()]
                 p.setPen(QColor(mint.red(), mint.green(), mint.blue(), 215))
                 base_fs = max(8, int(background_radius * 0.20))
@@ -2364,9 +3638,12 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "neon_soundwave":
-            # Three fast translucent glowing rings with rotating bars and hopping particles.
+            # Cover image fills the full inside of the neon music-bar circle; bars stay on top.
             for k in range(3):
                 rr=max_effect_radius*(0.26+k*0.15); col=QColor(base_color); col.setAlpha(68); p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(col,max(1.0,(2.0-k*0.25)*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
+            neon_cover_radius=max(1.0,max_effect_radius*0.53)
+            neon_cover_rect=QRectF(cx-neon_cover_radius,cy-neon_cover_radius,neon_cover_radius*2.0,neon_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,neon_cover_rect,ctx,clip_radius=neon_cover_radius,fallback_accent=base_color)
             step=max(1,count//72)
             for i in range(0,count,step):
                 v=values[i]; a=i/count*math.tau-math.pi/2.0+now*0.38; inner=max_effect_radius*0.53; outer=min(max_effect_radius*0.95,inner+short_side*(0.035+v*0.17)); col=QColor(base_color); col.setAlpha(100+int(v*70)); p.setPen(QPen(col,max(1.0,(1.2+v*3.2)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
@@ -2374,7 +3651,10 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "glow_beat_music":
-            # White-tinted translucent circular bars and fast starfield particles overflowing from center.
+            # Media cover inside the music-bar circle, with translucent moving particles and bars above it.
+            glow_cover_radius=max(1.0,max_effect_radius*0.46)
+            glow_cover_rect=QRectF(cx-glow_cover_radius,cy-glow_cover_radius,glow_cover_radius*2.0,glow_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,glow_cover_rect,ctx,clip_radius=glow_cover_radius,fallback_accent=base_color)
             p.setPen(Qt.PenStyle.NoPen)
             for k in range(60):
                 ph=(k*0.618+now*0.9)%1.0; a=k*2.399+now*0.3; rr=max_effect_radius*0.08+ph*max_effect_radius*0.55; alpha=int((1-ph)*140)
@@ -2393,8 +3673,11 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "reactive_lights":
-            # 17 radial bars around a translucent white center, with slow outer rings spaced about 5px.
-            center_rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.28); center_rg.setColorAt(0,QColor(255,255,255,120)); center_rg.setColorAt(1,QColor(255,255,255,20)); p.setBrush(QBrush(center_rg)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.25,max_effect_radius*0.25)
+            # 17 radial bars around a media cover on the translucent white center, with slow outer rings spaced about 5px.
+            reactive_center_radius=max_effect_radius*0.25
+            center_rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.28); center_rg.setColorAt(0,QColor(255,255,255,120)); center_rg.setColorAt(1,QColor(255,255,255,20)); p.setBrush(QBrush(center_rg)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPointF(cx,cy),reactive_center_radius,reactive_center_radius)
+            reactive_cover_rect=QRectF(cx-reactive_center_radius,cy-reactive_center_radius,reactive_center_radius*2.0,reactive_center_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,reactive_cover_rect,ctx,clip_radius=reactive_center_radius,fallback_accent=base_color)
             bars=17
             for k in range(bars):
                 v=values[int(k*count/bars)]; a=k/bars*math.tau-math.pi/2.0+now*0.08; inner=max_effect_radius*0.30; outer=min(max_effect_radius*0.82,inner+short_side*(0.04+v*0.22)); col=QColor(base_color); col.setAlpha(120+int(v*100)); p.setPen(QPen(col,max(1.0,(1.6+v*3.6)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
@@ -2404,8 +3687,11 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "electro_dubstep":
-            # Assertive circular bars with 2px gap and mochi-like dark accent center.
+            # Assertive circular bars with 2px gap, center cover, and mochi-like dark accent backing.
             core=max_effect_radius*0.36; p.setPen(Qt.PenStyle.NoPen); inner_col=QColor(max(0,base_color.red()-50),max(0,base_color.green()-50),max(0,base_color.blue()-50),90); p.setBrush(QBrush(inner_col)); p.drawEllipse(QPointF(cx,cy),core*(1+avg*0.10),core*(1+avg*0.10))
+            electro_cover_radius=max(1.0,core*(1+avg*0.10))
+            electro_cover_rect=QRectF(cx-electro_cover_radius,cy-electro_cover_radius,electro_cover_radius*2.0,electro_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,electro_cover_rect,ctx,clip_radius=electro_cover_radius,fallback_accent=base_color)
             step=max(1,count//90)
             for i in range(0,count,step):
                 v=values[i]; a=i/count*math.tau-math.pi/2.0; inner=core+2.0; outer=min(max_effect_radius*0.98,inner+short_side*(0.05+v*0.26)); col=QColor(base_color); col.setAlpha(110+int(v*95)); p.setPen(QPen(col,max(1.0,(1.6+v*4.4)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
@@ -2437,8 +3723,11 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "cosmic_fusion":
-            # Frosted translucent circle with assertive translucent rainbow bars.
+            # Frosted translucent circle, media cover inside the bars, and assertive translucent rainbow bars.
             rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.46); rg.setColorAt(0,QColor(255,255,255,46)); rg.setColorAt(0.6,QColor(base_color.red(),base_color.green(),base_color.blue(),42)); rg.setColorAt(1,QColor(255,255,255,20)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(rg)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.46,max_effect_radius*0.46)
+            cosmic_cover_radius=max(1.0,max_effect_radius*0.46)
+            cosmic_cover_rect=QRectF(cx-cosmic_cover_radius,cy-cosmic_cover_radius,cosmic_cover_radius*2.0,cosmic_cover_radius*2.0)
+            self._draw_visualizer_media_thumbnail_cover(p,cosmic_cover_rect,ctx,clip_radius=cosmic_cover_radius,fallback_accent=base_color)
             step=max(1,count//96)
             for i in range(0,count,step):
                 v=values[i]; a=i/count*math.tau-math.pi/2; inner=max_effect_radius*0.48; outer=min(max_effect_radius*0.98,inner+short_side*(0.045+v*0.24)); col=self._rainbow_color(i/count+now*0.04,205); p.setPen(QPen(col,max(1.0,(1.5+v*4.5)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
@@ -2514,10 +3803,16 @@ class VisualizerWidget(BaseWidget):
         r = self.rect
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        bg = widget_bg_color(self.cfg)
-        p.setBrush(QBrush(bg))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(r, 16, 16)
+        style = self._visualizer_style()
+        # hud_equalizer is intentionally transparent: only the rings and audio bars are drawn.
+        # Other visualizer styles keep the normal widget background.
+        if style == "hud_equalizer":
+            p.setPen(Qt.PenStyle.NoPen)
+        else:
+            bg = widget_bg_color(self.cfg)
+            p.setBrush(QBrush(bg))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(r, 16, 16)
         # All visualizer effects are clipped to the rounded widget frame.
         clip_path = QPainterPath()
         clip_path.addRoundedRect(r, 16, 16)
@@ -2540,7 +3835,6 @@ class VisualizerWidget(BaseWidget):
         width_scale = self._visualizer_bar_width_scale()
         now = time.time()
 
-        style = self._visualizer_style()
         if style != "classic":
             inner_inset = max(6.0, min(available_w, available_h) * 0.060)
             area = QRectF(
@@ -2549,7 +3843,7 @@ class VisualizerWidget(BaseWidget):
                 max(1.0, available_w - inner_inset * 2.0),
                 max(1.0, available_h - inner_inset * 2.0),
             )
-            self._paint_visualizer_styled(p, bars, style, r, area, color, now)
+            self._paint_visualizer_styled(p, bars, style, r, area, color, now, ctx)
             p.setPen(QColor(230, 240, 255, 220))
             p.setFont(QFont("Segoe UI", 9))
             label = ""
@@ -2683,6 +3977,78 @@ class VisualizerWidget(BaseWidget):
             p.setBrush(QBrush(shine))
             p.drawRoundedRect(QRectF(cap_rect.left(), cap_rect.top(), cap_rect.width(), 1.0), 0.8, 0.8)
         p.restore()
+
+    def _get_media_thumbnail_pixmap(self, ctx: Dict):
+        media_meta = ctx.get("media_meta") if isinstance(ctx, dict) else None
+        thumbnail_bytes = b""
+
+        if media_meta is not None:
+            try:
+                if hasattr(media_meta, "get_thumbnail_bytes"):
+                    thumbnail_bytes = media_meta.get_thumbnail_bytes()
+                else:
+                    data = media_meta.snapshot() if hasattr(media_meta, "snapshot") else {}
+                    thumbnail_bytes = data.get("thumbnail_bytes", b"") if isinstance(data, dict) else b""
+            except:
+                thumbnail_bytes = b""
+
+        if not thumbnail_bytes:
+            self._last_media_thumbnail_bytes = None
+            self._media_thumbnail_pixmap = None
+            return None
+
+        if self._last_media_thumbnail_bytes == thumbnail_bytes and self._media_thumbnail_pixmap is not None:
+            return self._media_thumbnail_pixmap
+
+        image = QImage.fromData(thumbnail_bytes)
+        if image.isNull():
+            self._last_media_thumbnail_bytes = None
+            self._media_thumbnail_pixmap = None
+            return None
+
+        self._last_media_thumbnail_bytes = thumbnail_bytes
+        self._media_thumbnail_pixmap = QPixmap.fromImage(image)
+        return self._media_thumbnail_pixmap
+
+    def _draw_visualizer_media_thumbnail_cover(self, p: QPainter, rect: QRectF, ctx: Dict, clip_radius: float, fallback_accent: QColor):
+        pixmap = self._get_media_thumbnail_pixmap(ctx)
+
+        if pixmap is None or pixmap.isNull():
+            p.save()
+            p.setBrush(QColor(fallback_accent.red(), fallback_accent.green(), fallback_accent.blue(), 22))
+            p.setPen(QPen(QColor(fallback_accent.red(), fallback_accent.green(), fallback_accent.blue(), 52), 1.0))
+            p.drawEllipse(rect)
+            p.restore()
+            return False
+
+        scaled = pixmap.scaled(
+            int(max(1.0, rect.width())),
+            int(max(1.0, rect.height())),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+
+        x = int(rect.left() + (rect.width() - scaled.width()) / 2.0)
+        y = int(rect.top() + (rect.height() - scaled.height()) / 2.0)
+
+        clip_path = QPainterPath()
+        clip_path.addEllipse(rect)
+
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        p.setClipPath(clip_path)
+        p.drawPixmap(x, y, scaled)
+        p.restore()
+
+        p.save()
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(255, 255, 255, 48), max(1.0, clip_radius * 0.010)))
+        p.drawEllipse(rect)
+        p.setPen(QPen(QColor(fallback_accent.red(), fallback_accent.green(), fallback_accent.blue(), 72), max(1.0, clip_radius * 0.014)))
+        p.drawEllipse(rect.adjusted(1.5, 1.5, -1.5, -1.5))
+        p.restore()
+
+        return True
 
     def _paint_selection(self, p: QPainter):
         pen = QPen(QColor("#FFFFFF"))

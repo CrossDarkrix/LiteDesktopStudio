@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import base64
 import asyncio
 import ctypes
 import ctypes.wintypes
@@ -78,6 +79,18 @@ class NullMediaMetadataEngine:
     def force_refresh(self):
         pass
 
+    def get_thumbnail_bytes(self):
+        return b""
+
+    def get_thumbnail_mime_type(self):
+        return ""
+
+    def get_thumbnail_data_url(self):
+        return ""
+
+    def save_thumbnail_to(self, path):
+        return False
+
     def snapshot(self):
         return {
             "available": False,
@@ -88,6 +101,8 @@ class NullMediaMetadataEngine:
             "app_id": "",
             "playback_status": "Unavailable",
             "thumbnail_bytes": b"",
+            "thumbnail_mime_type": "",
+            "thumbnail_data_url": "",
             "updated_at": "",
         }
 
@@ -1094,6 +1109,7 @@ class MediaMetadataEngine:
         self.app_id = ""
         self.playback_status = ""
         self.thumbnail_bytes = b""
+        self.thumbnail_mime_type = ""
         self.updated_at = ""
 
         self.poll_interval = 2.0
@@ -1116,6 +1132,10 @@ class MediaMetadataEngine:
 
     def snapshot(self):
         with self._lock:
+            thumbnail_bytes = self.thumbnail_bytes
+            thumbnail_mime_type = self.thumbnail_mime_type
+            thumbnail_data_url = self._thumbnail_data_url_unlocked(thumbnail_bytes, thumbnail_mime_type)
+
             return {
                 "available": self.available,
                 "error": self.error,
@@ -1124,9 +1144,78 @@ class MediaMetadataEngine:
                 "album": self.album,
                 "app_id": self.app_id,
                 "playback_status": self.playback_status,
-                "thumbnail_bytes": self.thumbnail_bytes,
+                "thumbnail_bytes": thumbnail_bytes,
+                "thumbnail_mime_type": thumbnail_mime_type,
+                "thumbnail_data_url": thumbnail_data_url,
                 "updated_at": self.updated_at,
             }
+
+    def get_thumbnail_bytes(self):
+        """
+        現在のメディアサムネイルを bytes として返す。
+        取得できない場合は b"" を返す。
+
+        bytes は immutable なので、呼び出し側で QImage.fromData(...) などに渡してよい。
+        """
+        with self._lock:
+            return self.thumbnail_bytes or b""
+
+    def get_thumbnail_mime_type(self):
+        """
+        現在のメディアサムネイルの MIME type を返す。
+        判定できない場合や未取得の場合は "" を返す。
+        """
+        with self._lock:
+            return self.thumbnail_mime_type or ""
+
+    def get_thumbnail_data_url(self):
+        """
+        現在のメディアサムネイルを data URL として返す。
+        HTML/JS 側へ渡す用途を想定。未取得の場合は "" を返す。
+        """
+        with self._lock:
+            return self._thumbnail_data_url_unlocked(self.thumbnail_bytes, self.thumbnail_mime_type)
+
+    def save_thumbnail_to(self, path):
+        """
+        現在のメディアサムネイルを指定パスへ保存する。
+        保存できた場合 True、サムネイルがない/保存に失敗した場合 False を返す。
+        """
+        data = self.get_thumbnail_bytes()
+        if not data:
+            return False
+
+        try:
+            with open(path, "wb") as f:
+                f.write(data)
+            return True
+        except:
+            return False
+
+    def _thumbnail_data_url_unlocked(self, thumbnail_bytes, mime_type):
+        if not thumbnail_bytes:
+            return ""
+
+        mime_type = mime_type or self._detect_image_mime_type(thumbnail_bytes) or "application/octet-stream"
+        encoded = base64.b64encode(thumbnail_bytes).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+    def _detect_image_mime_type(self, data):
+        if not data:
+            return ""
+
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+            return "image/gif"
+        if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
+            return "image/webp"
+        if data.startswith(b"BM"):
+            return "image/bmp"
+
+        return ""
 
     def _get_media_manager_class(self):
         try:
@@ -1177,6 +1266,7 @@ class MediaMetadataEngine:
                     self.app_id = ""
                     self.playback_status = "Unavailable"
                     self.thumbnail_bytes = b""
+                    self.thumbnail_mime_type = ""
                     self.updated_at = time.strftime("%H:%M:%S")
                 return
 
@@ -1193,6 +1283,7 @@ class MediaMetadataEngine:
                     self.app_id = ""
                     self.playback_status = "No session"
                     self.thumbnail_bytes = b""
+                    self.thumbnail_mime_type = ""
                     self.updated_at = time.strftime("%H:%M:%S")
                 return
 
@@ -1215,6 +1306,7 @@ class MediaMetadataEngine:
             thumb_bytes = b""
             if thumbnail is not None:
                 thumb_bytes = await self._read_thumbnail_bytes(thumbnail)
+            thumb_mime_type = self._detect_image_mime_type(thumb_bytes)
 
             with self._lock:
                 self.available = True
@@ -1225,6 +1317,7 @@ class MediaMetadataEngine:
                 self.app_id = app_id
                 self.playback_status = playback_status
                 self.thumbnail_bytes = thumb_bytes
+                self.thumbnail_mime_type = thumb_mime_type
                 self.updated_at = time.strftime("%H:%M:%S")
 
         except Exception as e:
