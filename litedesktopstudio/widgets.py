@@ -229,6 +229,23 @@ class VisualizerWidget(BaseWidget):
         except Exception:
             return ((now * speed) % 360.0)
 
+    def _flat_spectrum_inner_rotation_degrees2(self, now: float) -> float:
+        """Return a stable, smooth counter-clockwise rotation angle for flat_spectrum's inner layer."""
+        try:
+            now = float(now)
+        except Exception:
+            now = time.time()
+        speed = 58.0
+        try:
+            last_now = float(getattr(self, "_flat_spectrum_inner_rotation_time2", now))
+            angle = float(getattr(self, "_flat_spectrum_inner_rotation_angle2", (now * speed) % 360.0))
+            dt = max(0.0, min(1.0 / 20.0, now - last_now))
+            angle = (angle + speed * dt) % 360.0
+            self._flat_spectrum_inner_rotation_time2 = now
+            self._flat_spectrum_inner_rotation_angle2 = angle
+            return angle
+        except Exception:
+            return ((now * speed) % 360.0)
 
     def _visualizer_effect_padding(self) -> float:
         """External cache padding is disabled; visualizer effects are scaled to fit inside the widget frame."""
@@ -1542,19 +1559,57 @@ class VisualizerWidget(BaseWidget):
             outer_max_radius = max_effect_radius * 0.92
             outer_min_radius = max_effect_radius * 0.54
             sample_count = max(100, min(256, count if count > 0 else 128))
+
+            # Same restrained vocal/main-source focus as audio_ripple.
+            # It uses the middle band, weakens broadband bass influence, and gates idle motion.
             half_count = max(2, sample_count // 2)
-            fft_half = []
+            source_count = max(1, len(values))
+            mid_start = min(source_count - 1, max(0, int(source_count * 0.18)))
+            mid_end = min(source_count - 1, max(mid_start + 1, int(source_count * 0.64)))
+            mid_span = max(1, mid_end - mid_start)
+            vocal_half = []
             for si in range(half_count):
-                src_i = int(si * max(1, count // 2 - 1) / max(1, half_count - 1))
-                fft_half.append(values[src_i])
-            raw_fft_values = fft_half + list(reversed(fft_half))
-            sample_count = len(raw_fft_values)
+                pos = si / max(1, half_count - 1)
+                src_i = mid_start + int(pos * mid_span)
+                src_i = max(0, min(source_count - 1, src_i))
+                center_weight = 1.0 - min(1.0, abs(pos - 0.45) / 0.45)
+                band_weight = 0.36 + center_weight * 0.64
+                value = max(0.0, float(values[src_i]) - bass * 0.18)
+                vocal_half.append(max(0.0, min(1.0, value * band_weight * 1.58)))
+
+            focused_values = vocal_half + list(reversed(vocal_half))
+            sample_count = len(focused_values)
+            focused_peak = max(focused_values) if focused_values else 0.0
+            focused_avg = sum(focused_values) / max(1, len(focused_values))
+            focused_energy = focused_peak * 0.68 + focused_avg * 0.32
+            previous_energy = float(getattr(self, "_flat_spectrum_focused_energy", focused_energy))
+
+            # User-tuned settings: slower gate curve and slightly slower onset denominator.
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            target_gate = max(energy_gate, onset_gate * 0.80)
+            if target_gate < 0.055:
+                target_gate = 0.0
+            smoothed_gate = float(getattr(self, "_flat_spectrum_focused_gate", 0.0))
+            if target_gate >= smoothed_gate:
+                smoothed_gate = smoothed_gate * 0.54 + target_gate * 0.46
+            else:
+                smoothed_gate = smoothed_gate * 0.88 + target_gate * 0.12
+            if smoothed_gate < 0.035:
+                smoothed_gate = 0.0
+            self._flat_spectrum_focused_energy = focused_energy
+            self._flat_spectrum_focused_gate = smoothed_gate
+
+            raw_fft_values = [v * smoothed_gate for v in focused_values]
             previous_smoothed = getattr(self, "_flat_spectrum_audio_ripple_smoothed", None)
             if not isinstance(previous_smoothed, list) or len(previous_smoothed) != sample_count:
                 previous_smoothed = list(raw_fft_values)
             temporal_smoothed = []
             for si, current_value in enumerate(raw_fft_values):
-                temporal_smoothed.append(previous_smoothed[si] * 0.85 + current_value * 0.15)
+                if current_value >= previous_smoothed[si]:
+                    temporal_smoothed.append(previous_smoothed[si] * 0.70 + current_value * 0.30)
+                else:
+                    temporal_smoothed.append(previous_smoothed[si] * 0.90 + current_value * 0.10)
             self._flat_spectrum_audio_ripple_smoothed = temporal_smoothed
             fft_values = []
             for si, current_value in enumerate(temporal_smoothed):
@@ -1570,6 +1625,7 @@ class VisualizerWidget(BaseWidget):
             volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
             available_push = max(8.0, outer_max_radius - outer_base_radius)
             outer_points = []
+            white_spark_points = []
             for si, fft_value in enumerate(fft_values):
                 angle = -math.pi / 2.0 + (si / sample_count) * math.tau
                 prev_v = fft_values[si - 1]
@@ -1582,10 +1638,10 @@ class VisualizerWidget(BaseWidget):
                 raw_prev = raw_fft_values[si - 1]
                 raw_next = raw_fft_values[(si + 1) % sample_count]
                 raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
-                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.22))
-                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
-                peak_gate = max(0.0, min(1.0, volume_peak_gate))
-                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.16))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.055) / 0.34))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate)) * smoothed_gate
+                audio_reactivity = max(transient_gate * 1.10, spike_gate * smoothed_gate, level_gate * 1.28, peak_gate * 0.22)
                 audio_reactivity = max(0.0, min(1.0, audio_reactivity))
                 audio_reactivity = audio_reactivity * audio_reactivity
                 tip_speed = 0.32 + seed * 0.22 + audio_reactivity * 0.55
@@ -1603,13 +1659,25 @@ class VisualizerWidget(BaseWidget):
                 tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
                 tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
                 rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
-                outer_points.append(QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr))
+                point = QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr)
+                outer_points.append(point)
+
+                # Spark follows the added white outer line and appears only on real jagged snaps.
+                spark_strength = snap_envelope * audio_reactivity * max(0.0, min(0.36, tip_amount / max(1.0, available_push * 0.22)))
+                if spark_strength > 0.30:
+                    spark_radius = rr + 2.0
+                    white_spark_points.append((
+                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        angle,
+                        max(0.0, min(1.0, spark_strength)),
+                        seed,
+                    ))
             if outer_points:
                 outer_path = QPainterPath(outer_points[0])
                 for pt in outer_points[1:]:
                     outer_path.lineTo(pt)
                 outer_path.closeSubpath()
-                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                def _make_outer_offset_path(offset):
                     offset_path = QPainterPath()
                     first = outer_points[0]
                     first_len = max(1.0, math.hypot(first.x() - cx, first.y() - cy))
@@ -1618,6 +1686,10 @@ class VisualizerWidget(BaseWidget):
                         plen = max(1.0, math.hypot(pt.x() - cx, pt.y() - cy))
                         offset_path.lineTo(QPointF(pt.x() + (pt.x() - cx) / plen * offset, pt.y() + (pt.y() - cy) / plen * offset))
                     offset_path.closeSubpath()
+                    return offset_path
+
+                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                    offset_path = _make_outer_offset_path(offset)
                     trail_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), int(32 * alpha_scale)), max(1.0, 1.25 * width_scale))
                     trail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                     trail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -1635,16 +1707,58 @@ class VisualizerWidget(BaseWidget):
                 glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 p.setPen(glow_pen_2)
                 p.drawPath(outer_path)
+
+                # Second white line, placed 2 px outside the flat-spectrum outer ripple.
+                white_outer_path = _make_outer_offset_path(2.0)
+                white_glow_pen_1 = QPen(QColor(255, 255, 255, 40), max(7.0, 8.5 * width_scale + smoothed_gate * 3.0))
+                white_glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_1)
+                p.drawPath(white_outer_path)
+                white_glow_pen_2 = QPen(QColor(255, 255, 255, 72), max(3.6, 4.5 * width_scale + smoothed_gate * 1.6))
+                white_glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_2)
+                p.drawPath(white_outer_path)
+                white_pen = QPen(QColor(255, 255, 255, 238), max(1.2, 2.0 * width_scale))
+                white_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_pen)
+                p.drawPath(white_outer_path)
+
                 core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
                 core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 p.setPen(core_pen)
                 p.drawPath(outer_path)
 
+                if white_spark_points:
+                    for spark_pt, spark_angle, spark_strength, spark_seed in white_spark_points:
+                        spark_alpha = max(0, min(255, int(70 + spark_strength * 185)))
+                        spark_size = short_side * (0.006 + spark_strength * 0.012)
+                        self._draw_visualizer_soft_orb(p, spark_pt, spark_size * 2.8, QColor(255, 255, 255, spark_alpha), spark_alpha)
+                        radial = QPointF(math.cos(spark_angle), math.sin(spark_angle))
+                        tangent = QPointF(-math.sin(spark_angle), math.cos(spark_angle))
+                        ray_len = spark_size * (1.45 + spark_strength * 1.35)
+                        ray_alpha = max(0, min(255, int(105 + spark_strength * 125)))
+                        ray_pen = QPen(QColor(255, 255, 255, ray_alpha), max(0.7, 1.15 * width_scale))
+                        ray_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                        p.setPen(ray_pen)
+                        p.drawLine(
+                            QPointF(spark_pt.x() - radial.x() * ray_len, spark_pt.y() - radial.y() * ray_len),
+                            QPointF(spark_pt.x() + radial.x() * ray_len, spark_pt.y() + radial.y() * ray_len),
+                        )
+                        p.drawLine(
+                            QPointF(spark_pt.x() - tangent.x() * ray_len * 0.62, spark_pt.y() - tangent.y() * ray_len * 0.62),
+                            QPointF(spark_pt.x() + tangent.x() * ray_len * 0.62, spark_pt.y() + tangent.y() * ray_len * 0.62),
+                        )
+
+            flat_spectrum_rotation_degrees = self._flat_spectrum_inner_rotation_degrees(now)
+            flat_spectrum_rotation_degrees2 = self._flat_spectrum_inner_rotation_degrees2(now)
             p.save()
             try:
                 p.translate(cx, cy)
-                p.rotate(self._flat_spectrum_inner_rotation_degrees(now))
+                p.rotate(flat_spectrum_rotation_degrees)
                 p.translate(-cx, -cy)
                 inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
                 acc = QColor(base_color)
@@ -1722,13 +1836,22 @@ class VisualizerWidget(BaseWidget):
                 cover_outer_radius * 2.0,
                 cover_outer_radius * 2.0,
             )
-            has_cover_image = self._draw_visualizer_media_thumbnail_cover(
-                p,
-                cover_rect,
-                ctx,
-                clip_radius=cover_outer_radius,
-                fallback_accent=mint,
-            )
+            # Rotate the cover image with the same angle used by the flat-spectrum music bars.
+            # The circular clip stays centered; only the artwork inside visually spins with the bars.
+            p.save()
+            try:
+                p.translate(cx, cy)
+                p.rotate(flat_spectrum_rotation_degrees2)
+                p.translate(-cx, -cy)
+                has_cover_image = self._draw_visualizer_media_thumbnail_cover(
+                    p,
+                    cover_rect,
+                    ctx,
+                    clip_radius=cover_outer_radius,
+                    fallback_accent=mint,
+                )
+            finally:
+                p.restore()
 
             # Keep a subtle center-circle accent when a cover exists, but do not hide the artwork.
             if has_cover_image:
@@ -2719,19 +2842,57 @@ class VisualizerWidget(BaseWidget):
             outer_max_radius = max_effect_radius * 0.92
             outer_min_radius = max_effect_radius * 0.54
             sample_count = max(100, min(256, count if count > 0 else 128))
+
+            # Same restrained vocal/main-source focus as audio_ripple.
+            # It uses the middle band, weakens broadband bass influence, and gates idle motion.
             half_count = max(2, sample_count // 2)
-            fft_half = []
+            source_count = max(1, len(values))
+            mid_start = min(source_count - 1, max(0, int(source_count * 0.18)))
+            mid_end = min(source_count - 1, max(mid_start + 1, int(source_count * 0.64)))
+            mid_span = max(1, mid_end - mid_start)
+            vocal_half = []
             for si in range(half_count):
-                src_i = int(si * max(1, count // 2 - 1) / max(1, half_count - 1))
-                fft_half.append(values[src_i])
-            raw_fft_values = fft_half + list(reversed(fft_half))
-            sample_count = len(raw_fft_values)
+                pos = si / max(1, half_count - 1)
+                src_i = mid_start + int(pos * mid_span)
+                src_i = max(0, min(source_count - 1, src_i))
+                center_weight = 1.0 - min(1.0, abs(pos - 0.45) / 0.45)
+                band_weight = 0.36 + center_weight * 0.64
+                value = max(0.0, float(values[src_i]) - bass * 0.18)
+                vocal_half.append(max(0.0, min(1.0, value * band_weight * 1.58)))
+
+            focused_values = vocal_half + list(reversed(vocal_half))
+            sample_count = len(focused_values)
+            focused_peak = max(focused_values) if focused_values else 0.0
+            focused_avg = sum(focused_values) / max(1, len(focused_values))
+            focused_energy = focused_peak * 0.68 + focused_avg * 0.32
+            previous_energy = float(getattr(self, "_flat_spectrum_focused_energy", focused_energy))
+
+            # User-tuned settings: slower gate curve and slightly slower onset denominator.
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            target_gate = max(energy_gate, onset_gate * 0.80)
+            if target_gate < 0.055:
+                target_gate = 0.0
+            smoothed_gate = float(getattr(self, "_flat_spectrum_focused_gate", 0.0))
+            if target_gate >= smoothed_gate:
+                smoothed_gate = smoothed_gate * 0.54 + target_gate * 0.46
+            else:
+                smoothed_gate = smoothed_gate * 0.88 + target_gate * 0.12
+            if smoothed_gate < 0.035:
+                smoothed_gate = 0.0
+            self._flat_spectrum_focused_energy = focused_energy
+            self._flat_spectrum_focused_gate = smoothed_gate
+
+            raw_fft_values = [v * smoothed_gate for v in focused_values]
             previous_smoothed = getattr(self, "_flat_spectrum_audio_ripple_smoothed", None)
             if not isinstance(previous_smoothed, list) or len(previous_smoothed) != sample_count:
                 previous_smoothed = list(raw_fft_values)
             temporal_smoothed = []
             for si, current_value in enumerate(raw_fft_values):
-                temporal_smoothed.append(previous_smoothed[si] * 0.85 + current_value * 0.15)
+                if current_value >= previous_smoothed[si]:
+                    temporal_smoothed.append(previous_smoothed[si] * 0.70 + current_value * 0.30)
+                else:
+                    temporal_smoothed.append(previous_smoothed[si] * 0.90 + current_value * 0.10)
             self._flat_spectrum_audio_ripple_smoothed = temporal_smoothed
             fft_values = []
             for si, current_value in enumerate(temporal_smoothed):
@@ -2747,6 +2908,7 @@ class VisualizerWidget(BaseWidget):
             volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
             available_push = max(8.0, outer_max_radius - outer_base_radius)
             outer_points = []
+            white_spark_points = []
             for si, fft_value in enumerate(fft_values):
                 angle = -math.pi / 2.0 + (si / sample_count) * math.tau
                 prev_v = fft_values[si - 1]
@@ -2759,10 +2921,10 @@ class VisualizerWidget(BaseWidget):
                 raw_prev = raw_fft_values[si - 1]
                 raw_next = raw_fft_values[(si + 1) % sample_count]
                 raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
-                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.22))
-                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
-                peak_gate = max(0.0, min(1.0, volume_peak_gate))
-                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.16))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.055) / 0.34))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate)) * smoothed_gate
+                audio_reactivity = max(transient_gate * 1.10, spike_gate * smoothed_gate, level_gate * 1.28, peak_gate * 0.22)
                 audio_reactivity = max(0.0, min(1.0, audio_reactivity))
                 audio_reactivity = audio_reactivity * audio_reactivity
                 tip_speed = 0.32 + seed * 0.22 + audio_reactivity * 0.55
@@ -2780,13 +2942,25 @@ class VisualizerWidget(BaseWidget):
                 tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
                 tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
                 rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
-                outer_points.append(QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr))
+                point = QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr)
+                outer_points.append(point)
+
+                # Spark follows the added white outer line and appears only on real jagged snaps.
+                spark_strength = snap_envelope * audio_reactivity * max(0.0, min(0.36, tip_amount / max(1.0, available_push * 0.22)))
+                if spark_strength > 0.30:
+                    spark_radius = rr + 2.0
+                    white_spark_points.append((
+                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        angle,
+                        max(0.0, min(1.0, spark_strength)),
+                        seed,
+                    ))
             if outer_points:
                 outer_path = QPainterPath(outer_points[0])
                 for pt in outer_points[1:]:
                     outer_path.lineTo(pt)
                 outer_path.closeSubpath()
-                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                def _make_outer_offset_path(offset):
                     offset_path = QPainterPath()
                     first = outer_points[0]
                     first_len = max(1.0, math.hypot(first.x() - cx, first.y() - cy))
@@ -2795,6 +2969,10 @@ class VisualizerWidget(BaseWidget):
                         plen = max(1.0, math.hypot(pt.x() - cx, pt.y() - cy))
                         offset_path.lineTo(QPointF(pt.x() + (pt.x() - cx) / plen * offset, pt.y() + (pt.y() - cy) / plen * offset))
                     offset_path.closeSubpath()
+                    return offset_path
+
+                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                    offset_path = _make_outer_offset_path(offset)
                     trail_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), int(32 * alpha_scale)), max(1.0, 1.25 * width_scale))
                     trail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                     trail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -2812,16 +2990,58 @@ class VisualizerWidget(BaseWidget):
                 glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 p.setPen(glow_pen_2)
                 p.drawPath(outer_path)
+
+                # Second white line, placed 2 px outside the flat-spectrum outer ripple.
+                white_outer_path = _make_outer_offset_path(2.0)
+                white_glow_pen_1 = QPen(QColor(255, 255, 255, 40), max(7.0, 8.5 * width_scale + smoothed_gate * 3.0))
+                white_glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_1)
+                p.drawPath(white_outer_path)
+                white_glow_pen_2 = QPen(QColor(255, 255, 255, 72), max(3.6, 4.5 * width_scale + smoothed_gate * 1.6))
+                white_glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_2)
+                p.drawPath(white_outer_path)
+                white_pen = QPen(QColor(255, 255, 255, 238), max(1.2, 2.0 * width_scale))
+                white_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_pen)
+                p.drawPath(white_outer_path)
+
                 core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
                 core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 p.setPen(core_pen)
                 p.drawPath(outer_path)
 
+                if white_spark_points:
+                    for spark_pt, spark_angle, spark_strength, spark_seed in white_spark_points:
+                        spark_alpha = max(0, min(255, int(70 + spark_strength * 185)))
+                        spark_size = short_side * (0.006 + spark_strength * 0.012)
+                        self._draw_visualizer_soft_orb(p, spark_pt, spark_size * 2.8, QColor(255, 255, 255, spark_alpha), spark_alpha)
+                        radial = QPointF(math.cos(spark_angle), math.sin(spark_angle))
+                        tangent = QPointF(-math.sin(spark_angle), math.cos(spark_angle))
+                        ray_len = spark_size * (1.45 + spark_strength * 1.35)
+                        ray_alpha = max(0, min(255, int(105 + spark_strength * 125)))
+                        ray_pen = QPen(QColor(255, 255, 255, ray_alpha), max(0.7, 1.15 * width_scale))
+                        ray_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                        p.setPen(ray_pen)
+                        p.drawLine(
+                            QPointF(spark_pt.x() - radial.x() * ray_len, spark_pt.y() - radial.y() * ray_len),
+                            QPointF(spark_pt.x() + radial.x() * ray_len, spark_pt.y() + radial.y() * ray_len),
+                        )
+                        p.drawLine(
+                            QPointF(spark_pt.x() - tangent.x() * ray_len * 0.62, spark_pt.y() - tangent.y() * ray_len * 0.62),
+                            QPointF(spark_pt.x() + tangent.x() * ray_len * 0.62, spark_pt.y() + tangent.y() * ray_len * 0.62),
+                        )
+
+            flat_spectrum_rotation_degrees = self._flat_spectrum_inner_rotation_degrees(now)
+            flat_spectrum_rotation_degrees2 = self._flat_spectrum_inner_rotation_degrees2(now)
             p.save()
             try:
                 p.translate(cx, cy)
-                p.rotate(self._flat_spectrum_inner_rotation_degrees(now))
+                p.rotate(flat_spectrum_rotation_degrees)
                 p.translate(-cx, -cy)
                 inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
                 acc = QColor(base_color)
@@ -3057,19 +3277,57 @@ class VisualizerWidget(BaseWidget):
             outer_max_radius = max_effect_radius * 0.92
             outer_min_radius = max_effect_radius * 0.54
             sample_count = max(100, min(256, count if count > 0 else 128))
+
+            # Same restrained vocal/main-source focus as audio_ripple.
+            # It uses the middle band, weakens broadband bass influence, and gates idle motion.
             half_count = max(2, sample_count // 2)
-            fft_half = []
+            source_count = max(1, len(values))
+            mid_start = min(source_count - 1, max(0, int(source_count * 0.18)))
+            mid_end = min(source_count - 1, max(mid_start + 1, int(source_count * 0.64)))
+            mid_span = max(1, mid_end - mid_start)
+            vocal_half = []
             for si in range(half_count):
-                src_i = int(si * max(1, count // 2 - 1) / max(1, half_count - 1))
-                fft_half.append(values[src_i])
-            raw_fft_values = fft_half + list(reversed(fft_half))
-            sample_count = len(raw_fft_values)
+                pos = si / max(1, half_count - 1)
+                src_i = mid_start + int(pos * mid_span)
+                src_i = max(0, min(source_count - 1, src_i))
+                center_weight = 1.0 - min(1.0, abs(pos - 0.45) / 0.45)
+                band_weight = 0.36 + center_weight * 0.64
+                value = max(0.0, float(values[src_i]) - bass * 0.18)
+                vocal_half.append(max(0.0, min(1.0, value * band_weight * 1.58)))
+
+            focused_values = vocal_half + list(reversed(vocal_half))
+            sample_count = len(focused_values)
+            focused_peak = max(focused_values) if focused_values else 0.0
+            focused_avg = sum(focused_values) / max(1, len(focused_values))
+            focused_energy = focused_peak * 0.68 + focused_avg * 0.32
+            previous_energy = float(getattr(self, "_flat_spectrum_focused_energy", focused_energy))
+
+            # User-tuned settings: slower gate curve and slightly slower onset denominator.
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            target_gate = max(energy_gate, onset_gate * 0.80)
+            if target_gate < 0.055:
+                target_gate = 0.0
+            smoothed_gate = float(getattr(self, "_flat_spectrum_focused_gate", 0.0))
+            if target_gate >= smoothed_gate:
+                smoothed_gate = smoothed_gate * 0.54 + target_gate * 0.46
+            else:
+                smoothed_gate = smoothed_gate * 0.88 + target_gate * 0.12
+            if smoothed_gate < 0.035:
+                smoothed_gate = 0.0
+            self._flat_spectrum_focused_energy = focused_energy
+            self._flat_spectrum_focused_gate = smoothed_gate
+
+            raw_fft_values = [v * smoothed_gate for v in focused_values]
             previous_smoothed = getattr(self, "_flat_spectrum_audio_ripple_smoothed", None)
             if not isinstance(previous_smoothed, list) or len(previous_smoothed) != sample_count:
                 previous_smoothed = list(raw_fft_values)
             temporal_smoothed = []
             for si, current_value in enumerate(raw_fft_values):
-                temporal_smoothed.append(previous_smoothed[si] * 0.85 + current_value * 0.15)
+                if current_value >= previous_smoothed[si]:
+                    temporal_smoothed.append(previous_smoothed[si] * 0.70 + current_value * 0.30)
+                else:
+                    temporal_smoothed.append(previous_smoothed[si] * 0.90 + current_value * 0.10)
             self._flat_spectrum_audio_ripple_smoothed = temporal_smoothed
             fft_values = []
             for si, current_value in enumerate(temporal_smoothed):
@@ -3085,6 +3343,7 @@ class VisualizerWidget(BaseWidget):
             volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
             available_push = max(8.0, outer_max_radius - outer_base_radius)
             outer_points = []
+            white_spark_points = []
             for si, fft_value in enumerate(fft_values):
                 angle = -math.pi / 2.0 + (si / sample_count) * math.tau
                 prev_v = fft_values[si - 1]
@@ -3097,10 +3356,10 @@ class VisualizerWidget(BaseWidget):
                 raw_prev = raw_fft_values[si - 1]
                 raw_next = raw_fft_values[(si + 1) % sample_count]
                 raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
-                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.22))
-                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
-                peak_gate = max(0.0, min(1.0, volume_peak_gate))
-                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[si]) / 0.16))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.055) / 0.34))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate)) * smoothed_gate
+                audio_reactivity = max(transient_gate * 1.10, spike_gate * smoothed_gate, level_gate * 1.28, peak_gate * 0.22)
                 audio_reactivity = max(0.0, min(1.0, audio_reactivity))
                 audio_reactivity = audio_reactivity * audio_reactivity
                 tip_speed = 0.32 + seed * 0.22 + audio_reactivity * 0.55
@@ -3118,13 +3377,25 @@ class VisualizerWidget(BaseWidget):
                 tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
                 tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
                 rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
-                outer_points.append(QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr))
+                point = QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr)
+                outer_points.append(point)
+
+                # Spark follows the added white outer line and appears only on real jagged snaps.
+                spark_strength = snap_envelope * audio_reactivity * max(0.0, min(0.36, tip_amount / max(1.0, available_push * 0.22)))
+                if spark_strength > 0.30:
+                    spark_radius = rr + 2.0
+                    white_spark_points.append((
+                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        angle,
+                        max(0.0, min(1.0, spark_strength)),
+                        seed,
+                    ))
             if outer_points:
                 outer_path = QPainterPath(outer_points[0])
                 for pt in outer_points[1:]:
                     outer_path.lineTo(pt)
                 outer_path.closeSubpath()
-                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                def _make_outer_offset_path(offset):
                     offset_path = QPainterPath()
                     first = outer_points[0]
                     first_len = max(1.0, math.hypot(first.x() - cx, first.y() - cy))
@@ -3133,6 +3404,10 @@ class VisualizerWidget(BaseWidget):
                         plen = max(1.0, math.hypot(pt.x() - cx, pt.y() - cy))
                         offset_path.lineTo(QPointF(pt.x() + (pt.x() - cx) / plen * offset, pt.y() + (pt.y() - cy) / plen * offset))
                     offset_path.closeSubpath()
+                    return offset_path
+
+                for offset, alpha_scale in ((-3.0, 0.22), (3.0, 0.16)):
+                    offset_path = _make_outer_offset_path(offset)
                     trail_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), int(32 * alpha_scale)), max(1.0, 1.25 * width_scale))
                     trail_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                     trail_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -3150,16 +3425,58 @@ class VisualizerWidget(BaseWidget):
                 glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 p.setPen(glow_pen_2)
                 p.drawPath(outer_path)
+
+                # Second white line, placed 2 px outside the flat-spectrum outer ripple.
+                white_outer_path = _make_outer_offset_path(2.0)
+                white_glow_pen_1 = QPen(QColor(255, 255, 255, 40), max(7.0, 8.5 * width_scale + smoothed_gate * 3.0))
+                white_glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_1)
+                p.drawPath(white_outer_path)
+                white_glow_pen_2 = QPen(QColor(255, 255, 255, 72), max(3.6, 4.5 * width_scale + smoothed_gate * 1.6))
+                white_glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_2)
+                p.drawPath(white_outer_path)
+                white_pen = QPen(QColor(255, 255, 255, 238), max(1.2, 2.0 * width_scale))
+                white_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_pen)
+                p.drawPath(white_outer_path)
+
                 core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
                 core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 p.setPen(core_pen)
                 p.drawPath(outer_path)
 
+                if white_spark_points:
+                    for spark_pt, spark_angle, spark_strength, spark_seed in white_spark_points:
+                        spark_alpha = max(0, min(255, int(70 + spark_strength * 185)))
+                        spark_size = short_side * (0.006 + spark_strength * 0.012)
+                        self._draw_visualizer_soft_orb(p, spark_pt, spark_size * 2.8, QColor(255, 255, 255, spark_alpha), spark_alpha)
+                        radial = QPointF(math.cos(spark_angle), math.sin(spark_angle))
+                        tangent = QPointF(-math.sin(spark_angle), math.cos(spark_angle))
+                        ray_len = spark_size * (1.45 + spark_strength * 1.35)
+                        ray_alpha = max(0, min(255, int(105 + spark_strength * 125)))
+                        ray_pen = QPen(QColor(255, 255, 255, ray_alpha), max(0.7, 1.15 * width_scale))
+                        ray_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                        p.setPen(ray_pen)
+                        p.drawLine(
+                            QPointF(spark_pt.x() - radial.x() * ray_len, spark_pt.y() - radial.y() * ray_len),
+                            QPointF(spark_pt.x() + radial.x() * ray_len, spark_pt.y() + radial.y() * ray_len),
+                        )
+                        p.drawLine(
+                            QPointF(spark_pt.x() - tangent.x() * ray_len * 0.62, spark_pt.y() - tangent.y() * ray_len * 0.62),
+                            QPointF(spark_pt.x() + tangent.x() * ray_len * 0.62, spark_pt.y() + tangent.y() * ray_len * 0.62),
+                        )
+
+            flat_spectrum_rotation_degrees = self._flat_spectrum_inner_rotation_degrees(now)
+            flat_spectrum_rotation_degrees2 = self._flat_spectrum_inner_rotation_degrees2(now)
             p.save()
             try:
                 p.translate(cx, cy)
-                p.rotate(self._flat_spectrum_inner_rotation_degrees(now))
+                p.rotate(flat_spectrum_rotation_degrees)
                 p.translate(-cx, -cy)
                 inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
                 acc = QColor(base_color)
@@ -3408,14 +3725,56 @@ class VisualizerWidget(BaseWidget):
             sensitivity = min(150.0, max(50.0, available_push * 0.60))
             sample_count = max(100, min(256, count if count > 0 else 128))
 
-            # Symmetric FFT mode: first half + mirrored second half.
+            # Vocal / main-source focused mode: use the middle band instead of global peaks.
+            # This keeps bass hits and isolated high-frequency peaks from driving the ripple too much,
+            # while still reacting when the vocal or main melody band actually rises.
             half_count = max(2, sample_count // 2)
-            fft_half = []
+            source_count = max(1, len(values))
+            mid_start = min(source_count - 1, max(0, int(source_count * 0.18)))
+            mid_end = min(source_count - 1, max(mid_start + 1, int(source_count * 0.64)))
+            mid_span = max(1, mid_end - mid_start)
+            vocal_half = []
             for i in range(half_count):
-                src_i = int(i * max(1, count // 2 - 1) / max(1, half_count - 1))
-                fft_half.append(values[src_i])
-            raw_fft_values = fft_half + list(reversed(fft_half))
-            sample_count = len(raw_fft_values)
+                pos = i / max(1, half_count - 1)
+                src_i = mid_start + int(pos * mid_span)
+                src_i = max(0, min(source_count - 1, src_i))
+
+                # Weight the center of the vocal/main range.  The edges still contribute a little,
+                # but they cannot keep the line moving by themselves.
+                center_weight = 1.0 - min(1.0, abs(pos - 0.45) / 0.45)
+                band_weight = 0.36 + center_weight * 0.64
+
+                # Reduce broadband low-end influence.  This is deliberately conservative because
+                # the goal is not a perfect vocal separator; it is a visually stable main-source follower.
+                value = max(0.0, float(values[src_i]) - bass * 0.18)
+                vocal_half.append(max(0.0, min(1.0, value * band_weight * 1.58)))
+
+            focused_values = vocal_half + list(reversed(vocal_half))
+            sample_count = len(focused_values)
+
+            focused_peak = max(focused_values) if focused_values else 0.0
+            focused_avg = sum(focused_values) / max(1, len(focused_values))
+            focused_energy = focused_peak * 0.68 + focused_avg * 0.32
+            previous_energy = float(getattr(self, "_audio_ripple_focused_energy", focused_energy))
+
+            # Gate and hysteresis: below the threshold the ripple returns to the base circle.
+            # Attack is faster than release, so vocals/main sounds feel responsive without idle jitter.
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            target_gate = max(energy_gate, onset_gate * 0.80)
+            if target_gate < 0.055:
+                target_gate = 0.0
+            smoothed_gate = float(getattr(self, "_audio_ripple_focused_gate", 0.0))
+            if target_gate >= smoothed_gate:
+                smoothed_gate = smoothed_gate * 0.54 + target_gate * 0.46
+            else:
+                smoothed_gate = smoothed_gate * 0.88 + target_gate * 0.12
+            if smoothed_gate < 0.035:
+                smoothed_gate = 0.0
+            self._audio_ripple_focused_energy = focused_energy
+            self._audio_ripple_focused_gate = smoothed_gate
+
+            raw_fft_values = [v * smoothed_gate for v in focused_values]
 
             # Base waveform remains smoothed so the circular silhouette does not collapse.
             previous_smoothed = getattr(self, "_audio_ripple_smoothed", None)
@@ -3423,7 +3782,10 @@ class VisualizerWidget(BaseWidget):
                 previous_smoothed = list(raw_fft_values)
             temporal_smoothed = []
             for i, current_value in enumerate(raw_fft_values):
-                temporal_smoothed.append(previous_smoothed[i] * 0.85 + current_value * 0.15)
+                if current_value >= previous_smoothed[i]:
+                    temporal_smoothed.append(previous_smoothed[i] * 0.70 + current_value * 0.30)
+                else:
+                    temporal_smoothed.append(previous_smoothed[i] * 0.90 + current_value * 0.10)
             self._audio_ripple_smoothed = temporal_smoothed
 
             fft_values = []
@@ -3439,6 +3801,7 @@ class VisualizerWidget(BaseWidget):
             volume_peak_gate = max(0.0, min(1.0, (max(local_peak, smoothed_peak, bass, avg) - 0.58) / 0.42))
 
             points = []
+            white_spark_points = []
             for i, fft_value in enumerate(fft_values):
                 angle = -math.pi / 2.0 + (i / sample_count) * math.tau
                 prev_v = fft_values[i - 1]
@@ -3460,12 +3823,12 @@ class VisualizerWidget(BaseWidget):
                 raw_contrast = max(0.0, raw_value - (raw_prev + raw_next) * 0.5)
 
                 # Audio-reactive gates.
-                # transient_gate responds to sudden rises; level_gate keeps loud sustained sounds alive;
-                # peak_gate gives the full ring a stronger hit only when the music is actually peaking.
-                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[i]) / 0.22))
-                level_gate = max(0.0, min(1.0, (raw_value - 0.12) / 0.50))
-                peak_gate = max(0.0, min(1.0, volume_peak_gate))
-                audio_reactivity = max(transient_gate * 1.15, spike_gate, level_gate * 1.53, peak_gate * 0.55)
+                # transient_gate responds to sudden rises; level_gate keeps sustained vocals/main sounds alive.
+                # The global peak gate is intentionally weak so peak-only events do not dominate the ripple.
+                transient_gate = max(0.0, min(1.0, (raw_value - temporal_smoothed[i]) / 0.16))
+                level_gate = max(0.0, min(1.0, (raw_value - 0.055) / 0.34))
+                peak_gate = max(0.0, min(1.0, volume_peak_gate)) * smoothed_gate
+                audio_reactivity = max(transient_gate * 1.10, spike_gate * smoothed_gate, level_gate * 1.28, peak_gate * 0.22)
                 audio_reactivity = max(0.0, min(1.0, audio_reactivity))
                 # Squaring suppresses idle/fallback noise, so tips do not move constantly.
                 audio_reactivity = audio_reactivity * audio_reactivity
@@ -3495,7 +3858,20 @@ class VisualizerWidget(BaseWidget):
                 # Baseline stays exactly on base_radius; only audio-triggered tip impulses move.
                 radius = base_radius + tip_sign * tip_amount
                 radius = max(inner_wave_radius, min(radius, max_wave_radius))
-                points.append(QPointF(cx + math.cos(angle) * radius, cy + math.sin(angle) * radius))
+                point = QPointF(cx + math.cos(angle) * radius, cy + math.sin(angle) * radius)
+                points.append(point)
+
+                # Spark only when the jagged tip is actually snapping.
+                # This follows the white outer line, so the spark appears on the second line's tip.
+                spark_strength = snap_envelope * audio_reactivity * max(0.0, min(0.36, tip_amount / max(1.0, available_push * 0.22)))
+                if spark_strength > 0.30:
+                    spark_radius = radius + 1.0
+                    white_spark_points.append((
+                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        angle,
+                        max(0.0, min(1.0, spark_strength)),
+                        seed,
+                    ))
 
             def _make_offset_path(offset):
                 path = QPainterPath()
@@ -3535,11 +3911,58 @@ class VisualizerWidget(BaseWidget):
                 p.setPen(glow_pen_2)
                 p.drawPath(path_offset)
 
+                # Two-line ripple: accent line + a white line placed 2 px outside.
+                # The white line has its own soft glow so it stays subtly luminous even while idle.
+                white_outer_path = _make_offset_path(2.0)
+                white_glow_pen_1 = QPen(QColor(255, 255, 255, 40), max(7.0, 8.5 * width_scale + smoothed_gate * 3.0))
+                white_glow_pen_1.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_1.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_1)
+                p.drawPath(white_outer_path)
+
+                white_glow_pen_2 = QPen(QColor(255, 255, 255, 72), max(3.6, 4.5 * width_scale + smoothed_gate * 1.6))
+                white_glow_pen_2.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_glow_pen_2.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_glow_pen_2)
+                p.drawPath(white_outer_path)
+
+                white_pen = QPen(QColor(255, 255, 255, 238), max(1.2, 2.0 * width_scale))
+                white_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                white_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(white_pen)
+                p.drawPath(white_outer_path)
+
                 core_pen = QPen(QColor(mint.red(), mint.green(), mint.blue(), 255), max(1.4, 2.0 * width_scale))
                 core_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
                 core_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
                 p.setPen(core_pen)
                 p.drawPath(path_offset)
+
+            # Spark flashes on the white line tips when the waveform becomes jagged.
+            # Draw after the lines so the flash sits visually on top of the second line.
+            if white_spark_points:
+                for spark_pt, spark_angle, spark_strength, spark_seed in white_spark_points:
+                    spark_alpha = max(0, min(255, int(70 + spark_strength * 185)))
+                    spark_size = short_side * (0.006 + spark_strength * 0.012)
+                    self._draw_visualizer_soft_orb(p, spark_pt, spark_size * 2.8, QColor(255, 255, 255, spark_alpha), spark_alpha)
+
+                    # Small star glint.  Tangential and radial strokes make it read as a spark,
+                    # but the alpha/length are gated so it does not become noisy while idle.
+                    radial = QPointF(math.cos(spark_angle), math.sin(spark_angle))
+                    tangent = QPointF(-math.sin(spark_angle), math.cos(spark_angle))
+                    ray_len = spark_size * (1.45 + spark_strength * 1.35)
+                    ray_alpha = max(0, min(255, int(105 + spark_strength * 125)))
+                    ray_pen = QPen(QColor(255, 255, 255, ray_alpha), max(0.7, 1.15 * width_scale))
+                    ray_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    p.setPen(ray_pen)
+                    p.drawLine(
+                        QPointF(spark_pt.x() - radial.x() * ray_len, spark_pt.y() - radial.y() * ray_len),
+                        QPointF(spark_pt.x() + radial.x() * ray_len, spark_pt.y() + radial.y() * ray_len),
+                    )
+                    p.drawLine(
+                        QPointF(spark_pt.x() - tangent.x() * ray_len * 0.62, spark_pt.y() - tangent.y() * ray_len * 0.62),
+                        QPointF(spark_pt.x() + tangent.x() * ray_len * 0.62, spark_pt.y() + tangent.y() * ray_len * 0.62),
+                    )
 
             label = str(getattr(self.cfg, "text", "") or "").strip()
             if label and not has_cover_image:
