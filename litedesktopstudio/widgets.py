@@ -174,6 +174,20 @@ class VisualizerWidget(BaseWidget):
         self._last_visualizer_frame_time = 0.0
         self._visualizer_frame_cache = None
         self._visualizer_frame_cache_key = None
+        # Flat Audio Spectrum 軽量化用キャッシュ。
+        # 静的装飾は QImage に描き切って再利用し、sin/cos はテーブル参照に寄せる。
+        self._flat_spectrum_static_hologram_cache = None
+        self._flat_spectrum_static_hologram_cache_key = None
+        self._flat_spectrum_wave_table_size = 1024
+        self._flat_spectrum_wave_table_mask = self._flat_spectrum_wave_table_size - 1
+        self._flat_spectrum_sin_table = [
+            math.sin((i / self._flat_spectrum_wave_table_size) * math.tau)
+            for i in range(self._flat_spectrum_wave_table_size)
+        ]
+        self._flat_spectrum_cos_table = [
+            math.cos((i / self._flat_spectrum_wave_table_size) * math.tau)
+            for i in range(self._flat_spectrum_wave_table_size)
+        ]
         self._last_media_thumbnail_bytes = None
         self._media_thumbnail_pixmap = None
 
@@ -246,6 +260,89 @@ class VisualizerWidget(BaseWidget):
             return angle
         except Exception:
             return ((now * speed) % 360.0)
+
+    def _flat_spectrum_sin_cos_from_angle(self, angle: float):
+        """Return an approximated (sin, cos) pair from a precomputed table.
+
+        The flat spectrum effect calls trigonometric functions many times per frame.
+        A 1024-sample table is visually smooth enough for this UI effect and avoids
+        repeated Python-level math.sin/math.cos calls in the hot path.
+        """
+        try:
+            table_size = self._flat_spectrum_wave_table_size
+            mask = self._flat_spectrum_wave_table_mask
+            index = int((float(angle) % math.tau) * table_size / math.tau) & mask
+            return self._flat_spectrum_sin_table[index], self._flat_spectrum_cos_table[index]
+        except Exception:
+            return math.sin(angle), math.cos(angle)
+
+    def _flat_spectrum_sin_cos_for_step(self, index: int, total: int, phase_turns: float = -0.25):
+        """Return an approximated (sin, cos) pair for a circular step.
+
+        phase_turns=-0.25 matches the existing -pi/2 start angle used by the
+        circular spectrum drawing code.
+        """
+        try:
+            total = max(1, int(total))
+            table_size = self._flat_spectrum_wave_table_size
+            mask = self._flat_spectrum_wave_table_mask
+            table_index = int((((int(index) / total) + phase_turns) % 1.0) * table_size) & mask
+            return self._flat_spectrum_sin_table[table_index], self._flat_spectrum_cos_table[table_index]
+        except Exception:
+            angle = -math.pi / 2.0 + (float(index) / max(1.0, float(total))) * math.tau
+            return math.sin(angle), math.cos(angle)
+
+    def _flat_spectrum_static_hologram_image(self, max_effect_radius: float, base_color: QColor, width_scale: float):
+        """Build or reuse the static hologram background for flat_spectrum.
+
+        This cache contains only non-audio-reactive elements: the radial fill and
+        fixed circular guide lines. Audio-reactive radial bars are intentionally
+        drawn outside this cache so they can keep reacting to the signal.
+        """
+        try:
+            radius = max(1.0, float(max_effect_radius))
+            scale = max(0.1, float(width_scale))
+            cache_radius = int(math.ceil(radius * 0.60 + max(3.0, scale * 3.0) + 4.0))
+            size = max(4, cache_radius * 2)
+            key = (
+                size,
+                round(radius, 2),
+                round(scale, 3),
+                int(base_color.red()),
+                int(base_color.green()),
+                int(base_color.blue()),
+            )
+            if self._flat_spectrum_static_hologram_cache_key == key and self._flat_spectrum_static_hologram_cache is not None:
+                return self._flat_spectrum_static_hologram_cache, cache_radius
+
+            image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+            image.fill(Qt.GlobalColor.transparent)
+            pp = QPainter(image)
+            try:
+                cc = QPointF(cache_radius, cache_radius)
+                inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
+                acc = QColor(base_color)
+                acc.setAlpha(105)
+                rg = QRadialGradient(cc, radius * 0.56)
+                rg.setColorAt(0.0, QColor(0, 0, 0, 70))
+                rg.setColorAt(0.50, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
+                rg.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 0))
+                pp.setPen(Qt.PenStyle.NoPen)
+                pp.setBrush(QBrush(rg))
+                pp.drawEllipse(cc, radius * 0.50, radius * 0.50)
+                pp.setBrush(Qt.BrushStyle.NoBrush)
+                pp.setPen(QPen(acc, 1.4 * scale))
+                pp.drawEllipse(cc, radius * 0.41, radius * 0.41)
+                pp.setPen(QPen(inv, 1.0 * scale))
+                pp.drawEllipse(cc, radius * 0.53, radius * 0.53)
+            finally:
+                pp.end()
+
+            self._flat_spectrum_static_hologram_cache_key = key
+            self._flat_spectrum_static_hologram_cache = image
+            return image, cache_radius
+        except Exception:
+            return None, 0
 
     def _visualizer_effect_padding(self) -> float:
         """External cache padding is disabled; visualizer effects are scaled to fit inside the widget frame."""
@@ -1555,6 +1652,18 @@ class VisualizerWidget(BaseWidget):
             # - Center: no hologram music bars; use a translucent circle instead.
             mint = QColor(base_color)
             mint.setAlpha(235)
+            # Side-view transform for Flat Audio Spectrum.
+            # 5.0 degrees is used for the requested overall angle; vertical scale makes it look viewed from the side.
+            # These can be overridden from cfg without breaking existing configs:
+            #   flat_spectrum_angle_degrees=5.0
+            #   flat_spectrum_side_view_y_scale=0.22
+            flat_spectrum_angle_degrees = float(getattr(self.cfg, "flat_spectrum_angle_degrees", 0.5))
+            flat_spectrum_side_view_y_scale = max(0.1, min(1.0, float(getattr(self.cfg, "flat_spectrum_side_view_y_scale", 0.47))))
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(flat_spectrum_angle_degrees)
+            p.scale(1.0, flat_spectrum_side_view_y_scale)
+            p.translate(-cx, -cy)
             outer_base_radius = max_effect_radius * 0.70
             outer_max_radius = max_effect_radius * 0.92
             outer_min_radius = max_effect_radius * 0.54
@@ -1585,8 +1694,8 @@ class VisualizerWidget(BaseWidget):
             previous_energy = float(getattr(self, "_flat_spectrum_focused_energy", focused_energy))
 
             # User-tuned settings: slower gate curve and slightly slower onset denominator.
-            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
-            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.08) / 0.57))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.18))
             target_gate = max(energy_gate, onset_gate * 0.80)
             if target_gate < 0.055:
                 target_gate = 0.0
@@ -1627,6 +1736,7 @@ class VisualizerWidget(BaseWidget):
             outer_points = []
             white_spark_points = []
             for si, fft_value in enumerate(fft_values):
+                sin_a, cos_a = self._flat_spectrum_sin_cos_for_step(si, sample_count)
                 angle = -math.pi / 2.0 + (si / sample_count) * math.tau
                 prev_v = fft_values[si - 1]
                 next_v = fft_values[(si + 1) % sample_count]
@@ -1659,7 +1769,7 @@ class VisualizerWidget(BaseWidget):
                 tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
                 tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
                 rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
-                point = QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr)
+                point = QPointF(cx + cos_a * rr, cy + sin_a * rr)
                 outer_points.append(point)
 
                 # Spark follows the added white outer line and appears only on real jagged snaps.
@@ -1667,7 +1777,7 @@ class VisualizerWidget(BaseWidget):
                 if spark_strength > 0.30:
                     spark_radius = rr + 2.0
                     white_spark_points.append((
-                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        QPointF(cx + cos_a * spark_radius, cy + sin_a * spark_radius),
                         angle,
                         max(0.0, min(1.0, spark_strength)),
                         seed,
@@ -1737,8 +1847,9 @@ class VisualizerWidget(BaseWidget):
                         spark_alpha = max(0, min(255, int(70 + spark_strength * 185)))
                         spark_size = short_side * (0.006 + spark_strength * 0.012)
                         self._draw_visualizer_soft_orb(p, spark_pt, spark_size * 2.8, QColor(255, 255, 255, spark_alpha), spark_alpha)
-                        radial = QPointF(math.cos(spark_angle), math.sin(spark_angle))
-                        tangent = QPointF(-math.sin(spark_angle), math.cos(spark_angle))
+                        spark_sin, spark_cos = self._flat_spectrum_sin_cos_from_angle(spark_angle)
+                        radial = QPointF(spark_cos, spark_sin)
+                        tangent = QPointF(-spark_sin, spark_cos)
                         ray_len = spark_size * (1.45 + spark_strength * 1.35)
                         ray_alpha = max(0, min(255, int(105 + spark_strength * 125)))
                         ray_pen = QPen(QColor(255, 255, 255, ray_alpha), max(0.7, 1.15 * width_scale))
@@ -1760,28 +1871,24 @@ class VisualizerWidget(BaseWidget):
                 p.translate(cx, cy)
                 p.rotate(flat_spectrum_rotation_degrees)
                 p.translate(-cx, -cy)
-                inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
-                acc = QColor(base_color)
-                acc.setAlpha(105)
-                rg = QRadialGradient(QPointF(cx, cy), max_effect_radius * 0.56)
-                rg.setColorAt(0.0, QColor(0, 0, 0, 70))
-                rg.setColorAt(0.50, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
-                rg.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 0))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(rg))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.50, max_effect_radius * 0.50)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(acc, 1.4 * width_scale))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.41, max_effect_radius * 0.41)
-                p.setPen(QPen(inv, 1.0 * width_scale))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.53, max_effect_radius * 0.53)
+                static_hologram_image, static_hologram_radius = self._flat_spectrum_static_hologram_image(max_effect_radius, base_color, width_scale)
+                if static_hologram_image is not None and static_hologram_radius > 0:
+                    p.drawImage(
+                        QRectF(
+                            cx - static_hologram_radius,
+                            cy - static_hologram_radius,
+                            static_hologram_radius * 2,
+                            static_hologram_radius * 2,
+                        ),
+                        static_hologram_image,
+                    )
                 hologram_outer_circle_radius = max_effect_radius * 0.53
                 hologram_max_bar_overhang_px = 50.0
                 hologram_inner_bar_alpha = 210
                 hologram_outer_bar_alpha = int(255 * 0.40)
                 for hi in range(0, count, max(1, count // 72)):
                     v = values[hi]
-                    a = hi / count * math.tau - math.pi / 2.0
+                    sin_a, cos_a = self._flat_spectrum_sin_cos_for_step(hi, count)
                     base_inner = max_effect_radius * 0.44
                     max_outer = hologram_outer_circle_radius + hologram_max_bar_overhang_px
                     max_len = min(40.0, max(3.0, max_outer - base_inner))
@@ -1810,7 +1917,7 @@ class VisualizerWidget(BaseWidget):
                         c = QColor(base_color)
                         c.setAlpha(alpha)
                         p.setPen(QPen(c, pen_width))
-                        p.drawLine(QPointF(cx + math.cos(a) * r1, cy + math.sin(a) * r1), QPointF(cx + math.cos(a) * r2, cy + math.sin(a) * r2))
+                        p.drawLine(QPointF(cx + cos_a * r1, cy + sin_a * r1), QPointF(cx + cos_a * r2, cy + sin_a * r2))
             finally:
                 p.restore()
 
@@ -1858,6 +1965,7 @@ class VisualizerWidget(BaseWidget):
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.setPen(QPen(QColor(255, 255, 255, 42), max(1.0, 1.0 * width_scale)))
                 p.drawEllipse(QPointF(cx, cy), center_radius, center_radius)
+            p.restore()
             p.restore(); return
 
         if style == "dynamic_glitch":
@@ -2838,6 +2946,18 @@ class VisualizerWidget(BaseWidget):
             # - Center: no hologram music bars; use a translucent circle instead.
             mint = QColor(base_color)
             mint.setAlpha(235)
+            # Side-view transform for Flat Audio Spectrum.
+            # 5.0 degrees is used for the requested overall angle; vertical scale makes it look viewed from the side.
+            # These can be overridden from cfg without breaking existing configs:
+            #   flat_spectrum_angle_degrees=5.0
+            #   flat_spectrum_side_view_y_scale=0.22
+            flat_spectrum_angle_degrees = float(getattr(self.cfg, "flat_spectrum_angle_degrees", 5.0))
+            flat_spectrum_side_view_y_scale = max(0.05, min(1.0, float(getattr(self.cfg, "flat_spectrum_side_view_y_scale", 0.22))))
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(flat_spectrum_angle_degrees)
+            p.scale(1.0, flat_spectrum_side_view_y_scale)
+            p.translate(-cx, -cy)
             outer_base_radius = max_effect_radius * 0.70
             outer_max_radius = max_effect_radius * 0.92
             outer_min_radius = max_effect_radius * 0.54
@@ -2868,8 +2988,8 @@ class VisualizerWidget(BaseWidget):
             previous_energy = float(getattr(self, "_flat_spectrum_focused_energy", focused_energy))
 
             # User-tuned settings: slower gate curve and slightly slower onset denominator.
-            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
-            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.08) / 0.57))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.18))
             target_gate = max(energy_gate, onset_gate * 0.80)
             if target_gate < 0.055:
                 target_gate = 0.0
@@ -2910,6 +3030,7 @@ class VisualizerWidget(BaseWidget):
             outer_points = []
             white_spark_points = []
             for si, fft_value in enumerate(fft_values):
+                sin_a, cos_a = self._flat_spectrum_sin_cos_for_step(si, sample_count)
                 angle = -math.pi / 2.0 + (si / sample_count) * math.tau
                 prev_v = fft_values[si - 1]
                 next_v = fft_values[(si + 1) % sample_count]
@@ -2942,7 +3063,7 @@ class VisualizerWidget(BaseWidget):
                 tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
                 tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
                 rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
-                point = QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr)
+                point = QPointF(cx + cos_a * rr, cy + sin_a * rr)
                 outer_points.append(point)
 
                 # Spark follows the added white outer line and appears only on real jagged snaps.
@@ -2950,7 +3071,7 @@ class VisualizerWidget(BaseWidget):
                 if spark_strength > 0.30:
                     spark_radius = rr + 2.0
                     white_spark_points.append((
-                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        QPointF(cx + cos_a * spark_radius, cy + sin_a * spark_radius),
                         angle,
                         max(0.0, min(1.0, spark_strength)),
                         seed,
@@ -3020,8 +3141,9 @@ class VisualizerWidget(BaseWidget):
                         spark_alpha = max(0, min(255, int(70 + spark_strength * 185)))
                         spark_size = short_side * (0.006 + spark_strength * 0.012)
                         self._draw_visualizer_soft_orb(p, spark_pt, spark_size * 2.8, QColor(255, 255, 255, spark_alpha), spark_alpha)
-                        radial = QPointF(math.cos(spark_angle), math.sin(spark_angle))
-                        tangent = QPointF(-math.sin(spark_angle), math.cos(spark_angle))
+                        spark_sin, spark_cos = self._flat_spectrum_sin_cos_from_angle(spark_angle)
+                        radial = QPointF(spark_cos, spark_sin)
+                        tangent = QPointF(-spark_sin, spark_cos)
                         ray_len = spark_size * (1.45 + spark_strength * 1.35)
                         ray_alpha = max(0, min(255, int(105 + spark_strength * 125)))
                         ray_pen = QPen(QColor(255, 255, 255, ray_alpha), max(0.7, 1.15 * width_scale))
@@ -3043,28 +3165,24 @@ class VisualizerWidget(BaseWidget):
                 p.translate(cx, cy)
                 p.rotate(flat_spectrum_rotation_degrees)
                 p.translate(-cx, -cy)
-                inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
-                acc = QColor(base_color)
-                acc.setAlpha(105)
-                rg = QRadialGradient(QPointF(cx, cy), max_effect_radius * 0.56)
-                rg.setColorAt(0.0, QColor(0, 0, 0, 70))
-                rg.setColorAt(0.50, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
-                rg.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 0))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(rg))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.50, max_effect_radius * 0.50)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(acc, 1.4 * width_scale))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.41, max_effect_radius * 0.41)
-                p.setPen(QPen(inv, 1.0 * width_scale))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.53, max_effect_radius * 0.53)
+                static_hologram_image, static_hologram_radius = self._flat_spectrum_static_hologram_image(max_effect_radius, base_color, width_scale)
+                if static_hologram_image is not None and static_hologram_radius > 0:
+                    p.drawImage(
+                        QRectF(
+                            cx - static_hologram_radius,
+                            cy - static_hologram_radius,
+                            static_hologram_radius * 2,
+                            static_hologram_radius * 2,
+                        ),
+                        static_hologram_image,
+                    )
                 hologram_outer_circle_radius = max_effect_radius * 0.53
                 hologram_max_bar_overhang_px = 10.0
                 hologram_inner_bar_alpha = 235
                 hologram_outer_bar_alpha = int(255 * 0.40)
                 for hi in range(0, count, max(1, count // 72)):
                     v = values[hi]
-                    a = hi / count * math.tau - math.pi / 2.0
+                    sin_a, cos_a = self._flat_spectrum_sin_cos_for_step(hi, count)
                     base_inner = max_effect_radius * 0.44
                     max_outer = hologram_outer_circle_radius + hologram_max_bar_overhang_px
                     max_len = min(30.0, max(0.0, max_outer - base_inner))
@@ -3093,7 +3211,7 @@ class VisualizerWidget(BaseWidget):
                         c = QColor(base_color)
                         c.setAlpha(alpha)
                         p.setPen(QPen(c, pen_width))
-                        p.drawLine(QPointF(cx + math.cos(a) * r1, cy + math.sin(a) * r1), QPointF(cx + math.cos(a) * r2, cy + math.sin(a) * r2))
+                        p.drawLine(QPointF(cx + cos_a * r1, cy + sin_a * r1), QPointF(cx + cos_a * r2, cy + sin_a * r2))
             finally:
                 p.restore()
 
@@ -3105,6 +3223,7 @@ class VisualizerWidget(BaseWidget):
             p.setPen(QPen(QColor(base_color.red(), base_color.green(), base_color.blue(), 92), max(1.0, 1.0 * width_scale)))
             p.setBrush(QBrush(center_grad))
             p.drawEllipse(QPointF(cx, cy), center_radius, center_radius)
+            p.restore()
             p.restore(); return
 
         if style == "dynamic_glitch":
@@ -3273,6 +3392,18 @@ class VisualizerWidget(BaseWidget):
             # - Center: no hologram music bars; use a translucent circle instead.
             mint = QColor(base_color)
             mint.setAlpha(235)
+            # Side-view transform for Flat Audio Spectrum.
+            # 5.0 degrees is used for the requested overall angle; vertical scale makes it look viewed from the side.
+            # These can be overridden from cfg without breaking existing configs:
+            #   flat_spectrum_angle_degrees=5.0
+            #   flat_spectrum_side_view_y_scale=0.22
+            flat_spectrum_angle_degrees = float(getattr(self.cfg, "flat_spectrum_angle_degrees", 5.0))
+            flat_spectrum_side_view_y_scale = max(0.05, min(1.0, float(getattr(self.cfg, "flat_spectrum_side_view_y_scale", 0.22))))
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(flat_spectrum_angle_degrees)
+            p.scale(1.0, flat_spectrum_side_view_y_scale)
+            p.translate(-cx, -cy)
             outer_base_radius = max_effect_radius * 0.70
             outer_max_radius = max_effect_radius * 0.92
             outer_min_radius = max_effect_radius * 0.54
@@ -3303,8 +3434,8 @@ class VisualizerWidget(BaseWidget):
             previous_energy = float(getattr(self, "_flat_spectrum_focused_energy", focused_energy))
 
             # User-tuned settings: slower gate curve and slightly slower onset denominator.
-            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
-            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.08) / 0.57))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.18))
             target_gate = max(energy_gate, onset_gate * 0.80)
             if target_gate < 0.055:
                 target_gate = 0.0
@@ -3345,6 +3476,7 @@ class VisualizerWidget(BaseWidget):
             outer_points = []
             white_spark_points = []
             for si, fft_value in enumerate(fft_values):
+                sin_a, cos_a = self._flat_spectrum_sin_cos_for_step(si, sample_count)
                 angle = -math.pi / 2.0 + (si / sample_count) * math.tau
                 prev_v = fft_values[si - 1]
                 next_v = fft_values[(si + 1) % sample_count]
@@ -3377,7 +3509,7 @@ class VisualizerWidget(BaseWidget):
                 tip_energy = max(raw_value, raw_contrast * 3.2, local_contrast * 2.4, spike_gate)
                 tip_amount = tip_energy * available_push * (0.12 + 0.52 * audio_reactivity) * snap_envelope
                 rr = max(outer_min_radius, min(outer_base_radius + tip_sign * tip_amount, outer_max_radius))
-                point = QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr)
+                point = QPointF(cx + cos_a * rr, cy + sin_a * rr)
                 outer_points.append(point)
 
                 # Spark follows the added white outer line and appears only on real jagged snaps.
@@ -3385,7 +3517,7 @@ class VisualizerWidget(BaseWidget):
                 if spark_strength > 0.30:
                     spark_radius = rr + 2.0
                     white_spark_points.append((
-                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        QPointF(cx + cos_a * spark_radius, cy + sin_a * spark_radius),
                         angle,
                         max(0.0, min(1.0, spark_strength)),
                         seed,
@@ -3455,8 +3587,9 @@ class VisualizerWidget(BaseWidget):
                         spark_alpha = max(0, min(255, int(70 + spark_strength * 185)))
                         spark_size = short_side * (0.006 + spark_strength * 0.012)
                         self._draw_visualizer_soft_orb(p, spark_pt, spark_size * 2.8, QColor(255, 255, 255, spark_alpha), spark_alpha)
-                        radial = QPointF(math.cos(spark_angle), math.sin(spark_angle))
-                        tangent = QPointF(-math.sin(spark_angle), math.cos(spark_angle))
+                        spark_sin, spark_cos = self._flat_spectrum_sin_cos_from_angle(spark_angle)
+                        radial = QPointF(spark_cos, spark_sin)
+                        tangent = QPointF(-spark_sin, spark_cos)
                         ray_len = spark_size * (1.45 + spark_strength * 1.35)
                         ray_alpha = max(0, min(255, int(105 + spark_strength * 125)))
                         ray_pen = QPen(QColor(255, 255, 255, ray_alpha), max(0.7, 1.15 * width_scale))
@@ -3478,28 +3611,24 @@ class VisualizerWidget(BaseWidget):
                 p.translate(cx, cy)
                 p.rotate(flat_spectrum_rotation_degrees)
                 p.translate(-cx, -cy)
-                inv = QColor(255 - base_color.red(), 255 - base_color.green(), 255 - base_color.blue(), 105)
-                acc = QColor(base_color)
-                acc.setAlpha(105)
-                rg = QRadialGradient(QPointF(cx, cy), max_effect_radius * 0.56)
-                rg.setColorAt(0.0, QColor(0, 0, 0, 70))
-                rg.setColorAt(0.50, QColor(base_color.red(), base_color.green(), base_color.blue(), 42))
-                rg.setColorAt(1.0, QColor(base_color.red(), base_color.green(), base_color.blue(), 0))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(rg))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.50, max_effect_radius * 0.50)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(acc, 1.4 * width_scale))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.41, max_effect_radius * 0.41)
-                p.setPen(QPen(inv, 1.0 * width_scale))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * 0.53, max_effect_radius * 0.53)
+                static_hologram_image, static_hologram_radius = self._flat_spectrum_static_hologram_image(max_effect_radius, base_color, width_scale)
+                if static_hologram_image is not None and static_hologram_radius > 0:
+                    p.drawImage(
+                        QRectF(
+                            cx - static_hologram_radius,
+                            cy - static_hologram_radius,
+                            static_hologram_radius * 2,
+                            static_hologram_radius * 2,
+                        ),
+                        static_hologram_image,
+                    )
                 hologram_outer_circle_radius = max_effect_radius * 0.53
                 hologram_max_bar_overhang_px = 10.0
                 hologram_inner_bar_alpha = 235
                 hologram_outer_bar_alpha = int(255 * 0.40)
                 for hi in range(0, count, max(1, count // 72)):
                     v = values[hi]
-                    a = hi / count * math.tau - math.pi / 2.0
+                    sin_a, cos_a = self._flat_spectrum_sin_cos_for_step(hi, count)
                     base_inner = max_effect_radius * 0.44
                     max_outer = hologram_outer_circle_radius + hologram_max_bar_overhang_px
                     max_len = min(30.0, max(0.0, max_outer - base_inner))
@@ -3528,7 +3657,7 @@ class VisualizerWidget(BaseWidget):
                         c = QColor(base_color)
                         c.setAlpha(alpha)
                         p.setPen(QPen(c, pen_width))
-                        p.drawLine(QPointF(cx + math.cos(a) * r1, cy + math.sin(a) * r1), QPointF(cx + math.cos(a) * r2, cy + math.sin(a) * r2))
+                        p.drawLine(QPointF(cx + cos_a * r1, cy + sin_a * r1), QPointF(cx + cos_a * r2, cy + sin_a * r2))
             finally:
                 p.restore()
 
@@ -3540,6 +3669,7 @@ class VisualizerWidget(BaseWidget):
             p.setPen(QPen(QColor(base_color.red(), base_color.green(), base_color.blue(), 92), max(1.0, 1.0 * width_scale)))
             p.setBrush(QBrush(center_grad))
             p.drawEllipse(QPointF(cx, cy), center_radius, center_radius)
+            p.restore()
             p.restore(); return
 
         if style == "dynamic_glitch":
@@ -3759,8 +3889,8 @@ class VisualizerWidget(BaseWidget):
 
             # Gate and hysteresis: below the threshold the ripple returns to the base circle.
             # Attack is faster than release, so vocals/main sounds feel responsive without idle jitter.
-            energy_gate = max(0.0, min(1.0, (focused_energy - 0.16) / 0.59))
-            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.20))
+            energy_gate = max(0.0, min(1.0, (focused_energy - 0.08) / 0.57))
+            onset_gate = max(0.0, min(1.0, (focused_energy - previous_energy) / 0.18))
             target_gate = max(energy_gate, onset_gate * 0.80)
             if target_gate < 0.055:
                 target_gate = 0.0
@@ -3867,7 +3997,7 @@ class VisualizerWidget(BaseWidget):
                 if spark_strength > 0.30:
                     spark_radius = radius + 1.0
                     white_spark_points.append((
-                        QPointF(cx + math.cos(angle) * spark_radius, cy + math.sin(angle) * spark_radius),
+                        QPointF(cx + cos_a * spark_radius, cy + sin_a * spark_radius),
                         angle,
                         max(0.0, min(1.0, spark_strength)),
                         seed,
