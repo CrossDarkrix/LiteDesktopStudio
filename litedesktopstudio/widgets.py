@@ -539,6 +539,133 @@ class VisualizerWidget(BaseWidget):
             path.lineTo(pt)
         p.drawPath(path)
 
+    def _paint_luminance_wave_scene(self, p: QPainter, values, area: QRectF, base_color: QColor, now: float, avg: float, width_scale: float):
+        """Paint Luminance as one continuous, dimensional waveform.
+
+        Design goals:
+        - Replace independent music bars with a single filled waveform.
+        - Keep the existing accent-to-white gradient behavior.
+        - Place three depth layers in a diagonal composition.
+        - Alternate each waveform direction by depth: rear / middle / front = same / opposite / same.
+        - Make the front waveform start at the upper-right when viewed from the front.
+        """
+        count = max(1, len(values))
+        if count < 2:
+            return
+
+        aw = max(1.0, float(area.width()))
+        ah = max(1.0, float(area.height()))
+        cx = area.center().x()
+        cy = area.center().y()
+        diagonal_slope = float(getattr(self.cfg, "luminance_diagonal_slope", 0.30))
+
+        def _smoothed_wave_points(y_offset: float = 0.0, x_offset: float = 0.0, amp_scale: float = 1.0, inverse: bool = False, reverse_x: bool = False):
+            """Build a single continuous waveform layer.
+
+            reverse_x=True makes t=0 begin on the right side. With the diagonal baseline,
+            the front layer starts at upper-right and runs toward lower-left.
+            inverse=True flips the waveform vertically so neighboring layers alternate.
+            """
+            top_pts = []
+            bottom_pts = []
+            center_pts = []
+            smooth = float(avg)
+            direction = -1.0 if inverse else 1.0
+            for i, raw in enumerate(values):
+                smooth = smooth * 0.82 + float(raw) * 0.18
+                t = i / max(1, count - 1)
+                x_t = 1.0 - t if reverse_x else t
+                x = area.left() + aw * x_t + x_offset
+
+                # t=0 is upper-right when reverse_x=True; t=1 ends lower-left.
+                diagonal_y = (t - 0.5) * ah * diagonal_slope
+                center_wave = math.sin(i * 0.095 + now * 0.72) * ah * 0.050 * direction
+                fine_wave = math.sin(i * 0.235 - now * 0.38) * ah * 0.018 * direction
+                center_y = cy + y_offset + diagonal_y + center_wave + fine_wave
+                amp = ah * (0.070 + smooth * 0.255) * amp_scale
+
+                top_pts.append(QPointF(x, center_y - amp * direction))
+                bottom_pts.append(QPointF(x, center_y + amp * direction))
+                center_pts.append(QPointF(x, center_y))
+            return top_pts, bottom_pts, center_pts
+
+        def _path_from_points(top_pts, bottom_pts):
+            if not top_pts or not bottom_pts:
+                return None
+            path = QPainterPath(top_pts[0])
+            for pt in top_pts[1:]:
+                path.lineTo(pt)
+            for pt in reversed(bottom_pts):
+                path.lineTo(pt)
+            path.closeSubpath()
+            return path
+
+        def _draw_wave(y_offset: float, x_offset: float, amp_scale: float, alpha_scale: float, inverse: bool, reflection: bool, reverse_x: bool = False):
+            top_pts, bottom_pts, center_pts = _smoothed_wave_points(
+                y_offset=y_offset,
+                x_offset=x_offset,
+                amp_scale=amp_scale,
+                inverse=inverse,
+                reverse_x=reverse_x,
+            )
+            wave_path = _path_from_points(top_pts, bottom_pts)
+            if wave_path is None:
+                return
+
+            # Keep the original accent-color-to-white gradient direction on screen.
+            grad = QLinearGradient(QPointF(area.left() + x_offset, cy + y_offset), QPointF(area.right() + x_offset, cy + y_offset))
+            accent = QColor(base_color)
+            accent.setAlpha(max(0, min(255, int(125 * alpha_scale))))
+            white = QColor(255, 255, 255, max(0, min(255, int(170 * alpha_scale))))
+            mid = QColor(base_color.red(), base_color.green(), base_color.blue(), max(0, min(255, int(148 * alpha_scale))))
+            grad.setColorAt(0.0, accent)
+            grad.setColorAt(0.58, mid)
+            grad.setColorAt(1.0, white)
+
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawPath(wave_path)
+
+            edge = QColor(255, 255, 255, max(0, min(255, int(112 * alpha_scale))))
+            self._draw_visualizer_polyline(p, top_pts, edge, max(0.8, 1.4 * width_scale * amp_scale), edge.alpha())
+            glow = QColor(base_color)
+            glow.setAlpha(max(0, min(255, int(96 * alpha_scale))))
+            self._draw_visualizer_polyline(p, center_pts, glow, max(0.9, 2.0 * width_scale * amp_scale), glow.alpha())
+
+            if reflection:
+                # Faint rear reflection: mirror the same continuous wave below the layer and fade it out.
+                layer_cy = cy + y_offset
+                refl_top = [QPointF(pt.x(), layer_cy + (layer_cy - pt.y()) * -0.42 + ah * 0.18) for pt in top_pts]
+                refl_bottom = [QPointF(pt.x(), layer_cy + (layer_cy - pt.y()) * -0.42 + ah * 0.18) for pt in bottom_pts]
+                refl_path = _path_from_points(refl_top, refl_bottom)
+                if refl_path is not None:
+                    refl_grad = QLinearGradient(QPointF(area.left() + x_offset, layer_cy + ah * 0.10), QPointF(area.right() + x_offset, layer_cy + ah * 0.24))
+                    rc0 = QColor(base_color); rc0.setAlpha(max(0, min(255, int(42 * alpha_scale))))
+                    rc1 = QColor(255, 255, 255, max(0, min(255, int(24 * alpha_scale))))
+                    rc2 = QColor(base_color); rc2.setAlpha(0)
+                    refl_grad.setColorAt(0.0, rc0)
+                    refl_grad.setColorAt(0.45, rc1)
+                    refl_grad.setColorAt(1.0, rc2)
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.setBrush(QBrush(refl_grad))
+                    p.drawPath(refl_path)
+
+        p.save()
+        try:
+            # The waveform data itself starts at upper-right; this transform adds shallow 3D side-view depth.
+            p.translate(cx, cy)
+            p.rotate(float(getattr(self.cfg, "luminance_angle_degrees", -6.0)))
+            p.shear(float(getattr(self.cfg, "luminance_shear_x", -0.12)), 0.0)
+            p.scale(1.0, max(0.20, min(1.0, float(getattr(self.cfg, "luminance_side_view_y_scale", 0.60)))))
+            p.translate(-cx, -cy)
+
+            # Back -> middle -> front. Wave directions alternate: normal, inverted, normal.
+            # All layers begin from the right side so the front layer starts at upper-right.
+            # _draw_wave(y_offset=-ah * 0.29, x_offset=-aw * 0.075, amp_scale=0.70, alpha_scale=0.32, inverse=False, reflection=True, reverse_x=False)
+            _draw_wave(y_offset=-ah * 0.145, x_offset=0.5, amp_scale=0.84, alpha_scale=1.0, inverse=True, reflection=True, reverse_x=False)
+            _draw_wave(y_offset=0.0, x_offset=0.0, amp_scale=1.0, alpha_scale=1.0, inverse=False, reflection=True, reverse_x=False)
+        finally:
+            p.restore()
     def _draw_visualizer_soft_orb(self, p: QPainter, center: QPointF, radius: float, color: QColor, alpha: int):
         try:
             radius = max(1.0, float(radius))
@@ -688,14 +815,26 @@ class VisualizerWidget(BaseWidget):
                 p.restore(); return
 
             if style == "turntable":
-                disc_r = min(max_effect_radius * 0.58, short_side * 0.29)
-                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_soft_shadow))
-                p.drawEllipse(QPointF(cx + ox, cy + oy), disc_r, disc_r)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(style_shadow, max(1.0, 1.2 * style_shadow_size)))
-                for k in range(4):
-                    rr = disc_r * (0.34 + k * 0.17)
-                    p.drawEllipse(QPointF(cx + ox, cy + oy), rr, rr)
+                # Side-view turntable silhouette: extend the outer black platter and keep bars inside it.
+                cover_r = min(max_effect_radius * 0.58, short_side * 0.29)
+                outer_r = min(max_effect_radius * 0.98, cover_r + 70.0)
+                side_y_scale = 0.38
+                tilt_degrees = -3.0
+                p.save()
+                try:
+                    p.translate(cx + ox, cy + oy)
+                    p.rotate(tilt_degrees)
+                    p.scale(1.0, side_y_scale)
+                    p.translate(-(cx + ox), -(cy + oy))
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(style_soft_shadow))
+                    p.drawEllipse(QPointF(cx + ox, cy + oy), outer_r, outer_r)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.setPen(QPen(style_shadow, max(1.0, 1.2 * style_shadow_size)))
+                    for k in range(4):
+                        rr = cover_r * (0.34 + k * 0.17)
+                        p.drawEllipse(QPointF(cx + ox, cy + oy), rr, rr)
+                finally:
+                    p.restore()
                 p.restore(); return
 
             if style == "spotlight_beat":
@@ -1565,18 +1704,26 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "turntable":
-            disc=min(max_effect_radius*0.62,short_side*0.31); grad=QRadialGradient(QPointF(cx,cy),disc); grad.setColorAt(0,QColor(245,248,255,235)); grad.setColorAt(0.2,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(1,QColor(4,5,8,240)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),disc,disc); p.setBrush(Qt.BrushStyle.NoBrush)
-            for k in range(5): p.setPen(QPen(QColor(220,230,245,45+k*15),1)); p.drawEllipse(QPointF(cx,cy),disc*(0.34+k*0.13),disc*(0.34+k*0.13))
-            turntable_cover_radius=max(1.0,disc*0.84-10.0)
-            turntable_cover_rect=QRectF(cx-turntable_cover_radius,cy-turntable_cover_radius,turntable_cover_radius*2.0,turntable_cover_radius*2.0)
+            # 横から見たターンテーブル風。カバー外側の黒い盤面を約70px拡張し、バーをその内側へ収める。
+            cover_r=max(1.0,min(max_effect_radius*0.62,short_side*0.31)*0.84-10.0)
+            outer_r=min(max_effect_radius*0.98,cover_r+70.0)
+            side_y_scale=0.38; tilt_degrees=-3.0
             p.save()
             try:
-                p.translate(cx,cy); p.rotate(math.degrees(now*0.55)); p.translate(-cx,-cy)
-                self._draw_visualizer_media_thumbnail_cover(p,turntable_cover_rect,ctx,clip_radius=turntable_cover_radius,fallback_accent=base_color)
+                p.translate(cx,cy); p.rotate(tilt_degrees); p.scale(1.0,side_y_scale); p.translate(-cx,-cy)
+                grad=QRadialGradient(QPointF(cx,cy),outer_r); grad.setColorAt(0,QColor(245,248,255,235)); grad.setColorAt(0.22,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(0.56,QColor(18,20,26,235)); grad.setColorAt(1,QColor(4,5,8,245)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),outer_r,outer_r); p.setBrush(Qt.BrushStyle.NoBrush)
+                for k in range(5): p.setPen(QPen(QColor(220,230,245,45+k*15),1)); p.drawEllipse(QPointF(cx,cy),cover_r*(0.34+k*0.13),cover_r*(0.34+k*0.13))
+                turntable_cover_rect=QRectF(cx-cover_r,cy-cover_r,cover_r*2.0,cover_r*2.0)
+                p.save()
+                try:
+                    p.translate(cx,cy); p.rotate(math.degrees(now*0.55)); p.translate(-cx,-cy)
+                    self._draw_visualizer_media_thumbnail_cover(p,turntable_cover_rect,ctx,clip_radius=cover_r,fallback_accent=base_color)
+                finally:
+                    p.restore()
+                step=max(1,count//74); bar_inner=min(outer_r-2.0,cover_r+8.0); bar_room=max(1.0,outer_r-bar_inner-4.0)
+                for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2; _cap(cx,cy,a,bar_inner,min(bar_room,short_side*(0.025+v*0.13)),max(1.8,(2+v*4)*width_scale),QColor(230,235,245,110+int(v*110)))
             finally:
                 p.restore()
-            step=max(1,count//74)
-            for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2+now*0.55; _cap(cx,cy,a,disc*0.90,short_side*(0.025+v*0.13),max(1.8,(2+v*4)*width_scale),QColor(230,235,245,110+int(v*110)))
             p.restore(); return
 
         if style == "spotlight_beat":
@@ -1599,10 +1746,109 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "rainbow":
+            # Fine iridescent scale-powder steam version, emitted only on bar peaks.
+            # Bars stay compact; particles are small flattened flakes with per-flake rainbow gradients.
+            # Peak detection compares this frame against the previous frame, then keeps spawned powder alive briefly.
             slot=aw/count
+            bw=max(1.0,slot*0.38*width_scale)
+            particle_step=max(1,count//15)
+            bar_tops=[]
             for i,v in enumerate(values):
-                x=area.left()+i*slot; h=ah*(0.05+v*0.72); c=self._rainbow_color(i/count+now*0.08,205); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(c)); bw=max(1.0,slot*0.58*width_scale); p.drawRoundedRect(QRectF(x+slot*0.22,cy-h,bw,h),3,3); ref=QColor(c); ref.setAlpha(50+int(v*45)); p.setBrush(QBrush(ref)); p.drawRoundedRect(QRectF(x+slot*0.22,cy+2,bw,h*0.45),3,3)
-                if i%max(1,count//48)==0: age=(now*0.55+i*0.031)%1.0; pc=QColor(c); pc.setAlpha(int((1-age)*130)); _dot(x+slot*0.5,cy-h-age*ah*0.18,1.5+v*2,pc)
+                t=i/max(1,count-1)
+                mid_high_idx=max(0,min(count-1,int((0.70-0.35*t)*(count-1))))
+                bed_idx=max(0,min(count-1,int((0.08+0.24*t)*(count-1))))
+                mid_high_v=values[mid_high_idx]
+                bed_v=values[bed_idx]
+                left_detail=mid_high_v*0.70+v*0.20+avg*0.10
+                right_bed=avg*0.55+bed_v*0.25+bass*0.20
+                tone_v=max(0.0,min(1.0,left_detail*(1.0-t)+right_bed*t))
+                x=area.left()+i*slot
+                h=ah*(0.030+tone_v*0.340)
+                c=self._rainbow_color(t+now*0.050,230)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(c))
+                bx=x+slot*0.31
+                p.drawRoundedRect(QRectF(bx,cy-h,bw,h),3,3)
+                bar_tops.append((x+slot*0.5,cy-h,t,tone_v))
+                ref=QColor(c)
+                ref.setAlpha(14+int(tone_v*22))
+                p.setBrush(QBrush(ref))
+                p.drawRoundedRect(QRectF(bx,cy+2,bw,h*0.12),3,3)
+
+            # Spawn powder only when a sampled bar sharply rises into a peak.
+            # peak_rise_threshold: larger = stricter peak-only emission; smaller = more frequent powder.
+            # peak_level_threshold: larger = only taller bars emit powder.
+            peak_rise_threshold=0.055
+            peak_level_threshold=0.120
+            peak_cooldown=0.140
+            powder_life=1.01
+            prev_levels=getattr(self,"_rainbow_peak_prev_levels",None)
+            if not isinstance(prev_levels,list) or len(prev_levels)!=len(bar_tops):
+                prev_levels=[0.0]*len(bar_tops)
+            last_spawn=getattr(self,"_rainbow_peak_last_spawn",None)
+            if not isinstance(last_spawn,list) or len(last_spawn)!=len(bar_tops):
+                last_spawn=[-9999.0]*len(bar_tops)
+            particles=getattr(self,"_rainbow_peak_particles",None)
+            if not isinstance(particles,list):
+                particles=[]
+            for i in range(0,len(bar_tops),particle_step):
+                base_x,base_y,t,tone_v=bar_tops[i]
+                rise=tone_v-prev_levels[i]
+                if tone_v>=peak_level_threshold and rise>=peak_rise_threshold and now-last_spawn[i]>=peak_cooldown:
+                    for spark in range(9):
+                        seed=(i*0.017+spark*0.109+now*0.013)%1.0
+                        particles.append((now,base_x,base_y,t,tone_v,spark,seed))
+                    last_spawn[i]=now
+            self._rainbow_peak_prev_levels=[bt[3] for bt in bar_tops]
+            self._rainbow_peak_last_spawn=last_spawn
+
+            # Draw only particles that were born from peaks; they rise and fade after the peak.
+            p.setPen(Qt.PenStyle.NoPen)
+            active_particles=[]
+            for birth,base_x,base_y,t,tone_v,spark,seed in particles:
+                age=(now-birth)/max(0.001,powder_life)
+                if age<0.0 or age>=1.0:
+                    continue
+                active_particles.append((birth,base_x,base_y,t,tone_v,spark,seed))
+                flutter=math.sin(now*1.35+seed*17.0+spark*1.77)*slot*(0.85+age*2.35)
+                flutter+=math.sin(now*2.55+seed*11.0+spark*2.63)*slot*(0.38+age*1.15)
+                flutter+=math.sin(age*math.tau*2.5+spark*0.73)*slot*0.44
+                px=base_x+flutter+(spark-4)*slot*0.105
+                py=base_y-age*ah*(0.42+tone_v*0.30)-spark*ah*0.005+math.sin(now*1.90+i*0.11+spark)*ah*0.014
+                pr=(0.65+tone_v*1.05+(spark%3)*0.885)*max(1.0,width_scale)
+                angle=math.sin(now*1.65+seed*13.0+spark*0.97)*58.0+age*155.0+spark*23.0
+                fade=max(0.0,1.0-age)
+                alpha=max(0,int((fade*fade*fade)*230))
+                c1=self._rainbow_color(t+spark*0.081+now*0.030+age*0.065,alpha)
+                c2=self._rainbow_color(t+0.28+spark*0.103+now*0.041-age*0.035,alpha)
+                c3=QColor(255,255,255,max(16,int(alpha*0.50)))
+                halo=QColor(c1)
+                halo.setAlpha(max(8,int(alpha*0.20)))
+                p.save()
+                p.translate(px,py)
+                p.rotate(angle)
+                p.setBrush(QBrush(halo))
+                p.drawEllipse(QPointF(0,0),pr*1.35,pr*0.46)
+                grad=QLinearGradient(QPointF(-pr*1.05,0),QPointF(pr*1.05,0))
+                grad.setColorAt(0.00,c1)
+                grad.setColorAt(0.48,c3)
+                grad.setColorAt(1.00,c2)
+                flake=QPainterPath()
+                flake.moveTo(QPointF(-pr*0.95,-pr*0.18))
+                flake.lineTo(QPointF(-pr*0.18,-pr*0.50))
+                flake.lineTo(QPointF(pr*0.92,-pr*0.12))
+                flake.lineTo(QPointF(pr*0.36,pr*0.42))
+                flake.lineTo(QPointF(-pr*0.72,pr*0.30))
+                flake.closeSubpath()
+                p.setBrush(QBrush(grad))
+                p.drawPath(flake)
+                if spark%2==0:
+                    glint=QColor(255,255,255,max(18,int(alpha*0.58)))
+                    p.setPen(QPen(glint,max(0.45,0.62*width_scale)))
+                    p.drawLine(QPointF(-pr*0.50,-pr*0.04),QPointF(pr*0.52,pr*0.07))
+                    p.setPen(Qt.PenStyle.NoPen)
+                p.restore()
+            self._rainbow_peak_particles=active_particles[-1600:]
             p.restore(); return
 
         if style == "minimal":
@@ -1631,8 +1877,7 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "luminance":
-            for k in range(28):
-                x=area.left()+aw*k/27; v=values[int(k*count/28)]; amp=ah*(0.08+v*0.28); grad=QLinearGradient(QPointF(x,cy-amp),QPointF(x+aw/28,cy+amp)); c0=QColor(base_color); c0.setAlpha(120); grad.setColorAt(0,c0); grad.setColorAt(1,QColor(255,255,255,170)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawRoundedRect(QRectF(x,cy-amp,aw/30,amp*2),3,3)
+            self._paint_luminance_wave_scene(p, values, area, base_color, now, avg, width_scale)
             p.restore(); return
 
         if style == "hud_equalizer":
@@ -2796,24 +3041,32 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "turntable":
-            # Reflective rotating record with grooves, rotating media cover, and outer bars.
-            disc_r=min(max_effect_radius*0.62,short_side*0.31); grad=QRadialGradient(QPointF(cx,cy),disc_r); grad.setColorAt(0.0,QColor(245,248,255,235)); grad.setColorAt(0.20,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(0.45,QColor(26,28,35,230)); grad.setColorAt(1.0,QColor(4,5,8,240)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),disc_r,disc_r)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            for k in range(5):
-                rr=disc_r*(0.34+k*0.13+math.sin(now*1.2+k)*0.006); p.setPen(QPen(QColor(210,220,235,55+k*14),max(0.8,1.0*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
-            turntable_cover_radius=max(1.0,disc_r*0.84-10.0)
-            turntable_cover_rect=QRectF(cx-turntable_cover_radius,cy-turntable_cover_radius,turntable_cover_radius*2.0,turntable_cover_radius*2.0)
+            # 横から見たターンテーブル風。カバー外側の黒い盤面を約70px拡張し、バーをその内側へ収める。
+            base_disc_r=min(max_effect_radius*0.62,short_side*0.31)
+            turntable_cover_radius=max(1.0,base_disc_r*0.84-10.0)
+            outer_disc_r=min(max_effect_radius*0.98,turntable_cover_radius+100.0)
+            side_y_scale=0.38; tilt_degrees=1.3
             p.save()
             try:
-                p.translate(cx,cy)
-                p.rotate(math.degrees(now*0.55))
-                p.translate(-cx,-cy)
-                self._draw_visualizer_media_thumbnail_cover(p,turntable_cover_rect,ctx,clip_radius=turntable_cover_radius,fallback_accent=base_color)
+                p.translate(cx,cy); p.rotate(tilt_degrees); p.scale(1.0,side_y_scale); p.translate(-cx,-cy)
+                grad=QRadialGradient(QPointF(cx,cy),outer_disc_r); grad.setColorAt(0.0,QColor(245,248,255,235)); grad.setColorAt(0.20,QColor(base_color.red(),base_color.green(),base_color.blue(),135)); grad.setColorAt(0.52,QColor(26,28,35,235)); grad.setColorAt(1.0,QColor(4,5,8,245)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawEllipse(QPointF(cx,cy),outer_disc_r,outer_disc_r)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                for k in range(5):
+                    rr=turntable_cover_radius*(0.34+k*0.13+math.sin(now*1.2+k)*0.006); p.setPen(QPen(QColor(210,220,235,55+k*14),max(0.8,1.0*width_scale))); p.drawEllipse(QPointF(cx,cy),rr,rr)
+                turntable_cover_rect=QRectF(cx-turntable_cover_radius,cy-turntable_cover_radius,turntable_cover_radius*2.0,turntable_cover_radius*2.0)
+                p.save()
+                try:
+                    p.translate(cx,cy)
+                    p.rotate(math.degrees(now*0.55))
+                    p.translate(-cx,-cy)
+                    self._draw_visualizer_media_thumbnail_cover(p,turntable_cover_rect,ctx,clip_radius=turntable_cover_radius,fallback_accent=base_color)
+                finally:
+                    p.restore()
+                step=max(1,count//72); bar_inner=min(outer_disc_r-2.0,turntable_cover_radius+8.0); bar_room=max(1.0,outer_disc_r-bar_inner-4.0)
+                for i in range(0,count,step):
+                    v=values[i]; ang=i/count*math.tau-math.pi/2.0; outer=bar_inner+min(bar_room,short_side*(0.024+v*0.13)); p.setPen(QPen(QColor(230,235,245,115+int(v*115)),max(1.0,(1.0+v*2.8)*width_scale))); p.drawLine(QPointF(cx+math.cos(ang)*bar_inner,cy+math.sin(ang)*bar_inner),QPointF(cx+math.cos(ang)*outer,cy+math.sin(ang)*outer))
             finally:
                 p.restore()
-            step=max(1,count//72)
-            for i in range(0,count,step):
-                v=values[i]; ang=i/count*math.tau-math.pi/2.0+now*0.55; inner=disc_r*0.90; outer=min(max_effect_radius*0.98,inner+short_side*(0.024+v*0.13)); p.setPen(QPen(QColor(230,235,245,115+int(v*115)),max(1.0,(1.0+v*2.8)*width_scale))); p.drawLine(QPointF(cx+math.cos(ang)*inner,cy+math.sin(ang)*inner),QPointF(cx+math.cos(ang)*outer,cy+math.sin(ang)*outer))
             p.restore(); return
 
         if style == "spotlight_beat":
@@ -2858,13 +3111,109 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "rainbow":
-            # Rainbow bars with upward particles and lower reflection.
+            # Fine iridescent scale-powder steam version, emitted only on bar peaks.
+            # Bars stay compact; particles are small flattened flakes with per-flake rainbow gradients.
+            # Peak detection compares this frame against the previous frame, then keeps spawned powder alive briefly.
             slot=aw/count
+            bw=max(1.0,slot*0.38*width_scale)
+            particle_step=max(1,count//15)
+            bar_tops=[]
             for i,v in enumerate(values):
-                x=area.left()+i*slot; h=ah*(0.05+v*0.72); col=self._rainbow_color(i/count+now*0.08,205); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col)); bw=max(1.0,slot*min(0.92,0.58*width_scale)); p.drawRoundedRect(QRectF(x+slot*0.20,cy-h,bw,h),3,3)
-                ref=QColor(col); ref.setAlpha(50+int(v*45)); p.setBrush(QBrush(ref)); p.drawRoundedRect(QRectF(x+slot*0.20,cy+2,bw,h*0.45),3,3)
-                if i%max(1,count//48)==0 and v>0.03:
-                    age=(now*0.55+i*0.031)%1.0; pc=QColor(col); pc.setAlpha(max(0,int((1.0-age)*130))); p.setBrush(QBrush(pc)); p.drawEllipse(QPointF(x+slot*0.5,cy-h-age*ah*0.18),1.5+v*2.0,1.5+v*2.0)
+                t=i/max(1,count-1)
+                mid_high_idx=max(0,min(count-1,int((0.70-0.35*t)*(count-1))))
+                bed_idx=max(0,min(count-1,int((0.08+0.24*t)*(count-1))))
+                mid_high_v=values[mid_high_idx]
+                bed_v=values[bed_idx]
+                left_detail=mid_high_v*0.70+v*0.20+avg*0.10
+                right_bed=avg*0.55+bed_v*0.25+bass*0.20
+                tone_v=max(0.0,min(1.0,left_detail*(1.0-t)+right_bed*t))
+                x=area.left()+i*slot
+                h=ah*(0.030+tone_v*0.340)
+                c=self._rainbow_color(t+now*0.050,230)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(c))
+                bx=x+slot*0.31
+                p.drawRoundedRect(QRectF(bx,cy-h,bw,h),3,3)
+                bar_tops.append((x+slot*0.5,cy-h,t,tone_v))
+                ref=QColor(c)
+                ref.setAlpha(14+int(tone_v*22))
+                p.setBrush(QBrush(ref))
+                p.drawRoundedRect(QRectF(bx,cy+2,bw,h*0.12),3,3)
+
+            # Spawn powder only when a sampled bar sharply rises into a peak.
+            # peak_rise_threshold: larger = stricter peak-only emission; smaller = more frequent powder.
+            # peak_level_threshold: larger = only taller bars emit powder.
+            peak_rise_threshold=0.055
+            peak_level_threshold=0.120
+            peak_cooldown=0.140
+            powder_life=1.01
+            prev_levels=getattr(self,"_rainbow_peak_prev_levels",None)
+            if not isinstance(prev_levels,list) or len(prev_levels)!=len(bar_tops):
+                prev_levels=[0.0]*len(bar_tops)
+            last_spawn=getattr(self,"_rainbow_peak_last_spawn",None)
+            if not isinstance(last_spawn,list) or len(last_spawn)!=len(bar_tops):
+                last_spawn=[-9999.0]*len(bar_tops)
+            particles=getattr(self,"_rainbow_peak_particles",None)
+            if not isinstance(particles,list):
+                particles=[]
+            for i in range(0,len(bar_tops),particle_step):
+                base_x,base_y,t,tone_v=bar_tops[i]
+                rise=tone_v-prev_levels[i]
+                if tone_v>=peak_level_threshold and rise>=peak_rise_threshold and now-last_spawn[i]>=peak_cooldown:
+                    for spark in range(9):
+                        seed=(i*0.017+spark*0.109+now*0.013)%1.0
+                        particles.append((now,base_x,base_y,t,tone_v,spark,seed))
+                    last_spawn[i]=now
+            self._rainbow_peak_prev_levels=[bt[3] for bt in bar_tops]
+            self._rainbow_peak_last_spawn=last_spawn
+
+            # Draw only particles that were born from peaks; they rise and fade after the peak.
+            p.setPen(Qt.PenStyle.NoPen)
+            active_particles=[]
+            for birth,base_x,base_y,t,tone_v,spark,seed in particles:
+                age=(now-birth)/max(0.001,powder_life)
+                if age<0.0 or age>=1.0:
+                    continue
+                active_particles.append((birth,base_x,base_y,t,tone_v,spark,seed))
+                flutter=math.sin(now*1.35+seed*17.0+spark*1.77)*slot*(0.85+age*2.35)
+                flutter+=math.sin(now*2.55+seed*11.0+spark*2.63)*slot*(0.38+age*1.15)
+                flutter+=math.sin(age*math.tau*2.5+spark*0.73)*slot*0.44
+                px=base_x+flutter+(spark-4)*slot*0.105
+                py=base_y-age*ah*(0.42+tone_v*0.30)-spark*ah*0.005+math.sin(now*1.90+i*0.11+spark)*ah*0.014
+                pr=(0.65+tone_v*1.05+(spark%3)*0.885)*max(1.0,width_scale)
+                angle=math.sin(now*1.65+seed*13.0+spark*0.97)*58.0+age*155.0+spark*23.0
+                fade=max(0.0,1.0-age)
+                alpha=max(0,int((fade*fade*fade)*230))
+                c1=self._rainbow_color(t+spark*0.081+now*0.030+age*0.065,alpha)
+                c2=self._rainbow_color(t+0.28+spark*0.103+now*0.041-age*0.035,alpha)
+                c3=QColor(255,255,255,max(16,int(alpha*0.50)))
+                halo=QColor(c1)
+                halo.setAlpha(max(8,int(alpha*0.20)))
+                p.save()
+                p.translate(px,py)
+                p.rotate(angle)
+                p.setBrush(QBrush(halo))
+                p.drawEllipse(QPointF(0,0),pr*1.35,pr*0.46)
+                grad=QLinearGradient(QPointF(-pr*1.05,0),QPointF(pr*1.05,0))
+                grad.setColorAt(0.00,c1)
+                grad.setColorAt(0.48,c3)
+                grad.setColorAt(1.00,c2)
+                flake=QPainterPath()
+                flake.moveTo(QPointF(-pr*0.95,-pr*0.18))
+                flake.lineTo(QPointF(-pr*0.18,-pr*0.50))
+                flake.lineTo(QPointF(pr*0.92,-pr*0.12))
+                flake.lineTo(QPointF(pr*0.36,pr*0.42))
+                flake.lineTo(QPointF(-pr*0.72,pr*0.30))
+                flake.closeSubpath()
+                p.setBrush(QBrush(grad))
+                p.drawPath(flake)
+                if spark%2==0:
+                    glint=QColor(255,255,255,max(18,int(alpha*0.58)))
+                    p.setPen(QPen(glint,max(0.45,0.62*width_scale)))
+                    p.drawLine(QPointF(-pr*0.50,-pr*0.04),QPointF(pr*0.52,pr*0.07))
+                    p.setPen(Qt.PenStyle.NoPen)
+                p.restore()
+            self._rainbow_peak_particles=active_particles[-1600:]
             p.restore(); return
 
         if style == "minimal":
@@ -2906,12 +3255,7 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "luminance":
-            # Filled slow gradient waveform, accent to white toward right.
-            top_pts=[]; bottom_pts=[]; smooth=avg
-            for i,raw in enumerate(values):
-                smooth=smooth*0.80+raw*0.20; x=area.left()+aw*i/max(1,count-1); amp=ah*(0.08+smooth*0.28); y=cy+math.sin(i*0.09+now*0.65)*ah*0.055; top_pts.append(QPointF(x,y-amp)); bottom_pts.append(QPointF(x,y+amp))
-            if top_pts:
-                path=QPainterPath(top_pts[0]); [path.lineTo(pt) for pt in top_pts[1:]]; [path.lineTo(pt) for pt in reversed(bottom_pts)]; path.closeSubpath(); grad=QLinearGradient(QPointF(area.left(),cy),QPointF(area.right(),cy)); c0=QColor(base_color); c0.setAlpha(125); grad.setColorAt(0.0,c0); grad.setColorAt(1.0,QColor(255,255,255,170)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawPath(path)
+            self._paint_luminance_wave_scene(p, values, area, base_color, now, avg, width_scale)
             p.restore(); return
 
         if style == "parallax_waves":
@@ -3310,7 +3654,7 @@ class VisualizerWidget(BaseWidget):
             finally:
                 p.restore()
             step=max(1,count//72)
-            for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2+now*0.55; inner=disc_r*0.90; outer=min(max_effect_radius*0.98,inner+short_side*(0.024+v*0.13)); p.setPen(QPen(QColor(230,235,245,115+int(v*115)),max(1.0,(1+v*2.8)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
+            for i in range(0,count,step): v=values[i]; a=i/count*math.tau-math.pi/2; inner=disc_r*0.90; outer=min(max_effect_radius*0.98,inner+short_side*(0.024+v*0.13)); p.setPen(QPen(QColor(230,235,245,115+int(v*115)),max(1.0,(1+v*2.8)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
             p.restore(); return
 
         if style == "spotlight_beat":
@@ -3338,10 +3682,110 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "rainbow":
+            # Fine iridescent scale-powder steam version, emitted only on bar peaks.
+            # Bars stay compact; particles are small flattened flakes with per-flake rainbow gradients.
+            # Peak detection compares this frame against the previous frame, then keeps spawned powder alive briefly.
             slot=aw/count
+            bw=max(1.0,slot*0.38*width_scale)
+            
+            particle_step=max(1,count//15)
+            bar_tops=[]
             for i,v in enumerate(values):
-                x=area.left()+i*slot; h=ah*(0.05+v*0.72); col=self._rainbow_color(i/count+now*0.08,205); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(col)); bw=max(1.0,slot*min(0.92,0.58*width_scale)); p.drawRoundedRect(QRectF(x+slot*0.20,cy-h,bw,h),3,3); ref=QColor(col); ref.setAlpha(50+int(v*45)); p.setBrush(QBrush(ref)); p.drawRoundedRect(QRectF(x+slot*0.20,cy+2,bw,h*0.45),3,3)
-                if i%max(1,count//48)==0 and v>0.03: age=(now*0.55+i*0.031)%1.0; pc=QColor(col); pc.setAlpha(max(0,int((1-age)*130))); p.setBrush(QBrush(pc)); p.drawEllipse(QPointF(x+slot*0.5,cy-h-age*ah*0.18),1.5+v*2,1.5+v*2)
+                t=i/max(1,count-1)
+                mid_high_idx=max(0,min(count-1,int((0.70-0.35*t)*(count-1))))
+                bed_idx=max(0,min(count-1,int((0.08+0.24*t)*(count-1))))
+                mid_high_v=values[mid_high_idx]
+                bed_v=values[bed_idx]
+                left_detail=mid_high_v*0.70+v*0.20+avg*0.10
+                right_bed=avg*0.55+bed_v*0.25+bass*0.20
+                tone_v=max(0.0,min(1.0,left_detail*(1.0-t)+right_bed*t))
+                x=area.left()+i*slot
+                h=ah*(0.030+tone_v*0.340)
+                c=self._rainbow_color(t+now*0.050,230)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(c))
+                bx=x+slot*0.31
+                p.drawRoundedRect(QRectF(bx,cy-h,bw,h),3,3)
+                bar_tops.append((x+slot*0.5,cy-h,t,tone_v))
+                ref=QColor(c)
+                ref.setAlpha(14+int(tone_v*22))
+                p.setBrush(QBrush(ref))
+                p.drawRoundedRect(QRectF(bx,cy+2,bw,h*0.12),3,3)
+
+            # Spawn powder only when a sampled bar sharply rises into a peak.
+            # peak_rise_threshold: larger = stricter peak-only emission; smaller = more frequent powder.
+            # peak_level_threshold: larger = only taller bars emit powder.
+            peak_rise_threshold=0.055
+            peak_level_threshold=0.120
+            peak_cooldown=0.140
+            powder_life=1.01
+            prev_levels=getattr(self,"_rainbow_peak_prev_levels",None)
+            if not isinstance(prev_levels,list) or len(prev_levels)!=len(bar_tops):
+                prev_levels=[0.0]*len(bar_tops)
+            last_spawn=getattr(self,"_rainbow_peak_last_spawn",None)
+            if not isinstance(last_spawn,list) or len(last_spawn)!=len(bar_tops):
+                last_spawn=[-9999.0]*len(bar_tops)
+            particles=getattr(self,"_rainbow_peak_particles",None)
+            if not isinstance(particles,list):
+                particles=[]
+            for i in range(0,len(bar_tops),particle_step):
+                base_x,base_y,t,tone_v=bar_tops[i]
+                rise=tone_v-prev_levels[i]
+                if tone_v>=peak_level_threshold and rise>=peak_rise_threshold and now-last_spawn[i]>=peak_cooldown:
+                    for spark in range(9):
+                        seed=(i*0.017+spark*0.109+now*0.013)%1.0
+                        particles.append((now,base_x,base_y,t,tone_v,spark,seed))
+                    last_spawn[i]=now
+            self._rainbow_peak_prev_levels=[bt[3] for bt in bar_tops]
+            self._rainbow_peak_last_spawn=last_spawn
+
+            # Draw only particles that were born from peaks; they rise and fade after the peak.
+            p.setPen(Qt.PenStyle.NoPen)
+            active_particles=[]
+            for birth,base_x,base_y,t,tone_v,spark,seed in particles:
+                age=(now-birth)/max(0.001,powder_life)
+                if age<0.0 or age>=1.0:
+                    continue
+                active_particles.append((birth,base_x,base_y,t,tone_v,spark,seed))
+                flutter=math.sin(now*1.35+seed*17.0+spark*1.77)*slot*(0.85+age*2.35)
+                flutter+=math.sin(now*2.55+seed*11.0+spark*2.63)*slot*(0.38+age*1.15)
+                flutter+=math.sin(age*math.tau*2.5+spark*0.73)*slot*0.44
+                px=base_x+flutter+(spark-4)*slot*0.105
+                py=base_y-age*ah*(0.42+tone_v*0.30)-spark*ah*0.005+math.sin(now*1.90+i*0.11+spark)*ah*0.014
+                pr=(0.65+tone_v*1.05+(spark%3)*0.885)*max(1.0,width_scale)
+                angle=math.sin(now*1.65+seed*13.0+spark*0.97)*58.0+age*155.0+spark*23.0
+                fade=max(0.0,1.0-age)
+                alpha=max(0,int((fade*fade*fade)*230))
+                c1=self._rainbow_color(t+spark*0.081+now*0.030+age*0.065,alpha)
+                c2=self._rainbow_color(t+0.28+spark*0.103+now*0.041-age*0.035,alpha)
+                c3=QColor(255,255,255,max(16,int(alpha*0.50)))
+                halo=QColor(c1)
+                halo.setAlpha(max(8,int(alpha*0.20)))
+                p.save()
+                p.translate(px,py)
+                p.rotate(angle)
+                p.setBrush(QBrush(halo))
+                p.drawEllipse(QPointF(0,0),pr*1.35,pr*0.46)
+                grad=QLinearGradient(QPointF(-pr*1.05,0),QPointF(pr*1.05,0))
+                grad.setColorAt(0.00,c1)
+                grad.setColorAt(0.48,c3)
+                grad.setColorAt(1.00,c2)
+                flake=QPainterPath()
+                flake.moveTo(QPointF(-pr*0.95,-pr*0.18))
+                flake.lineTo(QPointF(-pr*0.18,-pr*0.50))
+                flake.lineTo(QPointF(pr*0.92,-pr*0.12))
+                flake.lineTo(QPointF(pr*0.36,pr*0.42))
+                flake.lineTo(QPointF(-pr*0.72,pr*0.30))
+                flake.closeSubpath()
+                p.setBrush(QBrush(grad))
+                p.drawPath(flake)
+                if spark%2==0:
+                    glint=QColor(255,255,255,max(18,int(alpha*0.58)))
+                    p.setPen(QPen(glint,max(0.45,0.62*width_scale)))
+                    p.drawLine(QPointF(-pr*0.50,-pr*0.04),QPointF(pr*0.52,pr*0.07))
+                    p.setPen(Qt.PenStyle.NoPen)
+                p.restore()
+            self._rainbow_peak_particles=active_particles[-1600:]
             p.restore(); return
 
         if style == "minimal":
@@ -3371,9 +3815,8 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "luminance":
-            top=[]; bottom=[]; smooth=avg
-            for i,raw in enumerate(values): smooth=smooth*0.80+raw*0.20; x=area.left()+aw*i/max(1,count-1); amp=ah*(0.08+smooth*0.28); y=cy+math.sin(i*0.09+now*0.65)*ah*0.055; top.append(QPointF(x,y-amp)); bottom.append(QPointF(x,y+amp))
-            path=QPainterPath(top[0]); [path.lineTo(pt) for pt in top[1:]]; [path.lineTo(pt) for pt in reversed(bottom)]; path.closeSubpath(); grad=QLinearGradient(QPointF(area.left(),cy),QPointF(area.right(),cy)); c0=QColor(base_color); c0.setAlpha(125); grad.setColorAt(0,c0); grad.setColorAt(1,QColor(255,255,255,170)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(grad)); p.drawPath(path); p.restore(); return
+            self._paint_luminance_wave_scene(p, values, area, base_color, now, avg, width_scale)
+            p.restore(); return
 
         if style == "hud_equalizer":
             self._paint_hud_equalizer_scene(p, values, area, base_color, now, width_scale)
@@ -3933,6 +4376,11 @@ class VisualizerWidget(BaseWidget):
             points = []
             white_spark_points = []
             for i, fft_value in enumerate(fft_values):
+                # Use the current loop index for the cached trig lookup.
+                # A previous flat_spectrum optimization used ``si`` in similar loops;
+                # audio_ripple uses ``i`` here, so referencing ``si`` can raise
+                # UnboundLocalError during paintEvent.
+                sin_a, cos_a = self._flat_spectrum_sin_cos_for_step(i, sample_count)
                 angle = -math.pi / 2.0 + (i / sample_count) * math.tau
                 prev_v = fft_values[i - 1]
                 next_v = fft_values[(i + 1) % sample_count]
@@ -3988,7 +4436,7 @@ class VisualizerWidget(BaseWidget):
                 # Baseline stays exactly on base_radius; only audio-triggered tip impulses move.
                 radius = base_radius + tip_sign * tip_amount
                 radius = max(inner_wave_radius, min(radius, max_wave_radius))
-                point = QPointF(cx + math.cos(angle) * radius, cy + math.sin(angle) * radius)
+                point = QPointF(cx + cos_a * radius, cy + sin_a * radius)
                 points.append(point)
 
                 # Spark only when the jagged tip is actually snapping.
