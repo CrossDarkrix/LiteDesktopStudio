@@ -1755,13 +1755,21 @@ class VisualizerWidget(BaseWidget):
             bar_tops=[]
             for i,v in enumerate(values):
                 t=i/max(1,count-1)
-                mid_high_idx=max(0,min(count-1,int((0.70-0.35*t)*(count-1))))
-                bed_idx=max(0,min(count-1,int((0.08+0.24*t)*(count-1))))
-                mid_high_v=values[mid_high_idx]
-                bed_v=values[bed_idx]
-                left_detail=mid_high_v*0.70+v*0.20+avg*0.10
-                right_bed=avg*0.55+bed_v*0.25+bass*0.20
-                tone_v=max(0.0,min(1.0,left_detail*(1.0-t)+right_bed*t))
+                # Tone layout across the bar field:
+                # left = low/bass, center = high/treble, right = mid/vocal-like band.
+                low_idx=max(0,min(count-1,int((0.05+0.11*t)*(count-1))))
+                mid_idx=max(0,min(count-1,int((0.42+0.18*t)*(count-1))))
+                high_idx=max(0,min(count-1,int((0.74+0.10*(1.0-abs(t-0.5)*2.0))*(count-1))))
+                low_v=values[low_idx]
+                mid_v=values[mid_idx]
+                high_v=values[high_idx]
+                low_weight=(1.0-t)**8.55
+                mid_weight=t**0.85
+                high_weight=max(0.0,1.0-abs(t-0.5)*2.0)**1.80*1.65
+                local_weight=0.012
+                avg_weight=0.0008
+                weight_sum=low_weight+mid_weight+high_weight+local_weight+avg_weight
+                tone_v=max(0.0,min(1.0,(low_v*low_weight+mid_v*mid_weight+high_v*high_weight+v*local_weight+avg*avg_weight)/max(0.001,weight_sum)))
                 x=area.left()+i*slot
                 h=ah*(0.030+tone_v*0.340)
                 c=self._rainbow_color(t+now*0.050,230)
@@ -3120,13 +3128,21 @@ class VisualizerWidget(BaseWidget):
             bar_tops=[]
             for i,v in enumerate(values):
                 t=i/max(1,count-1)
-                mid_high_idx=max(0,min(count-1,int((0.70-0.35*t)*(count-1))))
-                bed_idx=max(0,min(count-1,int((0.08+0.24*t)*(count-1))))
-                mid_high_v=values[mid_high_idx]
-                bed_v=values[bed_idx]
-                left_detail=mid_high_v*0.70+v*0.20+avg*0.10
-                right_bed=avg*0.55+bed_v*0.25+bass*0.20
-                tone_v=max(0.0,min(1.0,left_detail*(1.0-t)+right_bed*t))
+                # Tone layout across the bar field:
+                # left = low/bass, center = high/treble, right = mid/vocal-like band.
+                low_idx=max(0,min(count-1,int((0.05+0.11*t)*(count-1))))
+                mid_idx=max(0,min(count-1,int((0.42+0.18*t)*(count-1))))
+                high_idx=max(0,min(count-1,int((0.74+0.10*(1.0-abs(t-0.5)*2.0))*(count-1))))
+                low_v=values[low_idx]
+                mid_v=values[mid_idx]
+                high_v=values[high_idx]
+                low_weight=(1.0-t)**8.55
+                mid_weight=t**0.85
+                high_weight=max(0.0,1.0-abs(t-0.5)*2.0)**1.80*1.65
+                local_weight=0.012
+                avg_weight=0.0008
+                weight_sum=low_weight+mid_weight+high_weight+local_weight+avg_weight
+                tone_v=max(0.0,min(1.0,(low_v*low_weight+mid_v*mid_weight+high_v*high_weight+v*local_weight+avg*avg_weight)/max(0.001,weight_sum)))
                 x=area.left()+i*slot
                 h=ah*(0.030+tone_v*0.340)
                 c=self._rainbow_color(t+now*0.050,230)
@@ -3692,13 +3708,21 @@ class VisualizerWidget(BaseWidget):
             bar_tops=[]
             for i,v in enumerate(values):
                 t=i/max(1,count-1)
-                mid_high_idx=max(0,min(count-1,int((0.70-0.35*t)*(count-1))))
-                bed_idx=max(0,min(count-1,int((0.08+0.24*t)*(count-1))))
-                mid_high_v=values[mid_high_idx]
-                bed_v=values[bed_idx]
-                left_detail=mid_high_v*0.70+v*0.20+avg*0.10
-                right_bed=avg*0.55+bed_v*0.25+bass*0.20
-                tone_v=max(0.0,min(1.0,left_detail*(1.0-t)+right_bed*t))
+                # Tone layout across the bar field:
+                # left = low/bass, center = high/treble, right = mid/vocal-like band.
+                low_idx=max(0,min(count-1,int((0.05+0.11*t)*(count-1))))
+                mid_idx=max(0,min(count-1,int((0.42+0.18*t)*(count-1))))
+                high_idx=max(0,min(count-1,int((0.74+0.10*(1.0-abs(t-0.5)*2.0))*(count-1))))
+                low_v=values[low_idx]
+                mid_v=values[mid_idx]
+                high_v=values[high_idx]
+                low_weight=(1.0-t)**8.55
+                mid_weight=t**0.85
+                high_weight=max(0.0,1.0-abs(t-0.5)*2.0)**1.80*1.65
+                local_weight=0.012
+                avg_weight=0.0008
+                weight_sum=low_weight+mid_weight+high_weight+local_weight+avg_weight
+                tone_v=max(0.0,min(1.0,(low_v*low_weight+mid_v*mid_weight+high_v*high_weight+v*local_weight+avg*avg_weight)/max(0.001,weight_sum)))
                 x=area.left()+i*slot
                 h=ah*(0.030+tone_v*0.340)
                 c=self._rainbow_color(t+now*0.050,230)
