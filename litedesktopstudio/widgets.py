@@ -190,6 +190,9 @@ class VisualizerWidget(BaseWidget):
         ]
         self._last_media_thumbnail_bytes = None
         self._media_thumbnail_pixmap = None
+        # Rainbow effect optimization caches.
+        self._rainbow_color_lut = None
+        self._rainbow_powder_sprite_cache = {}
 
     def _ensure_peak_levels(self, count):
         if len(self._peak_levels) != count:
@@ -524,6 +527,79 @@ class VisualizerWidget(BaseWidget):
             return c
         except Exception:
             return QColor(255, 255, 255, max(0, min(255, int(alpha))))
+
+    def _rainbow_lut_color(self, phase: float, alpha: int = 230) -> QColor:
+        try:
+            lut = getattr(self, "_rainbow_color_lut", None)
+            if not isinstance(lut, list) or len(lut) != 256:
+                lut = []
+                for i in range(256):
+                    c = QColor()
+                    c.setHsvF(i / 256.0, 0.82, 1.0, 1.0)
+                    lut.append(c)
+                self._rainbow_color_lut = lut
+            c = QColor(lut[int((float(phase) % 1.0) * 256.0) & 255])
+            c.setAlpha(max(0, min(255, int(alpha))))
+            return c
+        except Exception:
+            return self._rainbow_color(phase, alpha)
+
+    def _get_rainbow_powder_sprite(self, hue_bucket: int, size_bucket: int, angle_bucket: int) -> QImage:
+        try:
+            hue_bucket = int(hue_bucket) % 24
+            size_bucket = max(0, min(2, int(size_bucket)))
+            angle_bucket = int(angle_bucket) % 16
+            key = (hue_bucket, size_bucket, angle_bucket)
+            cache = getattr(self, "_rainbow_powder_sprite_cache", None)
+            if not isinstance(cache, dict):
+                cache = {}
+                self._rainbow_powder_sprite_cache = cache
+            cached = cache.get(key)
+            if cached is not None and not cached.isNull():
+                return cached
+            if len(cache) > 1536:
+                cache.clear()
+            image_size = 18 + size_bucket * 5
+            image = QImage(image_size, image_size, QImage.Format.Format_ARGB32_Premultiplied)
+            image.fill(Qt.GlobalColor.transparent)
+            pp = QPainter(image)
+            try:
+                pp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                center = image_size * 0.5
+                pr = image_size * (0.19 + size_bucket * 0.015)
+                pp.translate(center, center)
+                pp.rotate(angle_bucket * 22.5)
+                c1 = self._rainbow_lut_color(hue_bucket / 24.0, 230)
+                c2 = self._rainbow_lut_color((hue_bucket / 24.0 + 0.33) % 1.0, 230)
+                c3 = QColor(255, 255, 255, 150)
+                halo = QColor(c1)
+                halo.setAlpha(44)
+                pp.setPen(Qt.PenStyle.NoPen)
+                pp.setBrush(QBrush(halo))
+                pp.drawEllipse(QPointF(0, 0), pr * 1.55, pr * 0.48)
+                grad = QLinearGradient(QPointF(-pr * 1.05, 0), QPointF(pr * 1.05, 0))
+                grad.setColorAt(0.00, c1)
+                grad.setColorAt(0.48, c3)
+                grad.setColorAt(1.00, c2)
+                flake = QPainterPath()
+                flake.moveTo(QPointF(-pr * 0.95, -pr * 0.18))
+                flake.lineTo(QPointF(-pr * 0.18, -pr * 0.50))
+                flake.lineTo(QPointF(pr * 0.92, -pr * 0.12))
+                flake.lineTo(QPointF(pr * 0.36, pr * 0.42))
+                flake.lineTo(QPointF(-pr * 0.72, pr * 0.30))
+                flake.closeSubpath()
+                pp.setBrush(QBrush(grad))
+                pp.drawPath(flake)
+                pp.setPen(QPen(QColor(255, 255, 255, 115), max(0.6, image_size * 0.035)))
+                pp.drawLine(QPointF(-pr * 0.50, -pr * 0.04), QPointF(pr * 0.52, pr * 0.07))
+            finally:
+                pp.end()
+            cache[key] = image
+            return image
+        except Exception:
+            fallback = QImage(8, 8, QImage.Format.Format_ARGB32_Premultiplied)
+            fallback.fill(Qt.GlobalColor.transparent)
+            return fallback
 
     def _draw_visualizer_polyline(self, p: QPainter, points, color: QColor, width: float = 2.0, alpha: int = 220):
         if len(points) < 2:
@@ -1041,7 +1117,22 @@ class VisualizerWidget(BaseWidget):
             tunnel = style in ("audio_tunnel", "neon_tunnel_wire", "futuristic_tunnel")
             wave = style in ("aurora", "neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse", "liquid_audio_spectrum")
             cloud = style in ("nebula", "cosmic_fusion", "meteor_shower", "reactive_lights", "particle_audio_visualizer")
-            wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "rainbow", "dynamic_glitch", "urban_timelapse", "melodic_vibe", "hologram", "matrix", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music", "music_logo_reveal", "music_lower_third_audio", "digital_base_audio")
+            wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "dynamic_glitch", "urban_timelapse", "melodic_vibe", "hologram", "matrix", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music", "music_logo_reveal", "music_lower_third_audio", "digital_base_audio")
+
+            if style == "rainbow":
+                # Rainbow glow is intentionally compact; avoid the generic wall glow that over-expands the effect.
+                p.setClipRect(area)
+                aura_h = ah * (0.28 + avg * 0.08 + bass * 0.06)
+                aura = QLinearGradient(QPointF(area.left(), cy), QPointF(area.right(), cy))
+                aura.setColorAt(0.00, QColor(255, 70, 90, max(8, int(base_alpha * 0.16))))
+                aura.setColorAt(0.35, QColor(120, 220, 255, max(10, int(base_alpha * 0.20))))
+                aura.setColorAt(0.50, QColor(255, 255, 170, max(12, int(base_alpha * 0.24))))
+                aura.setColorAt(0.74, QColor(190, 120, 255, max(10, int(base_alpha * 0.18))))
+                aura.setColorAt(1.00, QColor(255, 80, 170, max(8, int(base_alpha * 0.15))))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(aura))
+                p.drawRoundedRect(QRectF(area.left(), cy - aura_h * 0.5, aw, aura_h), 8, 8)
+                p.restore(); return
 
             if circular or elliptic:
                 rx_scale = 1.34 if elliptic else 1.0
@@ -1752,6 +1843,20 @@ class VisualizerWidget(BaseWidget):
             slot=aw/count
             bw=max(1.0,slot*0.38*width_scale)
             particle_step=max(1,count//15)
+            # Left-edge bass push: on a deep bass transient, move only the existing left bars.
+            # No oscillation is added; the bars push once with the bass envelope and then return smoothly.
+            prev_left_bass=float(getattr(self,"_rainbow_left_edge_prev_bass",bass))
+            left_bass_rise=bass-prev_left_bass
+            self._rainbow_left_edge_prev_bass=bass
+            prev_left_time=float(getattr(self,"_rainbow_left_edge_last_time",now))
+            left_dt=max(0.0,min(0.10,now-prev_left_time))
+            self._rainbow_left_edge_last_time=now
+            prev_left_push=float(getattr(self,"_rainbow_left_edge_push",0.0))
+            left_edge_target=0.0
+            if bass>=0.18 and left_bass_rise>=0.035:
+                left_edge_target=max(0.0,min(1.0,(bass-0.18)*3.0+left_bass_rise*8.0))
+            left_edge_push=0
+            self._rainbow_left_edge_push=left_edge_push
             bar_tops=[]
             for i,v in enumerate(values):
                 t=i/max(1,count-1)
@@ -1772,7 +1877,10 @@ class VisualizerWidget(BaseWidget):
                 tone_v=max(0.0,min(1.0,(low_v*low_weight+mid_v*mid_weight+high_v*high_weight+v*local_weight+avg*avg_weight)/max(0.001,weight_sum)))
                 x=area.left()+i*slot
                 h=ah*(0.030+tone_v*0.340)
-                c=self._rainbow_color(t+now*0.050,230)
+                left_edge_weight=max(0.0,1.0-t*5.0)**1.70
+                if left_edge_push>0.001 and left_edge_weight>0.001:
+                    x+=left_edge_weight*left_edge_push*slot*0.85
+                c=self._rainbow_lut_color(t+now*0.050,230)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QBrush(c))
                 bx=x+slot*0.31
@@ -1803,7 +1911,7 @@ class VisualizerWidget(BaseWidget):
                 base_x,base_y,t,tone_v=bar_tops[i]
                 rise=tone_v-prev_levels[i]
                 if tone_v>=peak_level_threshold and rise>=peak_rise_threshold and now-last_spawn[i]>=peak_cooldown:
-                    for spark in range(9):
+                    for spark in range(6):
                         seed=(i*0.017+spark*0.109+now*0.013)%1.0
                         particles.append((now,base_x,base_y,t,tone_v,spark,seed))
                     last_spawn[i]=now
@@ -1827,36 +1935,16 @@ class VisualizerWidget(BaseWidget):
                 angle=math.sin(now*1.65+seed*13.0+spark*0.97)*58.0+age*155.0+spark*23.0
                 fade=max(0.0,1.0-age)
                 alpha=max(0,int((fade*fade*fade)*230))
-                c1=self._rainbow_color(t+spark*0.081+now*0.030+age*0.065,alpha)
-                c2=self._rainbow_color(t+0.28+spark*0.103+now*0.041-age*0.035,alpha)
-                c3=QColor(255,255,255,max(16,int(alpha*0.50)))
-                halo=QColor(c1)
-                halo.setAlpha(max(8,int(alpha*0.20)))
+                hue_bucket=int(((t+spark*0.081+now*0.030+age*0.065)%1.0)*24.0)
+                size_bucket=max(0,min(2,int(tone_v*3.0)))
+                angle_bucket=int((angle%360.0)/22.5)%16
+                sprite=self._get_rainbow_powder_sprite(hue_bucket,size_bucket,angle_bucket)
+                draw_size=max(3.0,pr*4.2)
                 p.save()
-                p.translate(px,py)
-                p.rotate(angle)
-                p.setBrush(QBrush(halo))
-                p.drawEllipse(QPointF(0,0),pr*1.35,pr*0.46)
-                grad=QLinearGradient(QPointF(-pr*1.05,0),QPointF(pr*1.05,0))
-                grad.setColorAt(0.00,c1)
-                grad.setColorAt(0.48,c3)
-                grad.setColorAt(1.00,c2)
-                flake=QPainterPath()
-                flake.moveTo(QPointF(-pr*0.95,-pr*0.18))
-                flake.lineTo(QPointF(-pr*0.18,-pr*0.50))
-                flake.lineTo(QPointF(pr*0.92,-pr*0.12))
-                flake.lineTo(QPointF(pr*0.36,pr*0.42))
-                flake.lineTo(QPointF(-pr*0.72,pr*0.30))
-                flake.closeSubpath()
-                p.setBrush(QBrush(grad))
-                p.drawPath(flake)
-                if spark%2==0:
-                    glint=QColor(255,255,255,max(18,int(alpha*0.58)))
-                    p.setPen(QPen(glint,max(0.45,0.62*width_scale)))
-                    p.drawLine(QPointF(-pr*0.50,-pr*0.04),QPointF(pr*0.52,pr*0.07))
-                    p.setPen(Qt.PenStyle.NoPen)
+                p.setOpacity(max(0.0,min(1.0,alpha/255.0)))
+                p.drawImage(QRectF(px-draw_size*0.5,py-draw_size*0.5,draw_size,draw_size),sprite)
                 p.restore()
-            self._rainbow_peak_particles=active_particles[-1600:]
+            self._rainbow_peak_particles=active_particles[-700:]
             p.restore(); return
 
         if style == "minimal":
@@ -2548,17 +2636,194 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "cosmic_fusion":
-            rg=QRadialGradient(QPointF(cx,cy),max_effect_radius*0.46); rg.setColorAt(0,QColor(255,255,255,46)); rg.setColorAt(0.6,QColor(base_color.red(),base_color.green(),base_color.blue(),42)); rg.setColorAt(1,QColor(255,255,255,20)); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(rg)); p.drawEllipse(QPointF(cx,cy),max_effect_radius*0.46,max_effect_radius*0.46)
+            # Cosmic Fusion: circular cover + lightweight flat left bars + smooth right bars.
+            # Current direction:
+            #   - Center is a circular media cover image.
+            #   - Left/thick arc is reduced to exactly 7 flat-design bars for performance.
+            #   - Each left bar uses one solid rainbow color instead of per-bar gradients.
+            #   - Right/thin arc keeps the smooth rainbow gradient animation.
+            #   - Particle / dust drawing is intentionally removed.
+            #   - The whole effect is rendered into a QImage layer, then composited with drawImage.
+            base_p = p
+            layer_w = int(max(1.0, math.ceil(area.width())))
+            layer_h = int(max(1.0, math.ceil(area.height())))
+            layer = QImage(layer_w, layer_h, QImage.Format.Format_ARGB32_Premultiplied)
+            layer.fill(QColor(0, 0, 0, 0))
 
-            # Cosmic Fusion cover layer:
-            #   bottom: existing white/accent translucent circles
-            #   middle: current media cover image covering the full inside of the music bars
-            #   top: rainbow music bars
-            cosmic_cover_radius=max(1.0,max_effect_radius*0.46)
-            cosmic_cover_rect=QRectF(cx-cosmic_cover_radius,cy-cosmic_cover_radius,cosmic_cover_radius*2.0,cosmic_cover_radius*2.0)
-            self._draw_visualizer_media_thumbnail_cover(p,cosmic_cover_rect,ctx,clip_radius=cosmic_cover_radius,fallback_accent=base_color)
+            p = QPainter(layer)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            p.translate(-area.left(), -area.top())
+            p.setPen(Qt.PenStyle.NoPen)
 
-            for i in range(0,count,max(1,count//96)): v=values[i]; a=i/count*math.tau-math.pi/2; col=self._rainbow_color(i/count+now*0.04,205); _cap(cx,cy,a,max_effect_radius*0.48,short_side*(0.045+v*0.24),max(1.8,(2.5+v*5)*width_scale),col)
+            cosmic_alpha = 217  # about 85% opacity.
+            cover_radius = max(18.0, min(aw, ah) * 0.245)
+            ring_inner_radius = cover_radius + max(4.0, short_side * 0.026)
+            ring_outer_limit = max_effect_radius * 1.08
+            max_bar_len = max(8.0, ring_outer_limit - ring_inner_radius)
+            cover_rect = QRectF(cx - cover_radius, cy - cover_radius, cover_radius * 2.0, cover_radius * 2.0)
+
+            # Keep only a soft background glow. No particle / dust field is drawn.
+            halo = QRadialGradient(QPointF(cx, cy), ring_outer_limit * 1.02)
+            halo.setColorAt(0.0, QColor(255, 255, 255, 26))
+            halo.setColorAt(0.35, QColor(base_color.red(), base_color.green(), base_color.blue(), 20 + int(avg * 22)))
+            halo.setColorAt(0.74, QColor(150, 64, 255, 10 + int(bass * 16)))
+            halo.setColorAt(1.0, QColor(0, 0, 0, 0))
+            p.setBrush(QBrush(halo))
+            p.drawEllipse(QPointF(cx, cy), ring_outer_limit * 1.02, ring_outer_limit * 1.02)
+
+            def _arc_t(t: float, start: float, span: float) -> float:
+                # Qt screen angle convention: 0=right, 90=down, 180=left, 270=up.
+                return (float(start) + float(span) * float(t)) % 360.0
+
+            def _rainbow_rect_gradient(length: float, width: float, phase: float, alpha: int) -> QLinearGradient:
+                grad = QLinearGradient(QPointF(0.0, 0.0), QPointF(length, 0.0))
+                for stop in range(7):
+                    grad.setColorAt(stop / 6.0, self._rainbow_color(phase + stop / 7.0, alpha, 0.88, 1.0))
+                return grad
+
+            def _draw_flat_radial_bar(deg: float, length: float, width: float, color: QColor):
+                # Lightweight left bar: 7 flat bars with a tiny pseudo-3D bevel.
+                # It stays much cheaper than the old many-bar / glow / particle version.
+                if length <= 0.5 or width <= 0.5:
+                    return
+                p.save()
+                p.translate(QPointF(cx, cy))
+                p.rotate(deg)
+                rect = QRectF(ring_inner_radius, -width * 0.5, length, width)
+
+                top = QColor(color).lighter(128)
+                mid = QColor(color)
+                bottom = QColor(color).darker(145)
+                top.setAlpha(color.alpha())
+                mid.setAlpha(color.alpha())
+                bottom.setAlpha(color.alpha())
+
+                # Cheap depth: one soft offset shadow + one 3-stop vertical bevel gradient.
+                shadow = QColor(0, 0, 0, max(18, int(color.alpha() * 0.18)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(shadow))
+                p.drawRect(rect.adjusted(width * 0.14, width * 0.16, width * 0.14, width * 0.16))
+
+                bevel = QLinearGradient(QPointF(0.0, -width * 0.5), QPointF(0.0, width * 0.5))
+                bevel.setColorAt(0.0, top)
+                bevel.setColorAt(0.48, mid)
+                bevel.setColorAt(1.0, bottom)
+                p.setBrush(QBrush(bevel))
+                p.drawRect(rect)
+
+                # Minimal bevel lines. No particles, no glow.
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(255, 255, 255, max(18, int(color.alpha() * 0.20))), max(0.6, width * 0.045)))
+                p.drawLine(QPointF(ring_inner_radius, -width * 0.34), QPointF(ring_inner_radius + length, -width * 0.34))
+                p.setPen(QPen(QColor(0, 0, 0, max(16, int(color.alpha() * 0.16))), max(0.6, width * 0.045)))
+                p.drawLine(QPointF(ring_inner_radius, width * 0.34), QPointF(ring_inner_radius + length, width * 0.34))
+                p.restore()
+
+            def _draw_thin_radial_bar(deg: float, length: float, width: float, phase: float, alpha: int):
+                # Right side only: keep smooth rainbow gradient, but no particles/glow.
+                if length <= 0.5 or width <= 0.5:
+                    return
+                p.save()
+                p.translate(QPointF(cx, cy))
+                p.rotate(deg)
+                rect = QRectF(ring_inner_radius, -width * 0.5, length, width)
+                radius = width * 0.5
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(_rainbow_rect_gradient(length, width, phase, alpha)))
+                p.drawRoundedRect(rect, radius, radius)
+                p.restore()
+
+            # Diagonal split. Swap starts if the thick/thin side appears reversed.
+            thick_start = 45.0
+            thick_span = 180.0
+            thin_start = 225.0
+            # Extend the right/thin arc downward by widening the angular spacing range.
+            # This does not stretch each bar; it spreads the bars farther around the circle,
+            # reaching closer to the lower-center area under the cover.
+            thin_span = 230.0
+
+            # Left side: exactly 7 bars, one solid rainbow color per bar.
+            # The angular spacing is derived from a target visual gap of about 7px.
+            thick_count = 7
+            thin_count = max(34, min(72, int(short_side * 0.24)))
+            thick_width = max(7.0, short_side * 0.055 * width_scale)
+            thick_gap_px = 14.0
+            thick_step_deg = math.degrees((thick_width + thick_gap_px) / max(1.0, ring_inner_radius))
+            thick_span_cluster = thick_step_deg * max(0, thick_count - 1)
+            # Move the left 7-bar cluster slightly upward around the circle.
+            # Qt screen angle convention here is 0=right, 90=down, 180=left, 270=up,
+            # so adding degrees moves the left-side cluster from lower-left toward upper-left.
+            thick_vertical_shift_deg = 22.0
+            thick_center_deg = thick_start + thick_span * 0.5 + thick_vertical_shift_deg
+            thick_cluster_start = thick_center_deg - thick_span_cluster * 0.5
+            thin_width = max(1.25, short_side * 0.0105 * width_scale)
+
+            # Smooth rainbow movement for the right/thin side.
+            thin_phase_smooth = now * 0.085
+
+            for j in range(thick_count):
+                t = j / max(1, thick_count - 1)
+                deg = thick_cluster_start + thick_step_deg * j
+                src_idx = int(t * (count - 1))
+                v = values[src_idx]
+                wave = 0.5 + 0.5 * math.sin(now * 0.55 + j * 0.72)
+                edge_bias = 0.34 + 0.66 * abs(math.cos((t - 0.5) * math.pi))
+                # Large, stable lengths for a strong flat-design silhouette.
+                length = max_bar_len * (0.54 + v * 0.70 + wave * 0.08 + edge_bias * 0.20)
+                length = max(max_bar_len * 0.50, min(max_bar_len * 1.20, length))
+                color = self._rainbow_color(j / 7.0, cosmic_alpha, 0.86, 1.0)
+                _draw_flat_radial_bar(deg, length, thick_width, color)
+
+            for j in range(thin_count):
+                t = j / max(1, thin_count - 1)
+                deg = _arc_t(t, thin_start, thin_span)
+                src_idx = int(t * (count - 1))
+                v = values[src_idx]
+                wave = 0.5 + 0.5 * math.sin(now * 1.18 + j * 0.73)
+                length = max_bar_len * (0.12 + v * 0.47 + wave * 0.11)
+                length = max(max_bar_len * 0.10, min(max_bar_len * 0.82, length))
+                phase = thin_phase_smooth + j * 0.043
+                _draw_thin_radial_bar(deg, length, thin_width * (0.86 + 0.26 * wave), phase, cosmic_alpha)
+
+            # Circular center cover image clipped to the middle of the ring.
+            # drawImage is used for the cover as well.
+            pixmap = self._get_media_thumbnail_pixmap(ctx)
+            clip_path = QPainterPath()
+            clip_path.addEllipse(cover_rect)
+            p.save()
+            p.setClipPath(clip_path)
+            if pixmap is not None and not pixmap.isNull():
+                image = pixmap.toImage()
+                scaled_image = image.scaled(
+                    int(max(1.0, cover_rect.width())),
+                    int(max(1.0, cover_rect.height())),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                ix = int(cover_rect.left() + (cover_rect.width() - scaled_image.width()) / 2.0)
+                iy = int(cover_rect.top() + (cover_rect.height() - scaled_image.height()) / 2.0)
+                p.drawImage(ix, iy, scaled_image)
+            else:
+                fallback = QRadialGradient(QPointF(cx, cy), cover_radius)
+                fallback.setColorAt(0.0, QColor(255, 255, 255, 48))
+                fallback.setColorAt(0.48, self._rainbow_color(now * 0.030, 132))
+                fallback.setColorAt(1.0, self._rainbow_color(now * 0.030 + 0.58, 164))
+                p.setBrush(QBrush(fallback))
+                p.drawEllipse(cover_rect)
+            p.restore()
+
+            p.save()
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(255, 255, 255, 64), max(1.0, cover_radius * 0.024)))
+            p.drawEllipse(cover_rect)
+            p.setPen(QPen(self._rainbow_color(now * 0.018 + 0.12, 78), max(1.0, cover_radius * 0.030)))
+            p.drawEllipse(cover_rect.adjusted(-1.0, -1.0, 1.0, 1.0))
+            p.restore()
+
+            p.end()
+            base_p.drawImage(QPointF(area.left(), area.top()), layer)
+            p = base_p
             p.restore(); return
 
 
@@ -3125,6 +3390,20 @@ class VisualizerWidget(BaseWidget):
             slot=aw/count
             bw=max(1.0,slot*0.38*width_scale)
             particle_step=max(1,count//15)
+            # Left-edge bass push: on a deep bass transient, move only the existing left bars.
+            # No oscillation is added; the bars push once with the bass envelope and then return smoothly.
+            prev_left_bass=float(getattr(self,"_rainbow_left_edge_prev_bass",bass))
+            left_bass_rise=bass-prev_left_bass
+            self._rainbow_left_edge_prev_bass=bass
+            prev_left_time=float(getattr(self,"_rainbow_left_edge_last_time",now))
+            left_dt=max(0.0,min(0.10,now-prev_left_time))
+            self._rainbow_left_edge_last_time=now
+            prev_left_push=float(getattr(self,"_rainbow_left_edge_push",0.0))
+            left_edge_target=0.0
+            if bass>=0.18 and left_bass_rise>=0.035:
+                left_edge_target=max(0.0,min(1.0,(bass-0.18)*3.0+left_bass_rise*8.0))
+            left_edge_push=0
+            self._rainbow_left_edge_push=left_edge_push
             bar_tops=[]
             for i,v in enumerate(values):
                 t=i/max(1,count-1)
@@ -3145,7 +3424,10 @@ class VisualizerWidget(BaseWidget):
                 tone_v=max(0.0,min(1.0,(low_v*low_weight+mid_v*mid_weight+high_v*high_weight+v*local_weight+avg*avg_weight)/max(0.001,weight_sum)))
                 x=area.left()+i*slot
                 h=ah*(0.030+tone_v*0.340)
-                c=self._rainbow_color(t+now*0.050,230)
+                left_edge_weight=max(0.0,1.0-t*5.0)**1.70
+                if left_edge_push>0.001 and left_edge_weight>0.001:
+                    x+=left_edge_weight*left_edge_push*slot*0.85
+                c=self._rainbow_lut_color(t+now*0.050,230)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QBrush(c))
                 bx=x+slot*0.31
@@ -3176,7 +3458,7 @@ class VisualizerWidget(BaseWidget):
                 base_x,base_y,t,tone_v=bar_tops[i]
                 rise=tone_v-prev_levels[i]
                 if tone_v>=peak_level_threshold and rise>=peak_rise_threshold and now-last_spawn[i]>=peak_cooldown:
-                    for spark in range(9):
+                    for spark in range(6):
                         seed=(i*0.017+spark*0.109+now*0.013)%1.0
                         particles.append((now,base_x,base_y,t,tone_v,spark,seed))
                     last_spawn[i]=now
@@ -3200,36 +3482,16 @@ class VisualizerWidget(BaseWidget):
                 angle=math.sin(now*1.65+seed*13.0+spark*0.97)*58.0+age*155.0+spark*23.0
                 fade=max(0.0,1.0-age)
                 alpha=max(0,int((fade*fade*fade)*230))
-                c1=self._rainbow_color(t+spark*0.081+now*0.030+age*0.065,alpha)
-                c2=self._rainbow_color(t+0.28+spark*0.103+now*0.041-age*0.035,alpha)
-                c3=QColor(255,255,255,max(16,int(alpha*0.50)))
-                halo=QColor(c1)
-                halo.setAlpha(max(8,int(alpha*0.20)))
+                hue_bucket=int(((t+spark*0.081+now*0.030+age*0.065)%1.0)*24.0)
+                size_bucket=max(0,min(2,int(tone_v*3.0)))
+                angle_bucket=int((angle%360.0)/22.5)%16
+                sprite=self._get_rainbow_powder_sprite(hue_bucket,size_bucket,angle_bucket)
+                draw_size=max(3.0,pr*4.2)
                 p.save()
-                p.translate(px,py)
-                p.rotate(angle)
-                p.setBrush(QBrush(halo))
-                p.drawEllipse(QPointF(0,0),pr*1.35,pr*0.46)
-                grad=QLinearGradient(QPointF(-pr*1.05,0),QPointF(pr*1.05,0))
-                grad.setColorAt(0.00,c1)
-                grad.setColorAt(0.48,c3)
-                grad.setColorAt(1.00,c2)
-                flake=QPainterPath()
-                flake.moveTo(QPointF(-pr*0.95,-pr*0.18))
-                flake.lineTo(QPointF(-pr*0.18,-pr*0.50))
-                flake.lineTo(QPointF(pr*0.92,-pr*0.12))
-                flake.lineTo(QPointF(pr*0.36,pr*0.42))
-                flake.lineTo(QPointF(-pr*0.72,pr*0.30))
-                flake.closeSubpath()
-                p.setBrush(QBrush(grad))
-                p.drawPath(flake)
-                if spark%2==0:
-                    glint=QColor(255,255,255,max(18,int(alpha*0.58)))
-                    p.setPen(QPen(glint,max(0.45,0.62*width_scale)))
-                    p.drawLine(QPointF(-pr*0.50,-pr*0.04),QPointF(pr*0.52,pr*0.07))
-                    p.setPen(Qt.PenStyle.NoPen)
+                p.setOpacity(max(0.0,min(1.0,alpha/255.0)))
+                p.drawImage(QRectF(px-draw_size*0.5,py-draw_size*0.5,draw_size,draw_size),sprite)
                 p.restore()
-            self._rainbow_peak_particles=active_particles[-1600:]
+            self._rainbow_peak_particles=active_particles[-700:]
             p.restore(); return
 
         if style == "minimal":
@@ -3705,6 +3967,20 @@ class VisualizerWidget(BaseWidget):
             bw=max(1.0,slot*0.38*width_scale)
             
             particle_step=max(1,count//15)
+            # Left-edge bass push: on a deep bass transient, move only the existing left bars.
+            # No oscillation is added; the bars push once with the bass envelope and then return smoothly.
+            prev_left_bass=float(getattr(self,"_rainbow_left_edge_prev_bass",bass))
+            left_bass_rise=bass-prev_left_bass
+            self._rainbow_left_edge_prev_bass=bass
+            prev_left_time=float(getattr(self,"_rainbow_left_edge_last_time",now))
+            left_dt=max(0.0,min(0.10,now-prev_left_time))
+            self._rainbow_left_edge_last_time=now
+            prev_left_push=float(getattr(self,"_rainbow_left_edge_push",0.0))
+            left_edge_target=0.0
+            if bass>=0.18 and left_bass_rise>=0.035:
+                left_edge_target=max(0.0,min(1.0,(bass-0.18)*3.0+left_bass_rise*8.0))
+            left_edge_push=0
+            self._rainbow_left_edge_push=left_edge_push
             bar_tops=[]
             for i,v in enumerate(values):
                 t=i/max(1,count-1)
@@ -3725,7 +4001,10 @@ class VisualizerWidget(BaseWidget):
                 tone_v=max(0.0,min(1.0,(low_v*low_weight+mid_v*mid_weight+high_v*high_weight+v*local_weight+avg*avg_weight)/max(0.001,weight_sum)))
                 x=area.left()+i*slot
                 h=ah*(0.030+tone_v*0.340)
-                c=self._rainbow_color(t+now*0.050,230)
+                left_edge_weight=max(0.0,1.0-t*5.0)**1.70
+                if left_edge_push>0.001 and left_edge_weight>0.001:
+                    x+=left_edge_weight*left_edge_push*slot*0.85
+                c=self._rainbow_lut_color(t+now*0.050,230)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QBrush(c))
                 bx=x+slot*0.31
@@ -3756,7 +4035,7 @@ class VisualizerWidget(BaseWidget):
                 base_x,base_y,t,tone_v=bar_tops[i]
                 rise=tone_v-prev_levels[i]
                 if tone_v>=peak_level_threshold and rise>=peak_rise_threshold and now-last_spawn[i]>=peak_cooldown:
-                    for spark in range(9):
+                    for spark in range(6):
                         seed=(i*0.017+spark*0.109+now*0.013)%1.0
                         particles.append((now,base_x,base_y,t,tone_v,spark,seed))
                     last_spawn[i]=now
@@ -3780,36 +4059,16 @@ class VisualizerWidget(BaseWidget):
                 angle=math.sin(now*1.65+seed*13.0+spark*0.97)*58.0+age*155.0+spark*23.0
                 fade=max(0.0,1.0-age)
                 alpha=max(0,int((fade*fade*fade)*230))
-                c1=self._rainbow_color(t+spark*0.081+now*0.030+age*0.065,alpha)
-                c2=self._rainbow_color(t+0.28+spark*0.103+now*0.041-age*0.035,alpha)
-                c3=QColor(255,255,255,max(16,int(alpha*0.50)))
-                halo=QColor(c1)
-                halo.setAlpha(max(8,int(alpha*0.20)))
+                hue_bucket=int(((t+spark*0.081+now*0.030+age*0.065)%1.0)*24.0)
+                size_bucket=max(0,min(2,int(tone_v*3.0)))
+                angle_bucket=int((angle%360.0)/22.5)%16
+                sprite=self._get_rainbow_powder_sprite(hue_bucket,size_bucket,angle_bucket)
+                draw_size=max(3.0,pr*4.2)
                 p.save()
-                p.translate(px,py)
-                p.rotate(angle)
-                p.setBrush(QBrush(halo))
-                p.drawEllipse(QPointF(0,0),pr*1.35,pr*0.46)
-                grad=QLinearGradient(QPointF(-pr*1.05,0),QPointF(pr*1.05,0))
-                grad.setColorAt(0.00,c1)
-                grad.setColorAt(0.48,c3)
-                grad.setColorAt(1.00,c2)
-                flake=QPainterPath()
-                flake.moveTo(QPointF(-pr*0.95,-pr*0.18))
-                flake.lineTo(QPointF(-pr*0.18,-pr*0.50))
-                flake.lineTo(QPointF(pr*0.92,-pr*0.12))
-                flake.lineTo(QPointF(pr*0.36,pr*0.42))
-                flake.lineTo(QPointF(-pr*0.72,pr*0.30))
-                flake.closeSubpath()
-                p.setBrush(QBrush(grad))
-                p.drawPath(flake)
-                if spark%2==0:
-                    glint=QColor(255,255,255,max(18,int(alpha*0.58)))
-                    p.setPen(QPen(glint,max(0.45,0.62*width_scale)))
-                    p.drawLine(QPointF(-pr*0.50,-pr*0.04),QPointF(pr*0.52,pr*0.07))
-                    p.setPen(Qt.PenStyle.NoPen)
+                p.setOpacity(max(0.0,min(1.0,alpha/255.0)))
+                p.drawImage(QRectF(px-draw_size*0.5,py-draw_size*0.5,draw_size,draw_size),sprite)
                 p.restore()
-            self._rainbow_peak_particles=active_particles[-1600:]
+            self._rainbow_peak_particles=active_particles[-700:]
             p.restore(); return
 
         if style == "minimal":
