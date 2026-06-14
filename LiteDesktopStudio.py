@@ -15196,6 +15196,7 @@ class DesktopCanvas(QWidget):
     def __init__(self):
         super().__init__()
         self.studio_theme = DEFAULT_STUDIO_THEME
+        self.preview_3d_background_theme = "blue"
         self.language = _lds_normalize_lang(get_litedesktopstudio_language())
         self.volume_sliding = False
         self.setWindowTitle(lds_tr(APP_NAME))
@@ -16917,6 +16918,15 @@ class DesktopCanvas(QWidget):
         except Exception:
             return False
 
+    def normalize_preview_3d_background_theme(self, value):
+        try:
+            value = str(value or "blue").strip().lower()
+        except Exception:
+            value = "blue"
+        if value not in ("blue", "light_nvd", "black_lime", "white", "graphite"):
+            value = "blue"
+        return value
+
     def save_config(self):
         
         try:
@@ -16928,6 +16938,7 @@ class DesktopCanvas(QWidget):
             os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] = "off"
         data = {
             "studio_theme": get_canvas_studio_theme(self),
+            "preview_3d_background_theme": self.normalize_preview_3d_background_theme(getattr(self, "preview_3d_background_theme", "blue")),
             LDS_LANGUAGE_CONFIG_KEY: _lds_normalize_lang(getattr(self, "language", get_litedesktopstudio_language())),
             "widgets": [asdict(w.to_config()) for w in self.widgets],
             "icon_scene_render_icons": "on" if os.environ["LITEDESKTOPSTUDIO_ICON_SCENE_RENDER_ICONS"] == "1" else "off"
@@ -17025,6 +17036,10 @@ class DesktopCanvas(QWidget):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                try:
+                    self.preview_3d_background_theme = self.normalize_preview_3d_background_theme(data.get("preview_3d_background_theme", "blue"))
+                except Exception:
+                    self.preview_3d_background_theme = "blue"
                 self.studio_theme = normalize_studio_theme(data.get("studio_theme", DEFAULT_STUDIO_THEME))
                 self.language = _lds_normalize_lang(data.get(LDS_LANGUAGE_CONFIG_KEY, get_litedesktopstudio_language()))
                 set_litedesktopstudio_language(QApplication.instance(), self.language)

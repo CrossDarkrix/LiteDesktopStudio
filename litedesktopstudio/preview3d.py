@@ -6983,6 +6983,10 @@ class LDSPreview3DWindow(QMainWindow):
             self.update_integrated_selection_bar()
         except Exception:
             pass
+        try:
+            self._update_layer_structure_side_panel()
+        except Exception:
+            pass
 
     def _current_selected_preview_type(self):
         try:
@@ -7096,11 +7100,65 @@ class LDSPreview3DWindow(QMainWindow):
                 self.show()
                 self.update()
 
+    def _preview_background_theme_from_canvas_config(self):
+        try:
+            canvas = self._canvas_owner()
+            theme = getattr(canvas, "preview_3d_background_theme", "blue") if canvas is not None else "blue"
+            theme = str(theme or "blue").strip().lower()
+            if theme not in ("blue", "light_nvd", "black_lime", "white", "graphite"):
+                theme = "blue"
+            return theme
+        except Exception:
+            return "blue"
+
+    def _set_preview_background_combo_theme(self, theme):
+        try:
+            if not hasattr(self, "preview_background_combo"):
+                return False
+            theme = str(theme or "blue").strip().lower()
+            index = self.preview_background_combo.findData(theme)
+            if index < 0:
+                index = self.preview_background_combo.findData("blue")
+            blocked = False
+            try:
+                blocked = self.preview_background_combo.blockSignals(True)
+            except Exception:
+                blocked = False
+            try:
+                self.preview_background_combo.setCurrentIndex(max(0, index))
+            finally:
+                try:
+                    self.preview_background_combo.blockSignals(blocked)
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+
+    def _persist_preview_background_theme_to_config(self, theme):
+        try:
+            theme = str(theme or "blue").strip().lower()
+            if theme not in ("blue", "light_nvd", "black_lime", "white", "graphite"):
+                theme = "blue"
+            canvas = self._canvas_owner()
+            if canvas is not None:
+                try:
+                    canvas.preview_3d_background_theme = theme
+                except Exception:
+                    pass
+                if hasattr(canvas, "save_config"):
+                    try:
+                        canvas.save_config()
+                    except Exception:
+                        pass
+            return theme
+        except Exception:
+            return "blue"
+
     def on_preview_background_theme_changed(self, *args):
         try:
-            if not self.is_developer_mode():
-                return
             theme = self.preview_background_combo.currentData()
+            theme = self._persist_preview_background_theme_to_config(theme)
             self.preview.set_preview_background_theme(theme)
         except Exception:
             pass
@@ -7113,7 +7171,7 @@ class LDSPreview3DWindow(QMainWindow):
                 self.preview_background_combo.setVisible(enabled)
                 self.preview_background_combo.setEnabled(enabled)
                 if enabled:
-                    self.preview.set_preview_background_theme(self.preview_background_combo.currentData())
+                    self.preview.set_preview_background_theme(self._preview_background_theme_from_canvas_config())
         except Exception:
             pass
         try:
@@ -8293,6 +8351,208 @@ class LDSPreview3DWindow(QMainWindow):
         except Exception:
             pass
 
+    def _create_widget_add_side_panel(self):
+        """Phase 24A-8l: scrollable left side widget-add panel with all detail widgets."""
+        panel = QGroupBox(lds_ui_text("Widgets", "Widgets"))
+        panel.setObjectName("PreviewSidePanel")
+        panel.setFixedWidth(188)
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(8)
+        self._preview_add_widget_kind = "visualizer"
+        self._preview_add_widget_buttons = {}
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll_body = QWidget()
+        scroll.setWidget(scroll_body)
+        layout = QVBoxLayout(scroll_body)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(7)
+
+        # Keep this list aligned with the detailed settings add-widget panel.
+        # Labels are user-facing; kind values are the existing Canvas.add_widget() keys.
+        widget_specs = [
+            (lds_ui_text("🎵 音楽ビジュライザー", "🎵 Music Visualizer"), "visualizer"),
+            (lds_ui_text("✨ エフェクトオーバーレイ", "✨ Effects Overlay"), "effects_overlay"),
+            (lds_ui_text("🖥 システム", "🖥 System"), "system"),
+            (lds_ui_text("🔊 音量", "🔊 Volume"), "volume"),
+            (lds_ui_text("🕒 時計", "🕒 Clock"), "clock"),
+            (lds_ui_text("📶 ネットワーク", "📶 Network"), "network"),
+            (lds_ui_text("🎧 メディア", "🎧 Media"), "media"),
+            (lds_ui_text("🌦 天気", "🌦 Weather"), "weather"),
+            (lds_ui_text("📅 カレンダー", "📅 Calendar"), "calendar"),
+            (lds_ui_text("🌐 HTML/JS", "🌐 HTML / JS"), "html_js"),
+        ]
+        for label, kind in widget_specs:
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setMinimumHeight(30)
+            button.setToolTip(lds_ui_text(f"{label} を追加します。", f"Add {label}."))
+            button.clicked.connect(lambda checked=False, k=kind: self._select_widget_add_kind(k))
+            layout.addWidget(button)
+            self._preview_add_widget_buttons[kind] = button
+        layout.addStretch(1)
+        outer.addWidget(scroll, 1)
+
+        self.btn_preview_add_widget = QPushButton(lds_ui_text("＋ Add", "+ Add"))
+        self.btn_preview_add_widget.setObjectName("LDSNvdApplyButton")
+        self.btn_preview_add_widget.setMinimumHeight(34)
+        self.btn_preview_add_widget.clicked.connect(self._add_selected_widget_from_side_panel)
+        outer.addWidget(self.btn_preview_add_widget, 0)
+        self._select_widget_add_kind("visualizer")
+        return panel
+
+    def _select_widget_add_kind(self, kind):
+        try:
+            kind = str(kind or "visualizer")
+            self._preview_add_widget_kind = kind
+            for key, button in dict(getattr(self, "_preview_add_widget_buttons", {}) or {}).items():
+                try:
+                    button.setChecked(str(key) == kind)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _add_selected_widget_from_side_panel(self):
+        try:
+            kind = str(getattr(self, "_preview_add_widget_kind", "visualizer") or "visualizer")
+            self._add_widget_from_side_panel(kind)
+        except Exception:
+            pass
+
+    def _add_widget_from_side_panel(self, kind):
+        try:
+            kind = str(kind or "visualizer")
+            controller = getattr(self, "_detail_studio", None)
+            if controller is not None and hasattr(controller, "add_widget"):
+                controller.add_widget(kind)
+                try:
+                    controller.preview_3d_test_window = self
+                except Exception:
+                    pass
+                self.set_preview_state(controller.build_3d_preview_state())
+                self._drag_notice = f"Widget added: {kind}"
+                return True
+            canvas = self._canvas_owner()
+            if canvas is None or not hasattr(canvas, "add_widget"):
+                return False
+            canvas.add_widget(kind)
+            try:
+                new_index = len(list(getattr(canvas, "widgets", []) or [])) - 1
+                if hasattr(canvas, "select_widget_by_index") and new_index >= 0:
+                    canvas.select_widget_by_index(new_index)
+            except Exception:
+                pass
+            controller = getattr(self, "_detail_studio", None)
+            if controller is not None:
+                try:
+                    controller.refresh_layer_list()
+                    controller.load_selected_to_editor()
+                except Exception:
+                    pass
+            self._refresh_preview_state_from_current_canvas()
+            self._drag_notice = f"Widget added: {kind}"
+            return True
+        except Exception:
+            return False
+
+    def _refresh_preview_state_from_current_canvas(self):
+        try:
+            controller = getattr(self, "_detail_studio", None)
+            if controller is not None and hasattr(controller, "build_3d_preview_state"):
+                self.set_preview_state(controller.build_3d_preview_state())
+                return True
+        except Exception:
+            pass
+        try:
+            canvas = self._canvas_owner()
+            if canvas is not None and hasattr(self.preview, "_build_preview_state_from_canvas_owner_for_widget_delete"):
+                state = self.preview._build_preview_state_from_canvas_owner_for_widget_delete(canvas)
+                self.set_preview_state(state)
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _create_layer_structure_side_panel(self):
+        """Phase 24A-8k-fix: right side user-facing layer structure panel."""
+        panel = QGroupBox(lds_ui_text("Layer Structure", "Layer Structure"))
+        panel.setObjectName("PreviewSidePanel")
+        panel.setFixedWidth(218)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(7)
+        self.layer_structure_summary_label = QLabel(lds_ui_text("構造: 未読込", "Structure: not loaded"))
+        self.layer_structure_summary_label.setWordWrap(True)
+        self.layer_structure_summary_label.setObjectName("StatusText")
+        layout.addWidget(self.layer_structure_summary_label)
+        self._layer_structure_labels = []
+        for label in [
+            lds_ui_text("背景層", "Background"),
+            lds_ui_text("効果層", "Effects"),
+            lds_ui_text("デスクトップ面", "Desktop Plane"),
+            lds_ui_text("ウィジェット層", "Widgets"),
+        ]:
+            row = QLabel("  " + label)
+            row.setMinimumHeight(28)
+            row.setWordWrap(True)
+            row.setStyleSheet("QLabel { padding: 5px 8px; border-radius: 7px; background: rgba(120,150,180,36); }")
+            layout.addWidget(row)
+            self._layer_structure_labels.append(row)
+        self.layer_structure_selected_label = QLabel(lds_ui_text("選択: なし", "Selected: None"))
+        self.layer_structure_selected_label.setWordWrap(True)
+        self.layer_structure_selected_label.setObjectName("StatusText")
+        layout.addSpacing(5)
+        layout.addWidget(self.layer_structure_selected_label)
+        layout.addStretch(1)
+        return panel
+
+    def _update_layer_structure_side_panel(self):
+        try:
+            if not hasattr(self, "_layer_structure_labels"):
+                return
+            state = dict(getattr(self.preview, "_preview_state", {}) or {})
+            widgets = [dict(w or {}) for w in list(state.get("widgets", []) or []) if isinstance(w, dict)]
+            selected = dict(state.get("selected", {}) or {})
+            selected_type = str(selected.get("type", "") or "")
+            effect = dict(state.get("effect", {}) or {})
+            effect_visible = any(bool(v) for k, v in effect.items() if str(k).endswith("_visible"))
+            widget_count = len([w for w in widgets if str(w.get("type", "")) != "effects_overlay"])
+            has_overlay = any(str(w.get("type", "")) == "effects_overlay" for w in widgets)
+            rows = [
+                (lds_ui_text("背景層", "Background"), True),
+                (lds_ui_text("効果層", "Effects") + (" / ON" if effect_visible or has_overlay else " / OFF"), bool(effect_visible or has_overlay or selected_type == "effects_overlay")),
+                (lds_ui_text("デスクトップ面", "Desktop Plane"), True),
+                (lds_ui_text("ウィジェット層", "Widgets") + f" / {widget_count}", bool(widget_count or (selected_type and selected_type != "effects_overlay"))),
+            ]
+            selected_layer = 3 if selected_type and selected_type != "effects_overlay" else (1 if selected_type == "effects_overlay" else -1)
+            for i, row in enumerate(rows):
+                label, active = row
+                prefix = "▶ " if i == selected_layer else "  "
+                try:
+                    self._layer_structure_labels[i].setText(prefix + label)
+                    if i == selected_layer:
+                        self._layer_structure_labels[i].setStyleSheet("QLabel { padding: 5px 8px; border-radius: 7px; background: rgba(118,185,0,120); color: white; font-weight: 700; }")
+                    elif active:
+                        self._layer_structure_labels[i].setStyleSheet("QLabel { padding: 5px 8px; border-radius: 7px; background: rgba(120,150,180,48); }")
+                    else:
+                        self._layer_structure_labels[i].setStyleSheet("QLabel { padding: 5px 8px; border-radius: 7px; background: rgba(120,120,120,24); color: #8A9098; }")
+                except Exception:
+                    pass
+            try:
+                self.layer_structure_summary_label.setText(lds_ui_text("レイヤー別構造", "Layered structure"))
+                selected_title = str(selected.get("title") or selected.get("type") or lds_ui_text("なし", "None"))
+                self.layer_structure_selected_label.setText(lds_ui_text("選択: ", "Selected: ") + selected_title)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def __init__(self, parent=None):
         # Keep a canvas owner reference, but do not make the 3D preview a child/tool window.
         # As a real top-level window it gets a normal taskbar entry and can be restored after minimize.
@@ -8397,8 +8657,16 @@ class LDSPreview3DWindow(QMainWindow):
         except Exception:
             pass
 
+        content_row = QHBoxLayout()
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.setSpacing(10)
+        self.widget_add_side_panel = self._create_widget_add_side_panel()
+        content_row.addWidget(self.widget_add_side_panel, 0)
         self.preview = LDSPreview3DWidget(self)
-        layout.addWidget(self.preview, 1)
+        content_row.addWidget(self.preview, 1)
+        self.layer_structure_side_panel = self._create_layer_structure_side_panel()
+        content_row.addWidget(self.layer_structure_side_panel, 0)
+        layout.addLayout(content_row, 1)
 
         selection_bar = QGroupBox(lds_ui_text("統合操作", "Controls"))
         selection_layout = QHBoxLayout(selection_bar)
@@ -8449,6 +8717,7 @@ class LDSPreview3DWindow(QMainWindow):
             (lds_ui_text("背景: Graphite", "Background: Graphite"), "graphite"),
         ]:
             self.preview_background_combo.addItem(_label, _value)
+        self._set_preview_background_combo_theme(self._preview_background_theme_from_canvas_config())
         self.preview_background_combo.currentIndexChanged.connect(self.on_preview_background_theme_changed)
         self.preview_background_combo.setVisible(False)
         self.preview_background_combo.setEnabled(False)
@@ -8558,6 +8827,10 @@ class LDSPreview3DWindow(QMainWindow):
         self.preview_status_label = status
         layout.addWidget(status)
         self.preview.set_developer_mode(self.is_developer_mode())
+        try:
+            self._update_layer_structure_side_panel()
+        except Exception:
+            pass
         try:
             controller = self._ensure_detail_studio()
             if controller is not None:
