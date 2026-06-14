@@ -7,6 +7,7 @@ import json
 import math
 import random
 import os
+import threading
 
 def lds_apply_qtwebengine_realtime_flags():
     try:
@@ -118,6 +119,7 @@ from PySide6.QtWidgets import (QStyle, QFileIconProvider,
     QComboBox,
     QTabWidget,
     QGroupBox,
+    QMenu,
 )
 try:
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -151,6 +153,42 @@ warnings.filterwarnings(
     message="data discontinuity in recording",
     category=Warning
 )
+
+
+def lds_ui_text(ja_text, en_text):
+    """Direct in-file bilingual text helper for the integrated Studio UI.
+
+    This intentionally does not depend on lds_tr.  It only switches the new
+    integrated 3D preview / detail-settings labels between Japanese and English
+    based on the current Qt system locale.
+    """
+    try:
+        locale_name = str(QLocale.system().name() or "").lower()
+        if locale_name.startswith("en"):
+            return str(en_text)
+    except Exception:
+        pass
+    return str(ja_text)
+
+
+def _lds_dismiss_windows_context_menu():
+    """Best-effort ESC cleanup for a leaked Explorer desktop context menu.
+
+    Keep this intentionally lightweight.  Do not enumerate or close native popup
+    windows here, because that can interfere with Qt menus/windows and can freeze
+    the 3D preview.  Right-double-click handling should remain on the normal Qt
+    mouseDoubleClickEvent path.
+    """
+    if not is_windows():
+        return
+    try:
+        user32 = ctypes.windll.user32
+        VK_ESCAPE = 0x1B
+        KEYEVENTF_KEYUP = 0x0002
+        user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+        user32.keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0)
+    except Exception:
+        pass
 
 def _lds_get_class_name(hwnd) -> str:
     if not is_windows() or not hwnd:
@@ -1594,32 +1632,9 @@ class EffectsOverlayWidget(BaseWidget):
             q.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             scene_id = str(scene_id or "")
             if scene_id == "pamukkale":
-                # Subtle line-only downhill stains; no foreground objects or pool highlights.
-                terrace_y = top + h * 0.292
-                step = h * 0.033
-                previous = []
-                for row in range(10):
-                    depth = min(1.0, row / 9.0)
-                    current = []
-                    flow_count = 2 if depth < 0.50 else 3
-                    for i in range(flow_count):
-                        fx = left + w * (0.28 + 0.20 * i + math.sin(row * 0.66 + i) * 0.020)
-                        fy = terrace_y + h * (0.010 + 0.012 * depth)
-                        current.append((fx, fy))
-                    if previous:
-                        p.setPen(QPen(QColor(215, 247, 249, int(5 + 16 * depth)), max(1.0, h * (0.0010 + 0.0018 * depth))))
-                        p.setBrush(Qt.BrushStyle.NoBrush)
-                        for i, cur in enumerate(current):
-                            prev = previous[min(len(previous) - 1, i)]
-                            path = QPainterPath()
-                            path.moveTo(QPointF(prev[0], prev[1] + h * 0.008))
-                            mid_x = (prev[0] + cur[0]) * 0.5 + rnd.uniform(-w * 0.0035, w * 0.0035)
-                            path.cubicTo(QPointF(mid_x, prev[1] + h * 0.020), QPointF(mid_x, cur[1] - h * 0.020), QPointF(cur[0], cur[1] - h * 0.008))
-                            p.drawPath(path)
-                    previous = current
-                    terrace_y += step * rnd.uniform(0.990, 1.035)
-                    step *= 1.105
-
+                self._render_pamukkale_static(q, w, h)
+            elif scene_id == "blue_hole":
+                self._render_blue_hole_static(q, w, h)
             elif scene_id == "chichibugahama":
                 self._render_chichibugahama_static(q, w, h)
             else:
@@ -3779,7 +3794,12 @@ class EffectsOverlayWidget(BaseWidget):
         if kind == "fireball":
             speed = max(0.01, float(getattr(settings, "fireball_speed", 0.34)))
             size = max(4.0, float(getattr(settings, "fireball_size", 20.0))) * (0.75 + rnd.random()*0.8)
-            return ExtraEffectParticle(kind, random_x(), top_y(0.65), (-24+rnd.random()*48)*speed, (55+rnd.random()*55)*speed, size, 0.70+rnd.random()*0.30, rnd.random()*10000, rnd.random()*math.tau, (-1.5+rnd.random()*3)*speed, 12, now)
+            fx = max(0.0, min(1.0, float(getattr(settings, "fireball_x", 0.50))))
+            fy = max(0.0, min(1.0, float(getattr(settings, "fireball_y", 0.38))))
+            spread = w * 0.32
+            x = max(r.left(), min(r.right(), r.left() + w * fx + (-spread + rnd.random() * spread * 2.0)))
+            y = max(r.top(), min(r.bottom(), r.top() + h * fy + (-h * 0.10 + rnd.random() * h * 0.20)))
+            return ExtraEffectParticle(kind, x, y, (-24+rnd.random()*48)*speed, (55+rnd.random()*55)*speed, size, 0.70+rnd.random()*0.30, rnd.random()*10000, rnd.random()*math.tau, (-1.5+rnd.random()*3)*speed, 12, now)
         if kind == "star_sky":
             size = max(0.2, float(getattr(settings, "star_sky_size", 1.6))) * (0.35 + rnd.random() * 1.25)
             return ExtraEffectParticle(kind, random_x(), r.top() + rnd.random() * h, 0.0, 0.0, size, 0.40 + rnd.random() * 0.60, rnd.random() * 10000, 0.0, 0.0, 999999.0, now)
@@ -7624,11 +7644,24 @@ def create_widget(cfg: WidgetConfig) -> BaseWidget:
 
     return SystemWidget(cfg)
 
-class LiteDeskStudio(QMainWindow):
+
+# === Phase 23R2 Preview3D extraction boundary: START ===
+# Preview3D classes below are prepared for future extraction into
+# litedesktopstudio.preview3d. Phase 23R4B imports Preview3D classes and injects the LiteDeskStudio detail factory explicitly.
+from litedesktopstudio.preview3d import LDSPreview3DWidget, LDSPreview3DWindow, LDSRightDoubleClickCatcher
+
+
+
+
+# === Phase 23R2 Preview3D extraction boundary: END ===
+# End of Preview3D classes prepared for future extraction.
+
+
+class LiteDeskStudio(QDialog):
     def __init__(self, canvas):
         super().__init__()
         self.STUDIO_LIQUID_GLASS_STYLESHEET = """
-            QMainWindow { background: rgba(8, 14, 24, 92); color: #FFF7F7; }
+            QMainWindow, QDialog { background: rgba(8, 14, 24, 92); color: #FFF7F7; }
             QWidget { font-family: "Segoe UI", "Yu Gothic UI", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; color: #FFF7F7; background: transparent; }
             QWidget#SidePanel, QWidget#CenterPanel, QWidget#PropertyPanel, QDialog {
                 background: rgba(24, 36, 54, 150); border: 1px solid rgba(255, 214, 214, 82); border-radius: 24px;
@@ -7734,7 +7767,7 @@ class LiteDeskStudio(QMainWindow):
         self.canvas = canvas
         self.updating_ui = False
 
-        self.setWindowTitle(lds_tr(APP_NAME))
+        self.setWindowTitle(lds_ui_text("Lite Desktop Studio - 詳細設定", "Lite Desktop Studio - Details"))
         self.apply_beginner_editor_window_geometry()
 
         self.build_ui()
@@ -7812,7 +7845,12 @@ class LiteDeskStudio(QMainWindow):
 
     def build_ui(self):
         root = QWidget()
-        self.setCentralWidget(root)
+        try:
+            self.setCentralWidget(root)
+        except Exception:
+            outer = QVBoxLayout(self)
+            outer.setContentsMargins(0, 0, 0, 0)
+            outer.addWidget(root)
 
         main = QHBoxLayout(root)
         main.setContentsMargins(12, 12, 12, 12)
@@ -7848,7 +7886,7 @@ class LiteDeskStudio(QMainWindow):
             "btn_delete": lds_tr("選択中のウィジェットを削除します。削除前に選択対象を確認してください。"),
             "btn_export": lds_tr("現在の設定をファイルとして保存します。別PCへの移動やバックアップに使えます。"),
             "btn_import": lds_tr("保存済みの設定ファイルを読み込みます。"),
-            "btn_close_canvas": lds_tr("アプリを終了します。終了前に保存しておくと安心です。"),
+            "btn_integrated_exit_app": lds_tr("Lite Desktop Studioを終了します。終了前に保存しておくと安心です。"),
             "prop_type": lds_tr("選択中ウィジェットの種類です。ここは確認用なので編集できません。"),
             "prop_title": lds_tr("ウィジェット名です。レイヤー一覧で見分けやすい名前にできます。"),
             "prop_x": lds_tr("画面左からの位置です。ドラッグ移動でも変更できます。"),
@@ -7868,11 +7906,1528 @@ class LiteDeskStudio(QMainWindow):
                 getattr(self, name).setObjectName("PrimaryButton")
             except:
                 pass
-        for name in ("btn_delete", "btn_close_canvas"):
+        for name in ("btn_delete"):
             try:
                 getattr(self, name).setObjectName("DangerButton")
             except:
                 pass
+
+    def _select_layer_list_row_for_widget_index(self, index):
+        """Phase 24A-8j: visually select and reveal the layer row for a widget index."""
+        try:
+            index = int(index)
+            if not hasattr(self, "layer_list") or self.layer_list is None:
+                return False
+            if index < 0 or index >= self.layer_list.count():
+                return False
+            blocked = False
+            try:
+                blocked = self.layer_list.blockSignals(True)
+            except Exception:
+                blocked = False
+            try:
+                self.layer_list.setCurrentRow(index)
+                try:
+                    item = self.layer_list.item(index)
+                    if item is not None:
+                        self.layer_list.scrollToItem(item)
+                except Exception:
+                    pass
+            finally:
+                try:
+                    self.layer_list.blockSignals(blocked)
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+
+    def select_3d_preview_widget_index(self, index):
+        try:
+            index = int(index)
+            widgets = list(getattr(self.canvas, "widgets", []) or [])
+            if not (0 <= index < len(widgets)):
+                return
+            try:
+                window = getattr(self, "preview_3d_test_window", None)
+                if window is not None and hasattr(window, "preview"):
+                    pending = getattr(window.preview, "_pending_widget_rect", None)
+                    pending_index = int((pending or {}).get("index", -1)) if pending is not None else -1
+                    if pending_index >= 0 and pending_index != index:
+                        # Keep per-widget pending edits; only clear active drag mechanics.
+                        # The current pending rect may be switched by preview selection logic.
+                        window.preview._widget_drag_start = None
+                        window.preview._widget_drag_offset_unit = None
+                        window.preview._widget_drag_start_pos = None
+                        window.preview._widget_drag_jacobian = None
+            except Exception:
+                pass
+            try:
+                self.canvas.select_widget_by_index(index)
+            except Exception:
+                self.canvas.selected = widgets[index]
+                try:
+                    for widget in widgets:
+                        widget.selected = False
+                    widgets[index].selected = True
+                except Exception:
+                    pass
+            try:
+                self._select_layer_list_row_for_widget_index(index)
+            except Exception:
+                pass
+            try:
+                self.refresh_layer_list()
+            except Exception:
+                pass
+            try:
+                # refresh_layer_list() rebuilds the QListWidget, so select/scroll the
+                # row again after the rebuild to make the visual layer selection stick.
+                self._select_layer_list_row_for_widget_index(index)
+            except Exception:
+                pass
+            try:
+                self.load_selected_to_editor()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+            try:
+                self.notify_studio_selection_changed()
+            except Exception:
+                pass
+            try:
+                window = getattr(self, "preview_3d_test_window", None)
+                if window is not None and hasattr(window, "set_preview_state"):
+                    drag_kind = None
+                    try:
+                        drag_kind = getattr(getattr(window, "preview", None), "_drag_kind", None)
+                    except Exception:
+                        drag_kind = None
+                    if drag_kind not in ("widget_move", "widget_resize", "widget_rotate"):
+                        window.set_preview_state(self.build_3d_preview_state())
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _lds_3d_template_specs_runtime(self):
+        try:
+            data = globals().get("LDS_3D_EFFECT_TEMPLATE_RUNTIME", {}) or {}
+            return dict(data.get("effects", {}) or {})
+        except Exception:
+            return {}
+
+    def _lds_add_3d_template_effect_state(self, effect, settings, cfg):
+        try:
+            try:
+                raw = json.loads(getattr(cfg, "effects_json", "") or "{}")
+                if not isinstance(raw, dict): raw = {}
+            except Exception:
+                raw = {}
+            for key, spec in self._lds_3d_template_specs_runtime().items():
+                spec = dict(spec or {})
+                mode = str(spec.get("mode", ""))
+                if mode == "preview_skip":
+                    continue
+                enabled_key = str(spec.get("enabled_key") or f"{key}_enabled")
+                visible = bool(raw.get(enabled_key, getattr(settings, enabled_key, False)))
+                effect[f"{key}_visible"] = visible
+                effect[enabled_key] = visible
+                if mode == "anchor_point":
+                    x_key = str(spec.get("x_key") or f"{key}_x")
+                    y_key = str(spec.get("y_key") or f"{key}_y")
+                    effect[x_key] = float(raw.get(x_key, getattr(settings, x_key, spec.get("default_x", 0.5))))
+                    effect[y_key] = float(raw.get(y_key, getattr(settings, y_key, spec.get("default_y", 0.5))))
+        except Exception:
+            pass
+        return effect
+
+    def _lds_template_changes_present(self, changes):
+        try:
+            keys = set((self._lds_3d_template_specs_runtime() or {}).keys())
+            return any(str(k) in keys for k in dict(changes or {}).keys())
+        except Exception:
+            return False
+
+    def _lds_apply_3d_template_changes_to_settings(self, settings, changes, applied):
+        try:
+            specs = self._lds_3d_template_specs_runtime()
+            for key, spec in specs.items():
+                if key not in dict(changes or {}):
+                    continue
+                spec = dict(spec or {})
+                mode = str(spec.get("mode", ""))
+                if mode == "preview_skip":
+                    continue
+                data = dict(dict(changes or {}).get(key) or {})
+                enabled_key = str(spec.get("enabled_key") or f"{key}_enabled")
+                try: setattr(settings, enabled_key, bool(data.get("visible", True)))
+                except Exception: pass
+                if mode == "anchor_point":
+                    try: setattr(settings, str(spec.get("x_key") or f"{key}_x"), max(0.0, min(1.0, float(data.get("x", spec.get("default_x", 0.5))))))
+                    except Exception: pass
+                    try: setattr(settings, str(spec.get("y_key") or f"{key}_y"), max(0.0, min(1.0, float(data.get("y", spec.get("default_y", 0.5))))))
+                    except Exception: pass
+                try: applied.append(str(spec.get("display_name") or key))
+                except Exception: pass
+        except Exception:
+            pass
+
+    def _lds_patch_template_effects_raw_json_for_changes(self, cfg, changes):
+        try:
+            specs = self._lds_3d_template_specs_runtime()
+            data = json.loads(getattr(cfg, "effects_json", "") or "{}")
+            if not isinstance(data, dict): data = {}
+        except Exception:
+            data = {}
+        changed = False
+        for key, spec in specs.items():
+            try:
+                if key not in dict(changes or {}):
+                    continue
+                spec = dict(spec or {})
+                mode = str(spec.get("mode", ""))
+                if mode == "preview_skip":
+                    continue
+                item = dict(dict(changes or {}).get(key) or {})
+                data[str(spec.get("enabled_key") or f"{key}_enabled")] = bool(item.get("visible", True))
+                if mode == "anchor_point":
+                    data[str(spec.get("x_key") or f"{key}_x")] = max(0.0, min(1.0, float(item.get("x", spec.get("default_x", 0.5)))))
+                    data[str(spec.get("y_key") or f"{key}_y")] = max(0.0, min(1.0, float(item.get("y", spec.get("default_y", 0.5)))))
+                changed = True
+            except Exception:
+                pass
+        if changed:
+            try: cfg.effects_json = json.dumps(data, ensure_ascii=False)
+            except Exception: pass
+        return changed
+
+    def _normal_widget_runtime_preview_fields_for_3d(self, cfg):
+        """Phase 24A-10C: collect safe runtime values for 3D preview payload.
+
+        Only values available locally and cheaply are exposed here.  We avoid
+        inventing media title, weather conditions, or OS volume levels when no
+        reliable value is already available in the app state.
+        """
+        data = {}
+        try:
+            if cfg is None:
+                return data
+            widget_type = str(getattr(cfg, "type", "") or "")
+            now = time.time()
+            if widget_type == "calendar":
+                try:
+                    lt = time.localtime(now)
+                    data["runtime_calendar_date"] = time.strftime("%Y-%m-%d", lt)
+                    data["runtime_calendar_time"] = time.strftime("%H:%M", lt)
+                except Exception:
+                    pass
+            elif widget_type == "system":
+                try:
+                    data["runtime_cpu_percent"] = float(psutil.cpu_percent(interval=None))
+                except Exception:
+                    pass
+                try:
+                    data["runtime_memory_percent"] = float(psutil.virtual_memory().percent)
+                except Exception:
+                    pass
+                try:
+                    disk_path = str(Path.home().anchor or os.getcwd() or "/")
+                    data["runtime_disk_percent"] = float(psutil.disk_usage(disk_path).percent)
+                except Exception:
+                    try:
+                        data["runtime_disk_percent"] = float(psutil.disk_usage(os.getcwd()).percent)
+                    except Exception:
+                        pass
+            elif widget_type == "network":
+                try:
+                    counters = psutil.net_io_counters()
+                    recv = float(getattr(counters, "bytes_recv", 0.0))
+                    sent = float(getattr(counters, "bytes_sent", 0.0))
+                    previous = getattr(self, "_preview3d_network_runtime_sample", None)
+                    self._preview3d_network_runtime_sample = (now, recv, sent)
+                    if previous is not None:
+                        prev_time, prev_recv, prev_sent = previous
+                        dt = max(0.05, float(now) - float(prev_time))
+                        down_bps = max(0.0, (recv - float(prev_recv)) / dt)
+                        up_bps = max(0.0, (sent - float(prev_sent)) / dt)
+                        data["runtime_network_down_bps"] = float(down_bps)
+                        data["runtime_network_up_bps"] = float(up_bps)
+                        data["runtime_network_down_kbps"] = float(down_bps) / 1024.0
+                        data["runtime_network_up_kbps"] = float(up_bps) / 1024.0
+                        data["runtime_sample_age_sec"] = float(dt)
+                    else:
+                        data["runtime_network_down_bps"] = 0.0
+                        data["runtime_network_up_bps"] = 0.0
+                        data["runtime_network_down_kbps"] = 0.0
+                        data["runtime_network_up_kbps"] = 0.0
+                        data["runtime_sample_age_sec"] = 0.0
+                except Exception:
+                    pass
+            elif widget_type == "volume":
+                try:
+                    volume_controller = getattr(getattr(self, "canvas", None), "volume", None)
+                    if volume_controller is not None:
+                        data["runtime_volume_available"] = bool(getattr(volume_controller, "available", False))
+                        try:
+                            data["runtime_volume_percent"] = max(0.0, min(100.0, float(volume_controller.get_volume())))
+                        except Exception:
+                            pass
+                        try:
+                            data["runtime_volume_muted"] = bool(volume_controller.get_mute())
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            elif widget_type == "media":
+                try:
+                    media_meta = getattr(getattr(self, "canvas", None), "media_meta", None)
+                    snap = media_meta.snapshot() if media_meta is not None and hasattr(media_meta, "snapshot") else {}
+                    if isinstance(snap, dict):
+                        data["runtime_media_available"] = bool(snap.get("available", False))
+                        data["runtime_media_title"] = str(snap.get("title", "") or "")
+                        data["runtime_media_artist"] = str(snap.get("artist", "") or "")
+                        data["runtime_media_album"] = str(snap.get("album", "") or "")
+                        data["runtime_media_app_id"] = str(snap.get("app_id", "") or "")
+                        data["runtime_media_playback_status"] = str(snap.get("playback_status", "") or "")
+                        data["runtime_media_updated_at"] = str(snap.get("updated_at", "") or "")
+                except Exception:
+                    pass
+            elif widget_type == "weather":
+                try:
+                    data["runtime_weather_location"] = str(getattr(cfg, "weather_location", "") or "")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return data
+
+    def build_3d_preview_state(self):
+        state = {"selected": {}, "widgets": [], "effect": {}}
+        try:
+            try:
+                canvas_w_all = max(1, int(self.canvas.width()))
+                canvas_h_all = max(1, int(self.canvas.height()))
+            except Exception:
+                canvas_w_all = 1920
+                canvas_h_all = 1080
+            try:
+                selected_for_all = getattr(self.canvas, "selected", None)
+                for idx, widget_item in enumerate(list(getattr(self.canvas, "widgets", []) or [])):
+                    cfg_item = getattr(widget_item, "cfg", None)
+                    if cfg_item is None:
+                        continue
+                    widget_state_item = {
+                        "index": idx,
+                        "type": str(getattr(cfg_item, "type", "")),
+                        "title": str(getattr(cfg_item, "title", "")),
+                        "x": int(getattr(cfg_item, "x", 0)),
+                        "y": int(getattr(cfg_item, "y", 0)),
+                        "w": int(getattr(cfg_item, "w", 80)),
+                        "h": int(getattr(cfg_item, "h", 80)),
+                        "rotation": float(getattr(cfg_item, "rotation_degrees", getattr(cfg_item, "rotation", 0.0))),
+                        "rotation_degrees": float(getattr(cfg_item, "rotation_degrees", getattr(cfg_item, "rotation", 0.0))),
+                        "canvas_w": canvas_w_all,
+                        "canvas_h": canvas_h_all,
+                        "selected": bool(widget_item is selected_for_all),
+                    }
+                    for common_key in ("color", "bg", "text", "font_size", "cpu_color", "memory_color", "disk_color", "network_down_color", "network_up_color", 'visualizer_flip_vertical', 'visualizer_peak_bar_enabled', 'visualizer_glow_enabled', 'visualizer_bar_width_scale', 'visualizer_orientation', 'visualizer_style', 'visualizer_shadow_enabled', 'visualizer_shadow_offset_x', 'visualizer_shadow_offset_y', 'visualizer_shadow_strength', 'visualizer_shadow_opacity', 'visualizer_shadow_depth', 'visualizer_shadow_blur', 'visualizer_frame_rate_enabled', 'visualizer_frame_rate', 'weather_location', 'jshtml_mode', 'jshtml_entry', 'jshtml_package_name', 'jshtml_package_version', 'jshtml_permissions_json', 'jshtml_instance_id', 'runtime_calendar_date', 'runtime_calendar_time', 'runtime_cpu_percent', 'runtime_memory_percent', 'runtime_disk_percent', 'runtime_network_down_bps', 'runtime_network_up_bps', 'runtime_network_down_kbps', 'runtime_network_up_kbps', 'runtime_sample_age_sec', 'runtime_weather_location', 'runtime_volume_available', 'runtime_volume_percent', 'runtime_volume_muted', 'runtime_media_available', 'runtime_media_title', 'runtime_media_artist', 'runtime_media_album', 'runtime_media_app_id', 'runtime_media_playback_status', 'runtime_media_updated_at'):
+                        try:
+                            widget_state_item[common_key] = getattr(cfg_item, common_key)
+                        except Exception:
+                            pass
+                    if str(getattr(cfg_item, "type", "")) == "clock":
+                        try:
+                            widget_state_item["clock_show_digital"] = bool(getattr(cfg_item, "clock_show_digital", True))
+                        except Exception:
+                            pass
+                    try:
+                        widget_state_item.update(self._normal_widget_runtime_preview_fields_for_3d(cfg_item))
+                    except Exception:
+                        pass
+                    state["widgets"].append(widget_state_item)
+            except Exception:
+                pass
+            selected = getattr(self.canvas, "selected", None)
+            if selected is not None:
+                cfg = getattr(selected, "cfg", None)
+                if cfg is not None:
+                    canvas_w = 1920
+                    canvas_h = 1080
+                    try:
+                        canvas_w = max(1, int(self.canvas.width()))
+                        canvas_h = max(1, int(self.canvas.height()))
+                    except Exception:
+                        pass
+                    try:
+                        selected_index_for_preview = list(getattr(self.canvas, "widgets", []) or []).index(selected)
+                    except Exception:
+                        selected_index_for_preview = -1
+                    selected_state_item = {
+                        "index": selected_index_for_preview,
+                        "type": str(getattr(cfg, "type", "")),
+                        "title": str(getattr(cfg, "title", "")),
+                        "x": int(getattr(cfg, "x", 0)),
+                        "y": int(getattr(cfg, "y", 0)),
+                        "w": int(getattr(cfg, "w", 80)),
+                        "h": int(getattr(cfg, "h", 80)),
+                        "rotation": float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))),
+                        "rotation_degrees": float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))),
+                        "canvas_w": canvas_w,
+                        "canvas_h": canvas_h,
+                    }
+                    for common_key in ("color", "bg", "text", "font_size", "cpu_color", "memory_color", "disk_color", "network_down_color", "network_up_color", 'visualizer_flip_vertical', 'visualizer_peak_bar_enabled', 'visualizer_glow_enabled', 'visualizer_bar_width_scale', 'visualizer_orientation', 'visualizer_style', 'visualizer_shadow_enabled', 'visualizer_shadow_offset_x', 'visualizer_shadow_offset_y', 'visualizer_shadow_strength', 'visualizer_shadow_opacity', 'visualizer_shadow_depth', 'visualizer_shadow_blur', 'visualizer_frame_rate_enabled', 'visualizer_frame_rate', 'weather_location', 'jshtml_mode', 'jshtml_entry', 'jshtml_package_name', 'jshtml_package_version', 'jshtml_permissions_json', 'jshtml_instance_id', 'runtime_calendar_date', 'runtime_calendar_time', 'runtime_cpu_percent', 'runtime_memory_percent', 'runtime_disk_percent', 'runtime_network_down_bps', 'runtime_network_up_bps', 'runtime_network_down_kbps', 'runtime_network_up_kbps', 'runtime_sample_age_sec', 'runtime_weather_location', 'runtime_volume_available', 'runtime_volume_percent', 'runtime_volume_muted', 'runtime_media_available', 'runtime_media_title', 'runtime_media_artist', 'runtime_media_album', 'runtime_media_app_id', 'runtime_media_playback_status', 'runtime_media_updated_at'):
+                        try:
+                            selected_state_item[common_key] = getattr(cfg, common_key)
+                        except Exception:
+                            pass
+                    if str(getattr(cfg, "type", "")) == "clock":
+                        try:
+                            selected_state_item["clock_show_digital"] = bool(getattr(cfg, "clock_show_digital", True))
+                        except Exception:
+                            pass
+                    try:
+                        selected_state_item.update(self._normal_widget_runtime_preview_fields_for_3d(cfg))
+                    except Exception:
+                        pass
+                    state["selected"] = selected_state_item
+                    if str(getattr(cfg, "type", "")) == "effects_overlay":
+                        try:
+                            settings = get_effect_overlay_settings(cfg)
+                            state["effect"] = {
+                                "sun_visible": bool(
+                                    getattr(settings, "sunrise_enabled", False)
+                                    or getattr(settings, "sun_enabled", False)
+                                    or getattr(settings, "sunlight_enabled", False)
+                                    or getattr(settings, "lens_flare_enabled", False)
+                                ),
+                                "sun_x": float(getattr(settings, "sun_x", 0.22)),
+                                "sun_y": float(getattr(settings, "sun_y", 0.22)),
+                                "moon_visible": bool(
+                                    getattr(settings, "moon_body_enabled", False)
+                                    or getattr(settings, "moonlight_enabled", False)
+                                    or getattr(settings, "moon_shadow_enabled", False)
+                                ),
+                                "moon_x": float(getattr(settings, "moon_x", 0.78)),
+                                "moon_y": float(getattr(settings, "moon_y", 0.18)),
+                                "water_surface_visible": bool(getattr(settings, "water_surface_enabled", False)),
+                                "water_surface_y": float(getattr(settings, "water_surface_y", 0.58)),
+                                "water_surface_depth": float(getattr(settings, "water_surface_depth", 0.42)),
+                                "water_surface_alpha": int(getattr(settings, "water_surface_alpha", 92)),
+                                "water_surface_color": str(getattr(settings, "water_surface_color", "#4FC3FF")),
+                                "water_surface_highlight_color": str(getattr(settings, "water_surface_highlight_color", "#D8FAFF")),
+                                "ice_visible": bool(getattr(settings, "ice_enabled", False)),
+                                "ice_x": float(getattr(settings, "ice_x", 0.50)),
+                                "ice_y": float(getattr(settings, "ice_y", getattr(settings, "water_surface_y", 0.58))),
+                                "ice_width": float(getattr(settings, "ice_width", 1.0)),
+                                "ice_depth": float(getattr(settings, "ice_depth", getattr(settings, "water_surface_depth", 0.42))),
+                                "puddle_visible": bool(getattr(settings, "puddle_enabled", False)),
+                                "puddle_x": float(getattr(settings, "puddle_x", 0.50)),
+                                "puddle_y": float(getattr(settings, "puddle_y", 0.84)),
+                                "puddle_width": float(getattr(settings, "puddle_width", 0.20)),
+                                "puddle_height": float(getattr(settings, "puddle_height", 0.08)),
+                                "bamboo_grove_visible": bool(getattr(settings, "bamboo_grove_enabled", False)),
+                                "bamboo_count": int(getattr(settings, "bamboo_count", 12)),
+                                "bamboo_height": float(getattr(settings, "bamboo_height", 0.92)),
+                                "bamboo_thickness": float(getattr(settings, "bamboo_thickness", 16.0)),
+                                "bamboo_angle": float(getattr(settings, "bamboo_angle", 0.0)),
+                                "bamboo_bend": float(getattr(settings, "bamboo_bend", 0.32)),
+                                "bamboo_leaf_density": int(getattr(settings, "bamboo_leaf_density", 4)),
+                                "bamboo_layer_spread": float(getattr(settings, "bamboo_layer_spread", 0.42)),
+                                "bamboo_depth_strength": float(getattr(settings, "bamboo_depth_strength", 0.85)),
+                                "bamboo_stalk_color": str(getattr(settings, "bamboo_stalk_color", "#3EA65A")),
+                                "bamboo_shadow_color": str(getattr(settings, "bamboo_shadow_color", "#1F6F3B")),
+                                "bamboo_node_color": str(getattr(settings, "bamboo_node_color", "#B7E37A")),
+                                "bamboo_leaf_color": str(getattr(settings, "bamboo_leaf_color", "#5ED06C")),
+                                "cloud_visible": bool(getattr(settings, "cloud_enabled", False)),
+                                "cloud_count": int(getattr(settings, "cloud_count", 0)),
+                                "cloud_size": float(getattr(settings, "cloud_size", 92.0)),
+                                "cloud_altitude": float(getattr(settings, "cloud_altitude", 0.22)),
+                                "cloud_depth": float(getattr(settings, "cloud_depth", 0.42)),
+                                "cloud_speed": float(getattr(settings, "cloud_speed", 0.075)),
+                                "cloud_color": str(getattr(settings, "cloud_color", "#F4FAFF")),
+                                "cloud_shadow_color": str(getattr(settings, "cloud_shadow_color", "#C1CFDA")),
+                                "cloud_highlight_color": str(getattr(settings, "cloud_highlight_color", "#FFFFFF")),
+                                "cloud_softness": float(getattr(settings, "cloud_softness", 0.72)),
+                                "fireball_visible": bool(getattr(settings, "fireball_enabled", False)),
+                                "fireball_count": int(getattr(settings, "fireball_count", 0)),
+                                "fireball_size": float(getattr(settings, "fireball_size", 20.0)),
+                                "fireball_x": float(getattr(settings, "fireball_x", 0.50)),
+                                "fireball_y": float(getattr(settings, "fireball_y", 0.38)),
+                                "fireball_speed": float(getattr(settings, "fireball_speed", 0.34)),
+                                "fireball_core_color": str(getattr(settings, "fireball_core_color", "#FFFFBE")),
+                                "fireball_mid_color": str(getattr(settings, "fireball_mid_color", "#FF7828")),
+                                "fireball_edge_color": str(getattr(settings, "fireball_edge_color", "#AA1400")),
+                                "fireball_trail_color": str(getattr(settings, "fireball_trail_color", "#FF5A14")),
+                            }
+                            try:
+                                self._lds_add_3d_template_effect_state(state["effect"], settings, cfg)
+                            except Exception:
+                                pass
+                            # If puddles_json exists, the renderer uses the first puddle spec
+                            # before the base puddle_width / puddle_height values.  Keep the
+                            # 3D preview sync aligned with what is actually rendered.
+                            try:
+                                specs = []
+                                if hasattr(selected, "_puddle_specs"):
+                                    specs = list(selected._puddle_specs(settings) or [])
+                                else:
+                                    raw = getattr(settings, "puddles_json", "") or ""
+                                    parsed = json.loads(raw) if raw else []
+                                    if isinstance(parsed, list):
+                                        specs = [item for item in parsed if isinstance(item, dict)]
+                                if specs and bool(getattr(settings, "puddle_enabled", False)):
+                                    puddle_list = []
+                                    for i, spec in enumerate(list(specs or [])[:12]):
+                                        if not isinstance(spec, dict):
+                                            continue
+                                        puddle_list.append({
+                                            "index": i,
+                                            "x": float(spec.get("x", state["effect"].get("puddle_x", 0.50))),
+                                            "y": float(spec.get("y", state["effect"].get("puddle_y", 0.84))),
+                                            "width": float(spec.get("width", state["effect"].get("puddle_width", 0.20))),
+                                            "height": float(spec.get("height", state["effect"].get("puddle_height", 0.08))),
+                                            "visible": True,
+                                        })
+                                    if puddle_list:
+                                        state["effect"]["puddles"] = puddle_list
+                                    first_puddle = dict(specs[0] or {})
+                                    state["effect"]["puddle_x"] = float(first_puddle.get("x", state["effect"].get("puddle_x", 0.50)))
+                                    state["effect"]["puddle_y"] = float(first_puddle.get("y", state["effect"].get("puddle_y", 0.84)))
+                                    state["effect"]["puddle_width"] = float(first_puddle.get("width", state["effect"].get("puddle_width", 0.20)))
+                                    state["effect"]["puddle_height"] = float(first_puddle.get("height", state["effect"].get("puddle_height", 0.08)))
+                            except Exception as Err:
+                                print(Err)
+                                pass
+                        except Exception as Err:
+                            print(Err)
+                            pass
+            try:
+                # Keep effect data available independently of the current normal-widget
+                # pending edits.  Rendering is still gated by _should_show_effect_objects(),
+                # but once Effects Overlay is selected the Sun/Moon/Ice/Puddle data is ready
+                # on the very first click instead of only after Apply/timer sync.
+                selected_info = dict(state.get("selected", {}) or {})
+                selected_index_for_effect = int(selected_info.get("index", -1)) if selected_info else -1
+                effect_widget_for_preview = None
+                widgets_for_effect = list(getattr(self.canvas, "widgets", []) or [])
+                if str(selected_info.get("type", "")) == "effects_overlay" and selected_index_for_effect >= 0:
+                    try:
+                        candidate = widgets_for_effect[selected_index_for_effect]
+                        candidate_cfg = getattr(candidate, "cfg", None)
+                        if candidate_cfg is not None and str(getattr(candidate_cfg, "type", "")) == "effects_overlay":
+                            effect_widget_for_preview = candidate
+                    except Exception:
+                        effect_widget_for_preview = None
+                if effect_widget_for_preview is None:
+                    for candidate in widgets_for_effect:
+                        candidate_cfg = getattr(candidate, "cfg", None)
+                        if candidate_cfg is not None and str(getattr(candidate_cfg, "type", "")) == "effects_overlay":
+                            effect_widget_for_preview = candidate
+                            break
+                if effect_widget_for_preview is not None and not dict(state.get("effect", {}) or {}):
+                    effect_cfg = getattr(effect_widget_for_preview, "cfg", None)
+                    settings = get_effect_overlay_settings(effect_cfg)
+                    effect_data = {
+                        "sun_visible": bool(
+                            getattr(settings, "sunrise_enabled", False)
+                            or getattr(settings, "sun_enabled", False)
+                            or getattr(settings, "sunlight_enabled", False)
+                            or getattr(settings, "lens_flare_enabled", False)
+                        ),
+                        "sun_x": float(getattr(settings, "sun_x", 0.22)),
+                        "sun_y": float(getattr(settings, "sun_y", 0.22)),
+                        "moon_visible": bool(
+                            getattr(settings, "moon_body_enabled", False)
+                            or getattr(settings, "moonlight_enabled", False)
+                            or getattr(settings, "moon_shadow_enabled", False)
+                        ),
+                        "moon_x": float(getattr(settings, "moon_x", 0.78)),
+                        "moon_y": float(getattr(settings, "moon_y", 0.18)),
+                        "water_surface_visible": bool(getattr(settings, "water_surface_enabled", False)),
+                        "water_surface_y": float(getattr(settings, "water_surface_y", 0.58)),
+                        "water_surface_depth": float(getattr(settings, "water_surface_depth", 0.42)),
+                        "water_surface_alpha": int(getattr(settings, "water_surface_alpha", 92)),
+                        "water_surface_color": str(getattr(settings, "water_surface_color", "#4FC3FF")),
+                        "water_surface_highlight_color": str(getattr(settings, "water_surface_highlight_color", "#D8FAFF")),
+                        "ice_visible": bool(getattr(settings, "ice_enabled", False)),
+                        "ice_x": float(getattr(settings, "ice_x", 0.50)),
+                        "ice_y": float(getattr(settings, "ice_y", getattr(settings, "water_surface_y", 0.58))),
+                        "ice_width": float(getattr(settings, "ice_width", 1.0)),
+                        "ice_depth": float(getattr(settings, "ice_depth", getattr(settings, "water_surface_depth", 0.42))),
+                        "puddle_visible": bool(getattr(settings, "puddle_enabled", False)),
+                        "puddle_x": float(getattr(settings, "puddle_x", 0.50)),
+                        "puddle_y": float(getattr(settings, "puddle_y", 0.84)),
+                        "puddle_width": float(getattr(settings, "puddle_width", 0.20)),
+                        "puddle_height": float(getattr(settings, "puddle_height", 0.08)),
+                        "bamboo_grove_visible": bool(getattr(settings, "bamboo_grove_enabled", False)),
+                        "bamboo_count": int(getattr(settings, "bamboo_count", 12)),
+                        "bamboo_height": float(getattr(settings, "bamboo_height", 0.92)),
+                        "bamboo_thickness": float(getattr(settings, "bamboo_thickness", 16.0)),
+                        "bamboo_angle": float(getattr(settings, "bamboo_angle", 0.0)),
+                        "bamboo_bend": float(getattr(settings, "bamboo_bend", 0.32)),
+                        "bamboo_leaf_density": int(getattr(settings, "bamboo_leaf_density", 4)),
+                        "bamboo_layer_spread": float(getattr(settings, "bamboo_layer_spread", 0.42)),
+                        "bamboo_depth_strength": float(getattr(settings, "bamboo_depth_strength", 0.85)),
+                        "bamboo_stalk_color": str(getattr(settings, "bamboo_stalk_color", "#3EA65A")),
+                        "bamboo_shadow_color": str(getattr(settings, "bamboo_shadow_color", "#1F6F3B")),
+                        "bamboo_node_color": str(getattr(settings, "bamboo_node_color", "#B7E37A")),
+                        "bamboo_leaf_color": str(getattr(settings, "bamboo_leaf_color", "#5ED06C")),
+                        "cloud_visible": bool(getattr(settings, "cloud_enabled", False)),
+                        "cloud_count": int(getattr(settings, "cloud_count", 0)),
+                        "cloud_size": float(getattr(settings, "cloud_size", 92.0)),
+                        "cloud_altitude": float(getattr(settings, "cloud_altitude", 0.22)),
+                        "cloud_depth": float(getattr(settings, "cloud_depth", 0.42)),
+                        "cloud_speed": float(getattr(settings, "cloud_speed", 0.075)),
+                        "cloud_color": str(getattr(settings, "cloud_color", "#F4FAFF")),
+                        "cloud_shadow_color": str(getattr(settings, "cloud_shadow_color", "#C1CFDA")),
+                        "cloud_highlight_color": str(getattr(settings, "cloud_highlight_color", "#FFFFFF")),
+                        "cloud_softness": float(getattr(settings, "cloud_softness", 0.72)),
+                        "fireball_visible": bool(getattr(settings, "fireball_enabled", False)),
+                        "fireball_count": int(getattr(settings, "fireball_count", 0)),
+                        "fireball_size": float(getattr(settings, "fireball_size", 20.0)),
+                        "fireball_x": float(getattr(settings, "fireball_x", 0.50)),
+                        "fireball_y": float(getattr(settings, "fireball_y", 0.38)),
+                        "fireball_speed": float(getattr(settings, "fireball_speed", 0.34)),
+                        "fireball_core_color": str(getattr(settings, "fireball_core_color", "#FFFFBE")),
+                        "fireball_mid_color": str(getattr(settings, "fireball_mid_color", "#FF7828")),
+                        "fireball_edge_color": str(getattr(settings, "fireball_edge_color", "#AA1400")),
+                        "fireball_trail_color": str(getattr(settings, "fireball_trail_color", "#FF5A14")),
+                    }
+                    try:
+                        specs = []
+                        if hasattr(effect_widget_for_preview, "_puddle_specs"):
+                            specs = list(effect_widget_for_preview._puddle_specs(settings) or [])
+                        else:
+                            raw = getattr(settings, "puddles_json", "") or ""
+                            parsed = json.loads(raw) if raw else []
+                            if isinstance(parsed, list):
+                                specs = [item for item in parsed if isinstance(item, dict)]
+                        if specs and bool(getattr(settings, "puddle_enabled", False)):
+                            puddle_list = []
+                            for i, spec in enumerate(list(specs or [])[:12]):
+                                if not isinstance(spec, dict):
+                                    continue
+                                puddle_list.append({
+                                    "index": i,
+                                    "x": float(spec.get("x", effect_data.get("puddle_x", 0.50))),
+                                    "y": float(spec.get("y", effect_data.get("puddle_y", 0.84))),
+                                    "width": float(spec.get("width", effect_data.get("puddle_width", 0.20))),
+                                    "height": float(spec.get("height", effect_data.get("puddle_height", 0.08))),
+                                    "visible": True,
+                                })
+                            if puddle_list:
+                                effect_data["puddles"] = puddle_list
+                            first_puddle = dict(specs[0] or {})
+                            effect_data["puddle_x"] = float(first_puddle.get("x", effect_data.get("puddle_x", 0.50)))
+                            effect_data["puddle_y"] = float(first_puddle.get("y", effect_data.get("puddle_y", 0.84)))
+                            effect_data["puddle_width"] = float(first_puddle.get("width", effect_data.get("puddle_width", 0.20)))
+                            effect_data["puddle_height"] = float(first_puddle.get("height", effect_data.get("puddle_height", 0.08)))
+                    except Exception:
+                        pass
+                    try:
+                        self._lds_add_3d_template_effect_state(effect_data, settings, effect_cfg)
+                    except Exception:
+                        pass
+                    state["effect"] = effect_data
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return state
+
+    def _preview_3d_has_pending_or_active_edit(self):
+        try:
+            window = getattr(self, "preview_3d_test_window", None)
+            preview = getattr(window, "preview", None) if window is not None else None
+            if preview is None:
+                return False
+            drag_kind = getattr(preview, "_drag_kind", None)
+            if drag_kind in (
+                "widget_move", "widget_resize", "widget_rotate",
+                "sun", "moon", "puddle", "puddle_resize", "ice", "ice_resize",
+                "water_surface", "water_surface_resize", "bamboo_grove_resize", "cloud_move", "cloud_resize",
+            ):
+                return True
+            for attr in (
+                "_pending_widget_rect", "_pending_sun_unit", "_pending_moon_unit", "_pending_puddle_state",
+                "_pending_ice_state", "_pending_water_surface_state", "_pending_bamboo_grove_state", "_pending_cloud_layer_state",
+            ):
+                if getattr(preview, attr, None) is not None:
+                    return True
+            for attr in ("_pending_widget_rects", "_pending_puddle_states", "_pending_template_effect_states"):
+                try:
+                    if bool(getattr(preview, attr, {}) or {}):
+                        return True
+                except Exception:
+                    pass
+            for attr in ("_normal_widget_live_preview_snapshots", "_clock_live_preview_snapshots"):
+                try:
+                    if bool(getattr(self, attr, {}) or {}):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    canvas = getattr(self, "canvas", None)
+                    if canvas is not None and bool(getattr(canvas, attr, {}) or {}):
+                        return True
+                except Exception:
+                    pass
+            try:
+                canvas = getattr(self, "canvas", None)
+                for widget_item in list(getattr(canvas, "widgets", []) or []) if canvas is not None else []:
+                    if getattr(widget_item, "_lds_normal_widget_live_preview_snapshot", None):
+                        return True
+                    cfg_item = getattr(widget_item, "cfg", None)
+                    if cfg_item is not None and getattr(cfg_item, "_lds_normal_widget_live_preview_snapshot", None):
+                        return True
+            except Exception:
+                pass
+            return False
+        except Exception:
+            return False
+
+    def sync_3d_preview_test_window(self):
+        try:
+            window = getattr(self, "preview_3d_test_window", None)
+            if window is None or not window.isVisible():
+                return
+            state = self.build_3d_preview_state()
+            try:
+                preview = getattr(window, "preview", None)
+                if preview is not None and hasattr(preview, "reconcile_with_persisted_effect_visibility"):
+                    preview.reconcile_with_persisted_effect_visibility(state)
+            except Exception:
+                pass
+            if self._preview_3d_has_pending_or_active_edit():
+                return
+            window.set_preview_state(state)
+        except Exception:
+            pass
+
+    def apply_3d_preview_sun_to_selected_effects(self, sun_unit):
+        try:
+            sx, sy, visible = sun_unit
+            if not visible:
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("反映できるSunマーカーがありません。"))
+                return
+            selected = getattr(self.canvas, "selected", None)
+            try:
+                if "widget" in changes:
+                    widget_data_for_select = dict(changes.get("widget") or {})
+                    widget_index_for_select = int(widget_data_for_select.get("index", -1))
+                    if widget_index_for_select >= 0:
+                        self.select_3d_preview_widget_index(widget_index_for_select)
+                        selected = getattr(self.canvas, "selected", selected)
+            except Exception:
+                pass
+            if selected is None:
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("エフェクトオーバーレイまたはウィジェットを選択してから反映してください。"))
+                return
+            cfg = getattr(selected, "cfg", None)
+            if cfg is None or str(getattr(cfg, "type", "")) != "effects_overlay":
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("Sun位置の反映先は、選択中のエフェクトオーバーレイのみです。"))
+                return
+
+            settings = get_effect_overlay_settings(cfg)
+            try:
+                self.canvas.push_undo_snapshot("3D Sun apply")
+            except Exception:
+                pass
+            settings.sun_x = max(0.0, min(1.0, float(sx)))
+            settings.sun_y = max(0.0, min(1.0, float(sy)))
+            try:
+                if not (
+                    bool(getattr(settings, "sunrise_enabled", False))
+                    or bool(getattr(settings, "sun_enabled", False))
+                    or bool(getattr(settings, "sunlight_enabled", False))
+                    or bool(getattr(settings, "lens_flare_enabled", False))
+                ):
+                    settings.sun_enabled = True
+            except Exception:
+                pass
+            set_effect_overlay_settings(cfg, settings)
+
+            try:
+                if "fireball" in changes:
+                    raw_fireball = dict(changes.get("fireball") or {})
+                    data = json.loads(getattr(cfg, "effects_json", "") or "{}")
+                    if not isinstance(data, dict):
+                        data = {}
+                    data["fireball_enabled"] = True
+                    data["fireball_x"] = max(0.0, min(1.0, float(raw_fireball.get("x", data.get("fireball_x", getattr(settings, "fireball_x", 0.50))))))
+                    data["fireball_y"] = max(0.0, min(1.0, float(raw_fireball.get("y", data.get("fireball_y", getattr(settings, "fireball_y", 0.38))))))
+                    cfg.effects_json = json.dumps(data, ensure_ascii=False)
+            except Exception:
+                pass
+            try:
+                selected.cfg = cfg
+            except Exception:
+                pass
+            try:
+                if hasattr(selected, "clear_vector_image_cache"):
+                    selected.clear_vector_image_cache()
+            except Exception:
+                pass
+            try:
+                if hasattr(selected, "_sun_effect_render_cache"):
+                    selected._sun_effect_render_cache.clear()
+                if hasattr(selected, "_sun_effect_render_cache_order"):
+                    selected._sun_effect_render_cache_order.clear()
+            except Exception:
+                pass
+            try:
+                selected.update()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+            try:
+                if hasattr(self.canvas, "save_config"):
+                    self.canvas.save_config()
+            except Exception:
+                pass
+            try:
+                self.load_selected_to_editor()
+            except Exception:
+                pass
+            try:
+                window = getattr(self, "preview_3d_test_window", None)
+                if window is not None and hasattr(window, "clear_pending_sun_unit"):
+                    window.clear_pending_sun_unit()
+            except Exception:
+                pass
+            try:
+                self.sync_3d_preview_test_window()
+            except Exception:
+                pass
+            QMessageBox.information(
+                self,
+                lds_tr("3Dプレビュー"),
+                lds_tr(f"Sun位置を反映しました。\nx={float(sx):.3f}, y={float(sy):.3f}")
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, lds_tr("3Dプレビュー"), lds_tr(f"Sun位置の反映に失敗しました:\n{exc}"))
+
+    def apply_3d_preview_moon_to_selected_effects(self, moon_unit):
+        try:
+            mx, my, visible = moon_unit
+            if not visible:
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("反映できるMoonマーカーがありません。"))
+                return
+            selected = getattr(self.canvas, "selected", None)
+            if selected is None:
+                if show_message:
+                    QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("エフェクトオーバーレイを選択してから反映してください。"))
+                return False
+            cfg = getattr(selected, "cfg", None)
+            if cfg is None or str(getattr(cfg, "type", "")) != "effects_overlay":
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("Moon位置の反映先は、選択中のエフェクトオーバーレイのみです。"))
+                return
+
+            settings = get_effect_overlay_settings(cfg)
+            try:
+                self.canvas.push_undo_snapshot("3D Moon apply")
+            except Exception:
+                pass
+            settings.moon_x = max(0.0, min(1.0, float(mx)))
+            settings.moon_y = max(0.0, min(1.0, float(my)))
+            try:
+                if not (
+                    bool(getattr(settings, "moon_body_enabled", False))
+                    or bool(getattr(settings, "moonlight_enabled", False))
+                    or bool(getattr(settings, "moon_shadow_enabled", False))
+                ):
+                    settings.moon_body_enabled = True
+            except Exception:
+                pass
+            set_effect_overlay_settings(cfg, settings)
+
+            try:
+                selected.cfg = cfg
+            except Exception:
+                pass
+            try:
+                if hasattr(selected, "clear_vector_image_cache"):
+                    selected.clear_vector_image_cache()
+            except Exception:
+                pass
+            try:
+                selected.update()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+            try:
+                if hasattr(self.canvas, "save_config"):
+                    self.canvas.save_config()
+            except Exception:
+                pass
+            try:
+                self.load_selected_to_editor()
+            except Exception:
+                pass
+            try:
+                window = getattr(self, "preview_3d_test_window", None)
+                if window is not None and hasattr(window, "clear_pending_moon_unit"):
+                    window.clear_pending_moon_unit()
+            except Exception:
+                pass
+            try:
+                self.sync_3d_preview_test_window()
+            except Exception:
+                pass
+            QMessageBox.information(
+                self,
+                lds_tr("3Dプレビュー"),
+                lds_tr(f"Moon位置を反映しました。\nx={float(mx):.3f}, y={float(my):.3f}")
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, lds_tr("3Dプレビュー"), lds_tr(f"Moon位置の反映に失敗しました:\n{exc}"))
+
+    def _existing_puddle_specs_for_3d_apply(self, selected, settings, fallback_x, fallback_y, fallback_w, fallback_h):
+        """Return the persisted puddles_json specs without regenerating them from mutated base values.
+
+        This intentionally prefers raw settings.puddles_json over selected._puddle_specs(settings).
+        Some render helpers may synthesize missing puddles from the current base
+        puddle_x/y, so calling them after changing the first puddle can make the
+        remaining puddles appear to be pulled toward the first one.
+        """
+        specs = []
+        try:
+            raw = getattr(settings, "puddles_json", "") or ""
+            parsed = json.loads(raw) if raw else []
+            if isinstance(parsed, list):
+                specs = [dict(item or {}) for item in parsed if isinstance(item, dict)]
+        except Exception:
+            specs = []
+        if not specs:
+            try:
+                # Fallback only for configurations that do not yet persist puddles_json.
+                # This must be called before changing base puddle_x/y to avoid drift.
+                if selected is not None and hasattr(selected, "_puddle_specs"):
+                    specs = [dict(item or {}) for item in list(selected._puddle_specs(settings) or []) if isinstance(item, dict)]
+            except Exception:
+                specs = []
+        if not specs:
+            specs = [{"x": fallback_x, "y": fallback_y, "width": fallback_w, "height": fallback_h}]
+        return specs
+
+    def apply_3d_preview_puddle_to_selected_effects(self, puddle_state):
+        try:
+            data = dict(puddle_state or {})
+            if not bool(data.get("visible", False)):
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("反映できるPuddleマーカーがありません。"))
+                return
+            selected = getattr(self.canvas, "selected", None)
+            if selected is None:
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("エフェクトオーバーレイを選択してから反映してください。"))
+                return
+            cfg = getattr(selected, "cfg", None)
+            if cfg is None or str(getattr(cfg, "type", "")) != "effects_overlay":
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("Puddle位置の反映先は、選択中のエフェクトオーバーレイのみです。"))
+                return
+
+            try:
+                self.canvas.push_undo_snapshot("3D Puddle apply")
+            except Exception:
+                pass
+            settings = get_effect_overlay_settings(cfg)
+            new_x = max(0.0, min(1.0, float(data.get("x", 0.50))))
+            new_y = max(0.0, min(1.0, float(data.get("y", 0.84))))
+            new_w = max(0.03, min(1.20, float(data.get("width", getattr(settings, "puddle_width", 0.20)))))
+            new_h = max(0.015, min(0.70, float(data.get("height", getattr(settings, "puddle_height", 0.08)))))
+            existing_specs = self._existing_puddle_specs_for_3d_apply(selected, settings, new_x, new_y, new_w, new_h)
+            puddle_index = max(0, int(data.get("index", 0)))
+            settings.puddle_enabled = True
+            if puddle_index == 0:
+                settings.puddle_x = new_x
+                settings.puddle_y = new_y
+                settings.puddle_width = new_w
+                settings.puddle_height = new_h
+
+            # Important: preserve raw existing puddles_json specs and update only the first
+            # puddle.  Do not regenerate the list after changing base puddle_x/y;
+            # that can pull secondary puddles toward the edited first puddle.
+            try:
+                specs = [dict(item or {}) for item in list(existing_specs or []) if isinstance(item, dict)]
+                if not specs:
+                    specs = [{"x": new_x, "y": new_y, "width": new_w, "height": new_h}]
+                while len(specs) <= puddle_index:
+                    specs.append({"x": new_x, "y": new_y, "width": new_w, "height": new_h})
+                specs[puddle_index] = dict(specs[puddle_index] or {})
+                specs[puddle_index]["x"] = new_x
+                specs[puddle_index]["y"] = new_y
+                specs[puddle_index]["width"] = new_w
+                specs[puddle_index]["height"] = new_h
+                if hasattr(selected, "_set_puddle_specs"):
+                    selected._set_puddle_specs(settings, specs)
+                else:
+                    cleaned = []
+                    for item in list(specs or [])[:12]:
+                        if isinstance(item, dict):
+                            cleaned.append({
+                                "x": max(0.0, min(1.0, float(item.get("x", new_x)))),
+                                "y": max(0.0, min(1.0, float(item.get("y", new_y)))),
+                                "width": max(0.03, min(1.20, float(item.get("width", new_w)))),
+                                "height": max(0.015, min(0.70, float(item.get("height", new_h)))),
+                            })
+                    settings.puddles_json = json.dumps(cleaned, ensure_ascii=False)
+            except Exception:
+                try:
+                    settings.puddles_json = json.dumps([{
+                        "x": new_x,
+                        "y": new_y,
+                        "width": new_w,
+                        "height": new_h,
+                    }], ensure_ascii=False)
+                except Exception:
+                    pass
+            set_effect_overlay_settings(cfg, settings)
+
+            try:
+                selected.cfg = cfg
+            except Exception:
+                pass
+            try:
+                if hasattr(selected, "clear_vector_image_cache"):
+                    selected.clear_vector_image_cache()
+            except Exception:
+                pass
+            try:
+                for attr in (
+                    "_water_reflection_cache_signature",
+                    "_water_reflection_cache_image",
+                    "_ice_reflection_cache_signature",
+                    "_ice_reflection_cache_image",
+                ):
+                    if hasattr(selected, attr):
+                        setattr(selected, attr, None)
+            except Exception:
+                pass
+            try:
+                selected.update()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+            try:
+                if hasattr(self.canvas, "save_config"):
+                    self.canvas.save_config()
+            except Exception:
+                pass
+            try:
+                self.load_selected_to_editor()
+            except Exception:
+                pass
+            try:
+                window = getattr(self, "preview_3d_test_window", None)
+                if window is not None and hasattr(window, "clear_pending_puddle_state"):
+                    window.clear_pending_puddle_state()
+            except Exception:
+                pass
+            try:
+                self.sync_3d_preview_test_window()
+            except Exception:
+                pass
+            QMessageBox.information(
+                self,
+                lds_tr("3Dプレビュー"),
+                lds_tr(f"選択Puddle位置/サイズを反映しました。\nx={settings.puddle_x:.3f}, y={settings.puddle_y:.3f}, width={settings.puddle_width:.3f}, height={settings.puddle_height:.3f}")
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, lds_tr("3Dプレビュー"), lds_tr(f"Puddle位置の反映に失敗しました:\n{exc}"))
+
+    def _apply_3d_preview_common_widget_fields_to_cfg(self, cfg, widget_data):
+        """Apply Phase 24A-1 common non-Effects-Overlay preview fields to WidgetConfig."""
+        try:
+            data = dict(widget_data or {})
+            for key in ("title", "color", "bg", "text", "cpu_color", "memory_color", "disk_color", "network_down_color", "network_up_color", "visualizer_orientation", "visualizer_style", "visualizer_preset_key", "weather_location", "jshtml_mode", "jshtml_entry", "jshtml_package_name", "jshtml_package_version", "jshtml_permissions_json", "jshtml_instance_id"):
+                if key in data:
+                    try:
+                        setattr(cfg, key, str(data.get(key, "")))
+                    except Exception:
+                        pass
+            if "font_size" in data:
+                try:
+                    setattr(cfg, "font_size", max(1, min(512, int(round(float(data.get("font_size", getattr(cfg, "font_size", 14))))))))
+                except Exception:
+                    pass
+            if str(getattr(cfg, "type", "")) == "clock" and "clock_show_digital" in data:
+                try:
+                    setattr(cfg, "clock_show_digital", bool(data.get("clock_show_digital")))
+                except Exception:
+                    pass
+            if str(getattr(cfg, "type", "")) == "visualizer":
+                for key in ("visualizer_flip_vertical", "visualizer_peak_bar_enabled", "visualizer_glow_enabled", "visualizer_shadow_enabled", "visualizer_frame_rate_enabled"):
+                    if key in data:
+                        try: setattr(cfg, key, bool(data.get(key)))
+                        except Exception: pass
+                for key in ("visualizer_bar_width_scale", "visualizer_shadow_offset_x", "visualizer_shadow_offset_y", "visualizer_shadow_strength", "visualizer_shadow_opacity", "visualizer_shadow_depth", "visualizer_shadow_blur"):
+                    if key in data:
+                        try: setattr(cfg, key, float(data.get(key, getattr(cfg, key, 0.0))))
+                        except Exception: pass
+                if "visualizer_frame_rate" in data:
+                    try: setattr(cfg, "visualizer_frame_rate", max(1, min(240, int(round(float(data.get("visualizer_frame_rate", getattr(cfg, "visualizer_frame_rate", 30))))))))
+                    except Exception: pass
+            return cfg
+        except Exception:
+            return cfg
+
+    def apply_3d_preview_pending_changes_to_selected_effects(self, pending_changes, show_message=True):
+        try:
+            changes = dict(pending_changes or {})
+            if not changes:
+                if show_message:
+                    QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("まとめて反映する3Dプレビュー変更がありません。"))
+                return False
+            selected = getattr(self.canvas, "selected", None)
+            if selected is None:
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("エフェクトオーバーレイを選択してから反映してください。"))
+                return
+            cfg = getattr(selected, "cfg", None)
+            if cfg is None:
+                if show_message:
+                    QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("反映先のウィジェット設定が見つかりません。"))
+                return False
+            is_effects_overlay = str(getattr(cfg, "type", "")) == "effects_overlay"
+            if not is_effects_overlay and (any(k in changes for k in ("sun", "moon", "water_surface", "ice", "puddle", "puddles", "bamboo_grove", "cloud", "fireball")) or self._lds_template_changes_present(changes)):
+                if show_message:
+                    QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("Sun/Moon/Water Surface/Ice/Puddleの反映先は、選択中のエフェクトオーバーレイのみです。通常ウィジェットではWidget移動のみ反映できます。"))
+                return False
+
+            settings = get_effect_overlay_settings(cfg) if is_effects_overlay else None
+            applied = []
+            try:
+                self.canvas.push_undo_snapshot("3D batch apply")
+            except Exception:
+                pass
+
+            if "sun" in changes:
+                sun = dict(changes.get("sun") or {})
+                settings.sun_x = max(0.0, min(1.0, float(sun.get("x", getattr(settings, "sun_x", 0.22)))))
+                settings.sun_y = max(0.0, min(1.0, float(sun.get("y", getattr(settings, "sun_y", 0.22)))))
+                try:
+                    if not (
+                        bool(getattr(settings, "sunrise_enabled", False))
+                        or bool(getattr(settings, "sun_enabled", False))
+                        or bool(getattr(settings, "sunlight_enabled", False))
+                        or bool(getattr(settings, "lens_flare_enabled", False))
+                    ):
+                        settings.sun_enabled = True
+                except Exception:
+                    pass
+                applied.append("Sun")
+
+            if "moon" in changes:
+                moon = dict(changes.get("moon") or {})
+                settings.moon_x = max(0.0, min(1.0, float(moon.get("x", getattr(settings, "moon_x", 0.78)))))
+                settings.moon_y = max(0.0, min(1.0, float(moon.get("y", getattr(settings, "moon_y", 0.18)))))
+                try:
+                    if not (
+                        bool(getattr(settings, "moon_body_enabled", False))
+                        or bool(getattr(settings, "moonlight_enabled", False))
+                        or bool(getattr(settings, "moon_shadow_enabled", False))
+                    ):
+                        settings.moon_body_enabled = True
+                except Exception:
+                    pass
+                applied.append("Moon")
+
+            if "ice" in changes:
+                ice = dict(changes.get("ice") or {})
+                settings.ice_enabled = True
+                settings.ice_x = max(0.0, min(1.0, float(ice.get("x", getattr(settings, "ice_x", 0.50)))))
+                settings.ice_y = max(0.0, min(1.0, float(ice.get("y", getattr(settings, "ice_y", getattr(settings, "water_surface_y", 0.58))))))
+                # Phase 20E: Ice resize writes multi-handle directional one-sided width/depth from the pending preview state.
+                settings.ice_width = max(0.05, min(1.50, float(ice.get("width", getattr(settings, "ice_width", 1.0)))))
+                settings.ice_depth = max(0.05, min(1.0, float(ice.get("depth", getattr(settings, "ice_depth", getattr(settings, "water_surface_depth", 0.42))))))
+                applied.append("Ice")
+
+            if "water_surface" in changes:
+                water = dict(changes.get("water_surface") or {})
+                depth = max(0.05, min(1.0, float(water.get("depth", getattr(settings, "water_surface_depth", 0.42)))))
+                settings.water_surface_enabled = True
+                settings.water_surface_depth = depth
+                settings.water_surface_y = max(0.0, min(max(0.0, 1.0 - depth), float(water.get("y", getattr(settings, "water_surface_y", 0.58)))))
+                applied.append("Water Surface")
+
+            if "bamboo_grove" in changes:
+                bamboo = dict(changes.get("bamboo_grove") or {})
+                settings.bamboo_grove_enabled = True
+                settings.bamboo_height = max(0.10, min(1.50, float(bamboo.get("height", getattr(settings, "bamboo_height", 0.92)))))
+                applied.append("Bamboo Grove")
+
+            if "cloud" in changes:
+                cloud = dict(changes.get("cloud") or {})
+                settings.cloud_enabled = True
+                settings.cloud_size = max(18.0, min(180.0, float(cloud.get("size", getattr(settings, "cloud_size", 92.0)))))
+                settings.cloud_altitude = max(0.0, min(1.0, float(cloud.get("altitude", getattr(settings, "cloud_altitude", 0.22)))))
+                settings.cloud_depth = max(0.04, min(1.0, float(cloud.get("depth", getattr(settings, "cloud_depth", 0.42)))))
+                applied.append("Cloud")
+
+            if "fireball" in changes:
+                fireball = dict(changes.get("fireball") or {})
+                settings.fireball_enabled = True
+                try:
+                    settings.fireball_x = max(0.0, min(1.0, float(fireball.get("x", getattr(settings, "fireball_x", 0.50)))))
+                    settings.fireball_y = max(0.0, min(1.0, float(fireball.get("y", getattr(settings, "fireball_y", 0.38)))))
+                except Exception:
+                    pass
+                applied.append("Fireball")
+
+            self._lds_apply_3d_template_changes_to_settings(settings, changes, applied)
+
+            if "puddles" in changes:
+                for puddle_item in list(changes.get("puddles") or []):
+                    try:
+                        puddle_item = dict(puddle_item or {})
+                        puddle_index = max(0, int(puddle_item.get("index", 0)))
+                        new_x = max(0.0, min(1.0, float(puddle_item.get("x", getattr(settings, "puddle_x", 0.50)))))
+                        new_y = max(0.0, min(1.0, float(puddle_item.get("y", getattr(settings, "puddle_y", 0.84)))))
+                        new_w = max(0.03, min(1.20, float(puddle_item.get("width", getattr(settings, "puddle_width", 0.20)))))
+                        new_h = max(0.015, min(0.70, float(puddle_item.get("height", getattr(settings, "puddle_height", 0.08)))))
+                        existing_specs = self._existing_puddle_specs_for_3d_apply(selected, settings, new_x, new_y, new_w, new_h)
+                        settings.puddle_enabled = True
+                        if puddle_index == 0:
+                            settings.puddle_x = new_x
+                            settings.puddle_y = new_y
+                            settings.puddle_width = new_w
+                            settings.puddle_height = new_h
+                        specs = [dict(item or {}) for item in list(existing_specs or []) if isinstance(item, dict)]
+                        if not specs:
+                            specs = [{"x": new_x, "y": new_y, "width": new_w, "height": new_h}]
+                        while len(specs) <= puddle_index:
+                            specs.append({"x": new_x, "y": new_y, "width": new_w, "height": new_h})
+                        specs[puddle_index] = dict(specs[puddle_index] or {})
+                        specs[puddle_index]["x"] = new_x
+                        specs[puddle_index]["y"] = new_y
+                        specs[puddle_index]["width"] = new_w
+                        specs[puddle_index]["height"] = new_h
+                        if hasattr(selected, "_set_puddle_specs"):
+                            selected._set_puddle_specs(settings, specs)
+                        else:
+                            cleaned = []
+                            for item in list(specs or [])[:12]:
+                                if isinstance(item, dict):
+                                    cleaned.append({
+                                        "x": max(0.0, min(1.0, float(item.get("x", new_x)))),
+                                        "y": max(0.0, min(1.0, float(item.get("y", new_y)))),
+                                        "width": max(0.03, min(1.20, float(item.get("width", new_w)))),
+                                        "height": max(0.015, min(0.70, float(item.get("height", new_h)))),
+                                    })
+                            settings.puddles_json = json.dumps(cleaned, ensure_ascii=False)
+                    except Exception:
+                        pass
+                applied.append("Puddles")
+
+            if "puddle" in changes and "puddles" not in changes:
+                puddle = dict(changes.get("puddle") or {})
+                new_x = max(0.0, min(1.0, float(puddle.get("x", getattr(settings, "puddle_x", 0.50)))))
+                new_y = max(0.0, min(1.0, float(puddle.get("y", getattr(settings, "puddle_y", 0.84)))))
+                new_w = max(0.03, min(1.20, float(puddle.get("width", getattr(settings, "puddle_width", 0.20)))))
+                new_h = max(0.015, min(0.70, float(puddle.get("height", getattr(settings, "puddle_height", 0.08)))))
+                existing_specs = self._existing_puddle_specs_for_3d_apply(selected, settings, new_x, new_y, new_w, new_h)
+                puddle_index = max(0, int(puddle.get("index", 0)))
+                settings.puddle_enabled = True
+                if puddle_index == 0:
+                    settings.puddle_x = new_x
+                    settings.puddle_y = new_y
+                    settings.puddle_width = new_w
+                    settings.puddle_height = new_h
+                try:
+                    specs = [dict(item or {}) for item in list(existing_specs or []) if isinstance(item, dict)]
+                    if not specs:
+                        specs = [{"x": new_x, "y": new_y, "width": new_w, "height": new_h}]
+                    while len(specs) <= puddle_index:
+                        specs.append({"x": new_x, "y": new_y, "width": new_w, "height": new_h})
+                    specs[puddle_index] = dict(specs[puddle_index] or {})
+                    specs[puddle_index]["x"] = new_x
+                    specs[puddle_index]["y"] = new_y
+                    specs[puddle_index]["width"] = new_w
+                    specs[puddle_index]["height"] = new_h
+                    if hasattr(selected, "_set_puddle_specs"):
+                        selected._set_puddle_specs(settings, specs)
+                    else:
+                        cleaned = []
+                        for item in list(specs or [])[:12]:
+                            if isinstance(item, dict):
+                                cleaned.append({
+                                    "x": max(0.0, min(1.0, float(item.get("x", new_x)))),
+                                    "y": max(0.0, min(1.0, float(item.get("y", new_y)))),
+                                    "width": max(0.03, min(1.20, float(item.get("width", new_w)))),
+                                    "height": max(0.015, min(0.70, float(item.get("height", new_h)))),
+                                })
+                        settings.puddles_json = json.dumps(cleaned, ensure_ascii=False)
+                except Exception:
+                    try:
+                        settings.puddles_json = json.dumps([{
+                            "x": new_x,
+                            "y": new_y,
+                            "width": new_w,
+                            "height": new_h,
+                        }], ensure_ascii=False)
+                    except Exception:
+                        pass
+                applied.append("Puddle")
+
+            last_applied_widget_index = None
+            if "widgets" in changes:
+                widgets_by_index = {idx: widget_item for idx, widget_item in enumerate(list(getattr(self.canvas, "widgets", []) or []))}
+                for widget_data_raw in list(changes.get("widgets") or []):
+                    widget_data = dict(widget_data_raw or {})
+                    try:
+                        widget_index = int(widget_data.get("index", -1))
+                        target_widget = widgets_by_index.get(widget_index)
+                        if target_widget is None:
+                            continue
+                        target_cfg = getattr(target_widget, "cfg", None)
+                        if target_cfg is None:
+                            continue
+                        widget_x = int(widget_data.get("x", getattr(target_cfg, "x", 0)))
+                        widget_y = int(widget_data.get("y", getattr(target_cfg, "y", 0)))
+                        widget_w = int(widget_data.get("w", getattr(target_cfg, "w", 80)))
+                        widget_h = int(widget_data.get("h", getattr(target_cfg, "h", 80)))
+                        try:
+                            canvas_w = max(1, int(self.canvas.width()))
+                            canvas_h = max(1, int(self.canvas.height()))
+                        except Exception:
+                            canvas_w = max(1, int(widget_data.get("canvas_w", 1920)))
+                            canvas_h = max(1, int(widget_data.get("canvas_h", 1080)))
+                        if widget_w <= canvas_w:
+                            min_x = 0
+                            max_x = canvas_w - widget_w
+                        else:
+                            min_x = 0
+                            max_x = 0
+                        if widget_h <= canvas_h:
+                            min_y = 0
+                            max_y = canvas_h - widget_h
+                        else:
+                            min_y = 0
+                            max_y = 0
+                        target_cfg.x = int(max(min_x, min(max_x, widget_x)))
+                        target_cfg.y = int(max(min_y, min(max_y, widget_y)))
+                        target_cfg.w = int(max(24, min(canvas_w, widget_w)))
+                        target_cfg.h = int(max(24, min(canvas_h, widget_h)))
+                        rotation_value = float(widget_data.get("rotation", getattr(target_cfg, "rotation_degrees", getattr(target_cfg, "rotation", 0.0))))
+                        try:
+                            setattr(target_cfg, "rotation_degrees", rotation_value)
+                        except Exception:
+                            pass
+                        try:
+                            setattr(target_cfg, "rotation", rotation_value)
+                        except Exception:
+                            pass
+                        target_cfg = self._apply_3d_preview_common_widget_fields_to_cfg(target_cfg, widget_data)
+                        try:
+                            target_widget.cfg = target_cfg
+                            target_widget.move(int(getattr(target_cfg, "x", 0)), int(getattr(target_cfg, "y", 0)))
+                            target_widget.resize(int(getattr(target_cfg, "w", target_widget.width())), int(getattr(target_cfg, "h", target_widget.height())))
+                            target_widget.setProperty("lds_rotation_degrees", float(getattr(target_cfg, "rotation_degrees", getattr(target_cfg, "rotation", 0.0))))
+                            target_widget.update()
+                            last_applied_widget_index = widget_index
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                try:
+                    if last_applied_widget_index is not None:
+                        self.select_3d_preview_widget_index(int(last_applied_widget_index))
+                        selected = getattr(self.canvas, "selected", selected)
+                        cfg = getattr(selected, "cfg", cfg) if selected is not None else cfg
+                except Exception:
+                    pass
+                applied.append("Widgets")
+
+            if "widget" in changes and "widgets" not in changes:
+                widget_data = dict(changes.get("widget") or {})
+                try:
+                    widget_x = int(widget_data.get("x", getattr(cfg, "x", 0)))
+                    widget_y = int(widget_data.get("y", getattr(cfg, "y", 0)))
+                    widget_w = int(widget_data.get("w", getattr(cfg, "w", 80)))
+                    widget_h = int(widget_data.get("h", getattr(cfg, "h", 80)))
+                    try:
+                        canvas_w = max(1, int(self.canvas.width()))
+                        canvas_h = max(1, int(self.canvas.height()))
+                    except Exception:
+                        canvas_w = max(1, int(widget_data.get("canvas_w", 1920)))
+                        canvas_h = max(1, int(widget_data.get("canvas_h", 1080)))
+                    # Same rule as the preview drag: keep the projected footprint
+                    # inside the pseudo desktop whenever the widget can fit.
+                    if widget_w <= canvas_w:
+                        min_x = 0
+                        max_x = canvas_w - widget_w
+                    else:
+                        min_x = 0
+                        max_x = 0
+                    if widget_h <= canvas_h:
+                        min_y = 0
+                        max_y = canvas_h - widget_h
+                    else:
+                        min_y = 0
+                        max_y = 0
+                    cfg.x = int(max(min_x, min(max_x, widget_x)))
+                    cfg.y = int(max(min_y, min(max_y, widget_y)))
+                    cfg.w = int(max(24, min(canvas_w, widget_w)))
+                    cfg.h = int(max(24, min(canvas_h, widget_h)))
+                    rotation_value = float(widget_data.get("rotation", getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))))
+                    try:
+                        setattr(cfg, "rotation_degrees", rotation_value)
+                    except Exception:
+                        pass
+                    try:
+                        setattr(cfg, "rotation", rotation_value)
+                    except Exception:
+                        pass
+                    cfg = self._apply_3d_preview_common_widget_fields_to_cfg(cfg, widget_data)
+                except Exception:
+                    pass
+                try:
+                    widget_index_for_select = int(widget_data.get("index", -1))
+                    if widget_index_for_select >= 0:
+                        self.select_3d_preview_widget_index(widget_index_for_select)
+                        selected = getattr(self.canvas, "selected", selected)
+                        cfg = getattr(selected, "cfg", cfg) if selected is not None else cfg
+                except Exception:
+                    pass
+                applied.append("Widget")
+
+            if not applied:
+                if show_message:
+                    QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("反映対象の変更がありません。"))
+                return False
+
+            if is_effects_overlay:
+                set_effect_overlay_settings(cfg, settings)
+                self._lds_patch_template_effects_raw_json_for_changes(cfg, changes)
+            try:
+                if "cloud" in changes:
+                    raw_cloud = dict(changes.get("cloud") or {})
+                    data = json.loads(getattr(cfg, "effects_json", "") or "{}")
+                    if not isinstance(data, dict):
+                        data = {}
+                    data["cloud_enabled"] = True
+                    data["cloud_size"] = max(18.0, min(180.0, float(raw_cloud.get("size", data.get("cloud_size", getattr(settings, "cloud_size", 92.0))))))
+                    data["cloud_altitude"] = max(0.0, min(1.0, float(raw_cloud.get("altitude", data.get("cloud_altitude", getattr(settings, "cloud_altitude", 0.22))))))
+                    data["cloud_depth"] = max(0.04, min(1.0, float(raw_cloud.get("depth", data.get("cloud_depth", getattr(settings, "cloud_depth", 0.42))))))
+                    cfg.effects_json = json.dumps(data, ensure_ascii=False)
+            except Exception:
+                pass
+            try:
+                selected.cfg = cfg
+            except Exception:
+                pass
+            try:
+                if "widget" in changes and "widgets" not in changes:
+                    selected.move(int(getattr(cfg, "x", 0)), int(getattr(cfg, "y", 0)))
+                    try:
+                        selected.resize(int(getattr(cfg, "w", selected.width())), int(getattr(cfg, "h", selected.height())))
+                    except Exception:
+                        pass
+                    try:
+                        selected.setProperty("lds_rotation_degrees", float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                if hasattr(selected, "clear_vector_image_cache"):
+                    selected.clear_vector_image_cache()
+            except Exception:
+                pass
+            try:
+                if hasattr(selected, "_sun_effect_render_cache"):
+                    selected._sun_effect_render_cache.clear()
+                if hasattr(selected, "_sun_effect_render_cache_order"):
+                    selected._sun_effect_render_cache_order.clear()
+            except Exception:
+                pass
+            try:
+                for attr in (
+                    "_water_reflection_cache_signature",
+                    "_water_reflection_cache_image",
+                    "_ice_reflection_cache_signature",
+                    "_ice_reflection_cache_image",
+                ):
+                    if hasattr(selected, attr):
+                        setattr(selected, attr, None)
+            except Exception:
+                pass
+            try:
+                selected.update()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+            try:
+                if hasattr(self.canvas, "save_config"):
+                    self.canvas.save_config()
+            except Exception:
+                pass
+            try:
+                self.load_selected_to_editor()
+            except Exception:
+                pass
+            try:
+                if "widgets" in changes or "widget" in changes:
+                    self.commit_3d_preview_normal_widget_live_changes()
+            except Exception:
+                pass
+            try:
+                window = getattr(self, "preview_3d_test_window", None)
+                if window is not None and hasattr(window, "clear_all_pending_preview_changes"):
+                    window.clear_all_pending_preview_changes()
+            except Exception:
+                pass
+            try:
+                self.sync_3d_preview_test_window()
+            except Exception:
+                pass
+            if show_message:
+                QMessageBox.information(
+                    self,
+                    lds_tr("3Dプレビュー"),
+                    lds_tr("3Dプレビュー変更をまとめて反映しました: " + ", ".join(applied))
+                )
+            return True
+        except Exception as exc:
+            if show_message:
+                QMessageBox.warning(self, lds_tr("3Dプレビュー"), lds_tr(f"3Dプレビュー変更のまとめて反映に失敗しました:\n{exc}"))
+            return False
+
+    def open_3d_preview_test_window(self):
+        try:
+            window = getattr(self, "preview_3d_test_window", None)
+            if window is None:
+                window = LDSPreview3DWindow(self)
+                try:
+                    if hasattr(window, "set_detail_studio_factory"):
+                        window.set_detail_studio_factory(LiteDeskStudio)
+                    else:
+                        window._detail_studio_factory = LiteDeskStudio
+                except Exception:
+                    pass
+                self.preview_3d_test_window = window
+            window.show()
+            try:
+                window.raise_()
+                window.activateWindow()
+            except Exception:
+                pass
+        except Exception as exc:
+            QMessageBox.warning(self, lds_tr("3Dプレビュー"), lds_tr(f"3Dプレビューを開けませんでした:\n{exc}"))
 
     def build_left_panel(self):
         scroll = QScrollArea()
@@ -7889,11 +9444,11 @@ class LiteDeskStudio(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel(lds_tr("🧩 Lite Desktop Studio"))
+        title = QLabel(lds_ui_text("⚙ 詳細設定", "⚙ Details"))
         title.setObjectName("Title")
         layout.addWidget(title)
 
-        subtitle = QLabel(lds_tr("🪄 ウィジェットを追加して、直感的に編集できます。"))
+        subtitle = QLabel(lds_ui_text("統合3D画面で直接編集しきれない詳細なウィジェット設定・エフェクト設定を調整します。", "Adjust detailed widget and effect settings that are not handled directly in the integrated 3D view."))
         subtitle.setWordWrap(True)
         subtitle.setObjectName("SubText")
         layout.addWidget(subtitle)
@@ -8148,7 +9703,6 @@ class LiteDeskStudio(QMainWindow):
                 "btn_delete": lds_tr("🗑️ 削除"),
                 "btn_export": lds_tr("📤 エクスポート"),
                 "btn_import": lds_tr("📥 インポート"),
-                "btn_close_canvas": lds_tr("🚪 アプリ終了"),
                 "prop_mirror_reflect_enabled": lds_tr("🪞 このウィジェットを水面/氷面の鏡面反射に含める"),
                 "btn_pick_color": lds_tr("🎯 アクセント色を選択"),
                 "btn_pick_bg": lds_tr("🖼️ 背景色を選択"),
@@ -8197,6 +9751,7 @@ class LiteDeskStudio(QMainWindow):
                 "prop_visualizer_bar_width_scale": lds_tr("📏 スペクトルバー幅"),
                 "prop_visualizer_orientation": lds_tr("🧭 スペクトル展開方向"),
                 "prop_visualizer_style": lds_tr("🎨 スペクトル視覚効果"),
+                "prop_visualizer_live_preview_preset": lds_tr("🎛️ 3Dプレビュー用プリセット"),
                 "prop_visualizer_frame_rate": lds_tr("🎞️ FPS"),
             }
             for field_attr_name, source_text in form_labels.items():
@@ -8299,20 +9854,19 @@ class LiteDeskStudio(QMainWindow):
         self.btn_effects_editor = QPushButton(lds_tr("✨ エフェクト設定"))
         self.btn_effects_editor.clicked.connect(self.open_effects_overlay_editor)
         layout.addWidget(self.btn_effects_editor)
+
         self.btn_save = QPushButton(lds_tr("💾 設定を保存"))
         self.btn_reload = QPushButton(lds_tr("🔄 UIを再読み込み"))
         self.btn_duplicate = QPushButton(lds_tr("📄 複製"))
         self.btn_delete = QPushButton(lds_tr("🗑️ 削除"))
         self.btn_export = QPushButton(lds_tr("📤 エクスポート"))
         self.btn_import = QPushButton(lds_tr("📥 インポート"))
-        self.btn_close_canvas = QPushButton(lds_tr("🚪 アプリ終了"))
         self.btn_save.clicked.connect(self.save)
         self.btn_reload.clicked.connect(self.reload_ui)
         self.btn_duplicate.clicked.connect(self.duplicate)
         self.btn_delete.clicked.connect(self.delete)
         self.btn_export.clicked.connect(self.export_config)
         self.btn_import.clicked.connect(self.import_config)
-        self.btn_close_canvas.clicked.connect(QApplication.quit)
 
         buttons = [
             self.btn_save,
@@ -8321,7 +9875,6 @@ class LiteDeskStudio(QMainWindow):
             self.btn_delete,
             self.btn_export,
             self.btn_import,
-            self.btn_close_canvas,
         ]
 
         for i, button in enumerate(buttons):
@@ -8493,6 +10046,18 @@ class LiteDeskStudio(QMainWindow):
         ]:
             self.prop_visualizer_style.addItem(_label, _value)
         self.prop_visualizer_style.currentIndexChanged.connect(self.apply_properties_live)
+        self.prop_visualizer_live_preview_preset = QComboBox()
+        for _label, _value in [
+            (lds_tr("手動設定 / プリセットなし"), "manual"),
+            (lds_tr("Balanced Classic"), "balanced_classic"),
+            (lds_tr("Neon Soundwave"), "neon_soundwave"),
+            (lds_tr("Vertical HUD"), "vertical_hud"),
+            (lds_tr("Minimal Low"), "minimal_low"),
+            (lds_tr("Cosmic Fusion"), "cosmic_fusion"),
+            (lds_tr("Lower Third"), "lower_third"),
+        ]:
+            self.prop_visualizer_live_preview_preset.addItem(_label, _value)
+        self.prop_visualizer_live_preview_preset.currentIndexChanged.connect(self.on_visualizer_live_preview_preset_changed)
         self.prop_visualizer_frame_rate_enabled = QCheckBox(lds_tr("🎞️ FPS制限を使う"))
         self.prop_visualizer_frame_rate_enabled.stateChanged.connect(self.apply_properties_live)
         self.prop_visualizer_frame_rate = QSpinBox()
@@ -8589,6 +10154,7 @@ class LiteDeskStudio(QMainWindow):
         form.addRow(lds_tr("📏 スペクトルバー幅"), self.prop_visualizer_bar_width_scale)
         form.addRow(lds_tr("🧭 スペクトル展開方向"), self.prop_visualizer_orientation)
         form.addRow(lds_tr("🎨 スペクトル視覚効果"), self.prop_visualizer_style)
+        form.addRow(lds_tr("🎛️ 3Dプレビュー用プリセット"), self.prop_visualizer_live_preview_preset)
         form.addRow("", self.prop_visualizer_frame_rate_enabled)
         form.addRow("🎞️ FPS", self.prop_visualizer_frame_rate)
         form.addRow("", self.prop_visualizer_shadow_enabled)
@@ -8605,6 +10171,7 @@ class LiteDeskStudio(QMainWindow):
             self.prop_visualizer_bar_width_scale,
             self.prop_visualizer_orientation,
             self.prop_visualizer_style,
+            self.prop_visualizer_live_preview_preset,
             self.prop_visualizer_frame_rate_enabled,
             self.prop_visualizer_frame_rate,
             self.prop_visualizer_shadow_enabled,
@@ -8701,7 +10268,8 @@ class LiteDeskStudio(QMainWindow):
             self.prop_network_down_color.blockSignals(True)
             self.prop_network_down_color.setText(color.name())
             self.prop_network_down_color.blockSignals(False)
-            self.apply_properties(save=True)
+            if not self._apply_normal_preview_color_picker_change():
+                self.apply_properties(save=True)
 
     def pick_network_up_color(self):
         current = QColor(self.prop_network_up_color.text() or DEFAULT_NETWORK_UP_COLOR)
@@ -8711,7 +10279,8 @@ class LiteDeskStudio(QMainWindow):
             self.prop_network_up_color.blockSignals(True)
             self.prop_network_up_color.setText(color.name())
             self.prop_network_up_color.blockSignals(False)
-            self.apply_properties(save=True)
+            if not self._apply_normal_preview_color_picker_change():
+                self.apply_properties(save=True)
 
     def set_weather_controls_visible(self, visible: bool):
         widgets = getattr(self, "weather_only_property_widgets", [])
@@ -9002,6 +10571,7 @@ class LiteDeskStudio(QMainWindow):
             getattr(self, "prop_visualizer_bar_width_scale", None),
             getattr(self, "prop_visualizer_orientation", None),
             getattr(self, "prop_visualizer_style", None),
+            getattr(self, "prop_visualizer_live_preview_preset", None),
             getattr(self, "prop_visualizer_frame_rate_enabled", None),
             getattr(self, "prop_visualizer_frame_rate", None),
             getattr(self, "prop_visualizer_shadow_enabled", None),
@@ -9051,6 +10621,10 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_bar_width_scale.setValue(1.0)
                 self.prop_visualizer_orientation.setCurrentIndex(0)
                 self.prop_visualizer_style.setCurrentIndex(0)
+                try:
+                    self.prop_visualizer_live_preview_preset.setCurrentIndex(0)
+                except Exception:
+                    pass
                 self.prop_visualizer_frame_rate_enabled.setChecked(True)
                 self.prop_visualizer_frame_rate.setValue(60)
                 self.prop_visualizer_shadow_enabled.setChecked(True)
@@ -9129,6 +10703,12 @@ class LiteDeskStudio(QMainWindow):
                 style = str(getattr(cfg, "visualizer_style", "classic") or "classic")
                 style_idx = self.prop_visualizer_style.findData(style)
                 self.prop_visualizer_style.setCurrentIndex(max(0, style_idx))
+                try:
+                    preset_key = str(getattr(cfg, "visualizer_preset_key", "manual") or "manual")
+                    preset_idx = self.prop_visualizer_live_preview_preset.findData(preset_key)
+                    self.prop_visualizer_live_preview_preset.setCurrentIndex(max(0, preset_idx))
+                except Exception:
+                    pass
                 self.prop_visualizer_frame_rate_enabled.setChecked(bool(getattr(cfg, "visualizer_frame_rate_enabled", True)))
                 self.prop_visualizer_frame_rate.setValue(max(1, min(500, int(getattr(cfg, "visualizer_frame_rate", 40)))))
                 self.prop_visualizer_shadow_enabled.setChecked(bool(getattr(cfg, "visualizer_shadow_enabled", True)))
@@ -9143,6 +10723,10 @@ class LiteDeskStudio(QMainWindow):
                 self.prop_visualizer_glow_enabled.setChecked(True)
                 self.prop_visualizer_bar_width_scale.setValue(1.0)
                 self.prop_visualizer_orientation.setCurrentIndex(0)
+                try:
+                    self.prop_visualizer_live_preview_preset.setCurrentIndex(0)
+                except Exception:
+                    pass
 
             if cfg.type == "clock":
                 self.prop_clock_show_digital.setChecked(
@@ -9199,6 +10783,1071 @@ class LiteDeskStudio(QMainWindow):
         for widget in widgets:
             widget.setEnabled(enabled)
 
+    def _clock_live_preview_active(self):
+        try:
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            if cfg is None or str(getattr(cfg, "type", "")) != "clock":
+                return False
+            try:
+                for _window in self._iter_3d_preview_windows_for_live_preview():
+                    return True
+            except Exception:
+                pass
+            window = self._active_3d_preview_window_for_live_preview()
+            return bool(window is not None)
+        except Exception:
+            return False
+
+    def _clock_live_preview_snapshot_from_cfg(self, cfg):
+        try:
+            return {
+                "title": str(getattr(cfg, "title", "")),
+                "x": int(getattr(cfg, "x", 0)),
+                "y": int(getattr(cfg, "y", 0)),
+                "w": int(getattr(cfg, "w", 80)),
+                "h": int(getattr(cfg, "h", 80)),
+                "rotation": float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))),
+                "rotation_degrees": float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))),
+                "color": str(getattr(cfg, "color", "#FFCC66")),
+                "bg": str(getattr(cfg, "bg", "#10141C")),
+                "bg_alpha": int(getattr(cfg, "bg_alpha", 155)),
+                "font_size": int(getattr(cfg, "font_size", 14)),
+                "text": str(getattr(cfg, "text", "")),
+                "clock_show_digital": bool(getattr(cfg, "clock_show_digital", True)),
+            }
+        except Exception:
+            return {}
+
+    def _restore_clock_live_preview_snapshot_to_widget(self, widget, snapshot):
+        try:
+            cfg = getattr(widget, "cfg", None)
+            data = dict(snapshot or {})
+            if cfg is None or not data:
+                return False
+            for key in ("title", "color", "bg", "text"):
+                if key in data:
+                    try:
+                        setattr(cfg, key, str(data.get(key, "")))
+                    except Exception:
+                        pass
+            for key in ("x", "y", "w", "h", "font_size", "bg_alpha"):
+                if key in data:
+                    try:
+                        setattr(cfg, key, int(data.get(key, getattr(cfg, key, 0))))
+                    except Exception:
+                        pass
+            if "rotation" in data or "rotation_degrees" in data:
+                try:
+                    rotation_value = float(data.get("rotation_degrees", data.get("rotation", 0.0)))
+                    setattr(cfg, "rotation_degrees", rotation_value)
+                    setattr(cfg, "rotation", rotation_value)
+                except Exception:
+                    pass
+            if "clock_show_digital" in data:
+                try:
+                    setattr(cfg, "clock_show_digital", bool(data.get("clock_show_digital")))
+                except Exception:
+                    pass
+            try:
+                widget.cfg = cfg
+                widget.move(int(getattr(cfg, "x", 0)), int(getattr(cfg, "y", 0)))
+                widget.resize(int(getattr(cfg, "w", widget.width())), int(getattr(cfg, "h", widget.height())))
+                widget.setProperty("lds_rotation_degrees", float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))))
+                widget.update()
+            except Exception:
+                pass
+            try:
+                if hasattr(widget, "_lds_normal_widget_live_preview_snapshot"):
+                    delattr(widget, "_lds_normal_widget_live_preview_snapshot")
+            except Exception:
+                pass
+            try:
+                if hasattr(cfg, "_lds_normal_widget_live_preview_snapshot"):
+                    delattr(cfg, "_lds_normal_widget_live_preview_snapshot")
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _capture_clock_live_preview_snapshot_for_3d(self):
+        try:
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            if cfg is None or str(getattr(cfg, "type", "")) != "clock":
+                return False
+            window = self._active_3d_preview_window_for_live_preview()
+            if window is None:
+                return False
+            widget_index = self._selected_widget_index_for_3d_preview(widget)
+            if widget_index < 0:
+                return False
+            snapshots = dict(getattr(self, "_clock_live_preview_snapshots", {}) or {})
+            if widget_index not in snapshots:
+                snapshots[widget_index] = self._clock_live_preview_snapshot_from_cfg(cfg)
+                self._clock_live_preview_snapshots = snapshots
+                try:
+                    if hasattr(self.canvas, "push_undo_snapshot"):
+                        self.canvas.push_undo_snapshot("Clock 3D live preview")
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+
+    def commit_3d_preview_clock_live_changes(self):
+        try:
+            self._clock_live_preview_snapshots = {}
+            return True
+        except Exception:
+            return False
+
+    def discard_3d_preview_clock_live_changes(self, show_message=False):
+        try:
+            snapshots = dict(getattr(self, "_clock_live_preview_snapshots", {}) or {})
+            if not snapshots:
+                return False
+            widgets = list(getattr(self.canvas, "widgets", []) or [])
+            restored = False
+            for index, snapshot in sorted(snapshots.items(), key=lambda kv: int(kv[0])):
+                try:
+                    index = int(index)
+                    if 0 <= index < len(widgets):
+                        restored = self._restore_clock_live_preview_snapshot_to_widget(widgets[index], snapshot) or restored
+                except Exception:
+                    pass
+            self._clock_live_preview_snapshots = {}
+            try:
+                self.canvas.update_platform_hit_mask()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+            try:
+                self.load_selected_to_editor()
+            except Exception:
+                pass
+            if restored and show_message:
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("時計ウィジェットの未反映プレビュー変更を破棄しました。"))
+            return bool(restored)
+        except Exception:
+            return False
+
+    def _apply_clock_preview_color_picker_change(self):
+        """Use live-preview semantics for color dialogs while a clock is selected in 3D preview."""
+        try:
+            if not self._clock_live_preview_active():
+                return False
+            self._capture_clock_live_preview_snapshot_for_3d()
+            self.apply_properties(save=False)
+            self.apply_clock_widget_live_preview_to_3d()
+            return True
+        except Exception:
+            return False
+
+    def _active_3d_preview_window_for_live_preview(self):
+        """Return either the detached 3D preview window or the integrated control-panel preview.
+
+        Phase 24A-5b: earlier live-preview snapshot capture only checked
+        preview_3d_test_window.  In the integrated preview workflow that left no
+        snapshot, so Discard could not restore System/Network colors.
+        """
+        try:
+            for attr in ("preview_3d_test_window", "control_panel"):
+                window = getattr(self, attr, None)
+                if window is None:
+                    continue
+                # Do not reject an existing preview/control panel solely because
+                # isVisible() is temporarily false during focus/modal transitions.
+                # The presence of preview/set_preview_state is enough for live-preview
+                # snapshot capture and Discard restoration semantics.
+                if hasattr(window, "preview") or hasattr(window, "set_preview_state"):
+                    return window
+        except Exception:
+            pass
+        return None
+
+    def _normal_widget_live_preview_active(self):
+        try:
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            if cfg is None or str(getattr(cfg, "type", "")) == "effects_overlay":
+                return False
+            window = self._active_3d_preview_window_for_live_preview()
+            return bool(window is not None)
+        except Exception:
+            return False
+
+    def _normal_widget_live_preview_snapshot_from_cfg(self, cfg):
+        try:
+            return {
+                "type": str(getattr(cfg, "type", "")),
+                "title": str(getattr(cfg, "title", "")),
+                "x": int(getattr(cfg, "x", 0)),
+                "y": int(getattr(cfg, "y", 0)),
+                "w": int(getattr(cfg, "w", 80)),
+                "h": int(getattr(cfg, "h", 80)),
+                "rotation": float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))),
+                "rotation_degrees": float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))),
+                "color": str(getattr(cfg, "color", "#5BE7FF")),
+                "bg": str(getattr(cfg, "bg", "#10141C")),
+                "bg_alpha": int(getattr(cfg, "bg_alpha", 155)),
+                "font_size": int(getattr(cfg, "font_size", 14)),
+                "text": str(getattr(cfg, "text", "")),
+                "clock_show_digital": bool(getattr(cfg, "clock_show_digital", True)),
+                "cpu_color": str(getattr(cfg, "cpu_color", "#5BE7FF")),
+                "memory_color": str(getattr(cfg, "memory_color", "#B388FF")),
+                "disk_color": str(getattr(cfg, "disk_color", "#80FF9F")),
+                "network_down_color": str(getattr(cfg, "network_down_color", "#5BE7FF")),
+                "network_up_color": str(getattr(cfg, "network_up_color", "#80FF9F")),
+                "visualizer_flip_vertical": bool(getattr(cfg, "visualizer_flip_vertical", False)),
+                "visualizer_peak_bar_enabled": bool(getattr(cfg, "visualizer_peak_bar_enabled", True)),
+                "visualizer_glow_enabled": bool(getattr(cfg, "visualizer_glow_enabled", True)),
+                "visualizer_bar_width_scale": float(getattr(cfg, "visualizer_bar_width_scale", 1.0)),
+                "visualizer_orientation": str(getattr(cfg, "visualizer_orientation", "horizontal")),
+                "visualizer_style": str(getattr(cfg, "visualizer_style", "classic")),
+                "visualizer_preset_key": str(getattr(cfg, "visualizer_preset_key", "manual")),
+                "visualizer_shadow_enabled": bool(getattr(cfg, "visualizer_shadow_enabled", False)),
+                "visualizer_shadow_offset_x": float(getattr(cfg, "visualizer_shadow_offset_x", 0.0)),
+                "visualizer_shadow_offset_y": float(getattr(cfg, "visualizer_shadow_offset_y", 0.0)),
+                "visualizer_shadow_strength": float(getattr(cfg, "visualizer_shadow_strength", 0.5)),
+                "visualizer_shadow_opacity": float(getattr(cfg, "visualizer_shadow_opacity", 0.35)),
+                "visualizer_shadow_depth": float(getattr(cfg, "visualizer_shadow_depth", 0.0)),
+                "visualizer_shadow_blur": float(getattr(cfg, "visualizer_shadow_blur", 0.0)),
+                "visualizer_frame_rate_enabled": bool(getattr(cfg, "visualizer_frame_rate_enabled", False)),
+                "visualizer_frame_rate": int(getattr(cfg, "visualizer_frame_rate", 30)),
+            }
+        except Exception:
+            return {}
+
+    def _restore_normal_widget_live_preview_snapshot_to_widget(self, widget, snapshot):
+        try:
+            cfg = getattr(widget, "cfg", None)
+            data = dict(snapshot or {})
+            if cfg is None or not data:
+                return False
+            for key in ("title", "color", "bg", "text", "cpu_color", "memory_color", "disk_color", "network_down_color", "network_up_color", "visualizer_orientation", "visualizer_style", "visualizer_preset_key", "weather_location", "jshtml_mode", "jshtml_entry", "jshtml_package_name", "jshtml_package_version", "jshtml_permissions_json", "jshtml_instance_id"):
+                if key in data:
+                    try:
+                        setattr(cfg, key, str(data.get(key, "")))
+                    except Exception:
+                        pass
+            for key in ("x", "y", "w", "h", "font_size", "bg_alpha"):
+                if key in data:
+                    try:
+                        setattr(cfg, key, int(data.get(key, getattr(cfg, key, 0))))
+                    except Exception:
+                        pass
+            if "rotation" in data or "rotation_degrees" in data:
+                try:
+                    rotation_value = float(data.get("rotation_degrees", data.get("rotation", 0.0)))
+                    setattr(cfg, "rotation_degrees", rotation_value)
+                    setattr(cfg, "rotation", rotation_value)
+                except Exception:
+                    pass
+            if str(getattr(cfg, "type", "")) == "clock" and "clock_show_digital" in data:
+                try:
+                    setattr(cfg, "clock_show_digital", bool(data.get("clock_show_digital")))
+                except Exception:
+                    pass
+            if str(getattr(cfg, "type", "")) == "visualizer":
+                for key in ("visualizer_flip_vertical", "visualizer_peak_bar_enabled", "visualizer_glow_enabled", "visualizer_shadow_enabled", "visualizer_frame_rate_enabled"):
+                    if key in data:
+                        try: setattr(cfg, key, bool(data.get(key)))
+                        except Exception: pass
+                for key in ("visualizer_bar_width_scale", "visualizer_shadow_offset_x", "visualizer_shadow_offset_y", "visualizer_shadow_strength", "visualizer_shadow_opacity", "visualizer_shadow_depth", "visualizer_shadow_blur"):
+                    if key in data:
+                        try: setattr(cfg, key, float(data.get(key, getattr(cfg, key, 0.0))))
+                        except Exception: pass
+                if "visualizer_frame_rate" in data:
+                    try: setattr(cfg, "visualizer_frame_rate", max(1, min(240, int(round(float(data.get("visualizer_frame_rate", getattr(cfg, "visualizer_frame_rate", 30))))))))
+                    except Exception: pass
+            try:
+                widget.cfg = cfg
+                widget.move(int(getattr(cfg, "x", 0)), int(getattr(cfg, "y", 0)))
+                widget.resize(int(getattr(cfg, "w", widget.width())), int(getattr(cfg, "h", widget.height())))
+                widget.setProperty("lds_rotation_degrees", float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0))))
+                widget.update()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _capture_normal_widget_live_preview_snapshot_for_3d(self):
+        try:
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            if cfg is None or str(getattr(cfg, "type", "")) == "effects_overlay":
+                return False
+            window = self._active_3d_preview_window_for_live_preview()
+            if window is None:
+                return False
+            widget_index = self._selected_widget_index_for_3d_preview(widget)
+            if widget_index < 0:
+                return False
+            snapshots = dict(getattr(self, "_normal_widget_live_preview_snapshots", {}) or {})
+            try:
+                canvas_snapshots = dict(getattr(self.canvas, "_normal_widget_live_preview_snapshots", {}) or {})
+                for snap_index, snap_data in canvas_snapshots.items():
+                    snapshots.setdefault(snap_index, snap_data)
+            except Exception:
+                pass
+            if widget_index not in snapshots:
+                snapshots[widget_index] = self._normal_widget_live_preview_snapshot_from_cfg(cfg)
+                try:
+                    if hasattr(self.canvas, "push_undo_snapshot"):
+                        self.canvas.push_undo_snapshot("Normal widget 3D live preview")
+                except Exception:
+                    pass
+            self._normal_widget_live_preview_snapshots = snapshots
+            try:
+                setattr(self.canvas, "_normal_widget_live_preview_snapshots", dict(snapshots))
+            except Exception:
+                pass
+            try:
+                snap = dict(snapshots.get(widget_index) or {})
+                if snap:
+                    setattr(widget, "_lds_normal_widget_live_preview_snapshot", snap)
+                    setattr(cfg, "_lds_normal_widget_live_preview_snapshot", snap)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def commit_3d_preview_normal_widget_live_changes(self):
+        try:
+            self._normal_widget_live_preview_snapshots = {}
+            try:
+                setattr(self.canvas, "_normal_widget_live_preview_snapshots", {})
+            except Exception:
+                pass
+            try:
+                for widget_item in list(getattr(self.canvas, "widgets", []) or []):
+                    try:
+                        if hasattr(widget_item, "_lds_normal_widget_live_preview_snapshot"):
+                            delattr(widget_item, "_lds_normal_widget_live_preview_snapshot")
+                    except Exception:
+                        pass
+                    try:
+                        cfg_item = getattr(widget_item, "cfg", None)
+                        if cfg_item is not None and hasattr(cfg_item, "_lds_normal_widget_live_preview_snapshot"):
+                            delattr(cfg_item, "_lds_normal_widget_live_preview_snapshot")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                self.commit_3d_preview_clock_live_changes()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _restore_latest_normal_widget_live_preview_undo_snapshot(self, require_system_network=True):
+        """Phase 24A-5f: run the proven Undo path before normal Discard processing.
+
+        The user confirmed that manual Undo after Discard restores System colors.
+        Therefore, for System/Network live-preview Discard, use the newest canvas
+        undo snapshot first instead of waiting for custom snapshot maps.
+        """
+        try:
+            canvas = getattr(self, "canvas", None)
+            if canvas is None:
+                return False
+            selected_widget = getattr(canvas, "selected", None)
+            selected_cfg = getattr(selected_widget, "cfg", None) if selected_widget is not None else None
+            selected_type = str(getattr(selected_cfg, "type", "")) if selected_cfg is not None else ""
+            if require_system_network and selected_type not in ("system", "network"):
+                return False
+            stack = list(getattr(canvas, "_undo_stack", []) or [])
+            if not stack:
+                return False
+            latest = dict(stack[-1] or {})
+            label = str(latest.get("label", ""))
+            # Prefer the explicit live-preview snapshots, but allow a non-empty latest
+            # snapshot for System/Network because manual Undo was verified to be the
+            # correct recovery path in this exact failure mode.
+            if label not in ("Normal widget 3D live preview", "Clock 3D live preview"):
+                if not (require_system_network and selected_type in ("system", "network") and bool(latest.get("widgets", []))):
+                    return False
+            if not hasattr(canvas, "undo_last_change"):
+                return False
+            return bool(canvas.undo_last_change())
+        except Exception:
+            return False
+
+    def _clear_normal_widget_live_preview_snapshot_storage(self):
+        try:
+            self._normal_widget_live_preview_snapshots = {}
+        except Exception:
+            pass
+        try:
+            setattr(self.canvas, "_normal_widget_live_preview_snapshots", {})
+        except Exception:
+            pass
+        try:
+            self._clock_live_preview_snapshots = {}
+        except Exception:
+            pass
+        try:
+            setattr(self.canvas, "_clock_live_preview_snapshots", {})
+        except Exception:
+            pass
+        try:
+            for widget_item in list(getattr(self.canvas, "widgets", []) or []):
+                try:
+                    if hasattr(widget_item, "_lds_normal_widget_live_preview_snapshot"):
+                        delattr(widget_item, "_lds_normal_widget_live_preview_snapshot")
+                except Exception:
+                    pass
+                try:
+                    cfg_item = getattr(widget_item, "cfg", None)
+                    if cfg_item is not None and hasattr(cfg_item, "_lds_normal_widget_live_preview_snapshot"):
+                        delattr(cfg_item, "_lds_normal_widget_live_preview_snapshot")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _refresh_after_normal_widget_live_preview_discard(self):
+        try:
+            self.canvas.update_platform_hit_mask()
+        except Exception:
+            pass
+        try:
+            self.canvas.update()
+        except Exception:
+            pass
+        try:
+            self.refresh_layer_list()
+        except Exception:
+            pass
+        try:
+            self.load_selected_to_editor()
+        except Exception:
+            pass
+        try:
+            state = self.build_3d_preview_state()
+            for attr in ("preview_3d_test_window", "control_panel"):
+                window = getattr(self, attr, None)
+                if window is not None and hasattr(window, "set_preview_state"):
+                    try:
+                        window.set_preview_state(state)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def discard_3d_preview_normal_widget_live_changes(self, show_message=False):
+        try:
+            # Phase 24A-5f: System/Network must use the proven Undo path FIRST.
+            # Previous attempts placed Undo fallback after custom snapshot handling,
+            # so it was skipped when the maps were empty or stale.
+            if self._restore_latest_normal_widget_live_preview_undo_snapshot(require_system_network=True):
+                self._clear_normal_widget_live_preview_snapshot_storage()
+                self._refresh_after_normal_widget_live_preview_discard()
+                if show_message:
+                    QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("通常ウィジェットの未反映プレビュー変更を破棄しました。"))
+                return True
+            snapshots = dict(getattr(self, "_normal_widget_live_preview_snapshots", {}) or {})
+            # Phase 24A-5c: the preview window may create/use a different detail
+            # controller than the property editor that captured the snapshot.  Keep
+            # snapshots on the shared canvas as the authoritative cross-controller store.
+            try:
+                for index, snapshot in dict(getattr(self.canvas, "_normal_widget_live_preview_snapshots", {}) or {}).items():
+                    snapshots.setdefault(index, snapshot)
+            except Exception:
+                pass
+            try:
+                for index, snapshot in dict(getattr(self, "_clock_live_preview_snapshots", {}) or {}).items():
+                    snapshots.setdefault(index, snapshot)
+            except Exception:
+                pass
+            try:
+                for index, snapshot in dict(getattr(self.canvas, "_clock_live_preview_snapshots", {}) or {}).items():
+                    snapshots.setdefault(index, snapshot)
+            except Exception:
+                pass
+            try:
+                for index, widget_item in enumerate(list(getattr(self.canvas, "widgets", []) or [])):
+                    snap = getattr(widget_item, "_lds_normal_widget_live_preview_snapshot", None)
+                    if snap is None:
+                        cfg_item = getattr(widget_item, "cfg", None)
+                        snap = getattr(cfg_item, "_lds_normal_widget_live_preview_snapshot", None) if cfg_item is not None else None
+                    if snap:
+                        snapshots.setdefault(index, dict(snap or {}))
+            except Exception:
+                pass
+            if not snapshots:
+                return False
+            widgets = list(getattr(self.canvas, "widgets", []) or [])
+            restored = False
+            for index, snapshot in sorted(snapshots.items(), key=lambda kv: int(kv[0])):
+                try:
+                    index = int(index)
+                    if 0 <= index < len(widgets):
+                        restored = self._restore_normal_widget_live_preview_snapshot_to_widget(widgets[index], snapshot) or restored
+                except Exception:
+                    pass
+            self._normal_widget_live_preview_snapshots = {}
+            try:
+                setattr(self.canvas, "_normal_widget_live_preview_snapshots", {})
+            except Exception:
+                pass
+            try:
+                self._clock_live_preview_snapshots = {}
+            except Exception:
+                pass
+            try:
+                setattr(self.canvas, "_clock_live_preview_snapshots", {})
+            except Exception:
+                pass
+            try:
+                for widget_item in list(getattr(self.canvas, "widgets", []) or []):
+                    try:
+                        if hasattr(widget_item, "_lds_normal_widget_live_preview_snapshot"):
+                            delattr(widget_item, "_lds_normal_widget_live_preview_snapshot")
+                    except Exception:
+                        pass
+                    try:
+                        cfg_item = getattr(widget_item, "cfg", None)
+                        if cfg_item is not None and hasattr(cfg_item, "_lds_normal_widget_live_preview_snapshot"):
+                            delattr(cfg_item, "_lds_normal_widget_live_preview_snapshot")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                self.canvas.update_platform_hit_mask()
+            except Exception:
+                pass
+            try:
+                self.canvas.update()
+            except Exception:
+                pass
+            try:
+                self.load_selected_to_editor()
+            except Exception:
+                pass
+            try:
+                state = self.build_3d_preview_state()
+                for attr in ("preview_3d_test_window", "control_panel"):
+                    window = getattr(self, attr, None)
+                    if window is not None and hasattr(window, "set_preview_state"):
+                        try:
+                            window.set_preview_state(state)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            if restored and show_message:
+                QMessageBox.information(self, lds_tr("3Dプレビュー"), lds_tr("通常ウィジェットの未反映プレビュー変更を破棄しました。"))
+            return bool(restored)
+        except Exception:
+            return False
+
+    def _normal_widget_preview_updates_from_properties(self):
+        try:
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            widget_type = str(getattr(cfg, "type", "")) if cfg is not None else ""
+            if cfg is None or widget_type == "effects_overlay":
+                return None
+            updates = {
+                "title": self.prop_title.text(),
+                "x": int(self.prop_x.value()),
+                "y": int(self.prop_y.value()),
+                "w": int(max(40, self.prop_w.value())),
+                "h": int(max(40, self.prop_h.value())),
+                "color": self.prop_color.text().strip() or "#5BE7FF",
+                "bg": self.prop_bg.text().strip() or "#10141C",
+                "font_size": int(self.prop_font_size.value()),
+                "text": self.prop_text.toPlainText(),
+            }
+            if widget_type == "clock":
+                try:
+                    updates["clock_show_digital"] = bool(self.prop_clock_show_digital.isChecked())
+                except Exception:
+                    pass
+            if widget_type == "system":
+                updates["cpu_color"] = self.prop_cpu_color.text().strip() or "#5BE7FF"
+                updates["memory_color"] = self.prop_memory_color.text().strip() or "#B388FF"
+                updates["disk_color"] = self.prop_disk_color.text().strip() or "#80FF9F"
+            if widget_type == "network":
+                updates["network_down_color"] = self.prop_network_down_color.text().strip() or "#5BE7FF"
+                updates["network_up_color"] = self.prop_network_up_color.text().strip() or "#80FF9F"
+            if widget_type == "weather":
+                try:
+                    updates["weather_location"] = self.prop_weather_location.text().strip()
+                except Exception:
+                    updates["weather_location"] = str(getattr(cfg, "weather_location", ""))
+            if widget_type == "html_js":
+                # Phase 24A-10B: the editable HTML/CSS/JavaScript body is carried by "text".
+                # Keep package/entry metadata alongside it so 3D pending state does not drop it.
+                for _key in ("jshtml_mode", "jshtml_entry", "jshtml_package_name", "jshtml_package_version", "jshtml_permissions_json", "jshtml_instance_id"):
+                    try:
+                        updates[_key] = str(getattr(cfg, _key, ""))
+                    except Exception:
+                        pass
+            if widget_type == "visualizer":
+                updates["visualizer_flip_vertical"] = bool(self.prop_visualizer_flip_vertical.isChecked())
+                updates["visualizer_peak_bar_enabled"] = bool(self.prop_visualizer_peak_bar_enabled.isChecked())
+                updates["visualizer_glow_enabled"] = bool(self.prop_visualizer_glow_enabled.isChecked())
+                updates["visualizer_bar_width_scale"] = float(self.prop_visualizer_bar_width_scale.value())
+                updates["visualizer_orientation"] = self.prop_visualizer_orientation.currentData() or "horizontal"
+                updates["visualizer_style"] = self.prop_visualizer_style.currentData() or "classic"
+                try:
+                    updates["visualizer_preset_key"] = self.prop_visualizer_live_preview_preset.currentData() or "manual"
+                except Exception:
+                    updates["visualizer_preset_key"] = "manual"
+                updates["visualizer_shadow_enabled"] = bool(self.prop_visualizer_shadow_enabled.isChecked())
+                updates["visualizer_shadow_offset_x"] = float(self.prop_visualizer_shadow_offset_x.value())
+                updates["visualizer_shadow_offset_y"] = float(self.prop_visualizer_shadow_offset_y.value())
+                updates["visualizer_shadow_strength"] = float(self.prop_visualizer_shadow_strength.value())
+                updates["visualizer_shadow_opacity"] = float(self.prop_visualizer_shadow_opacity.value())
+                updates["visualizer_shadow_depth"] = float(self.prop_visualizer_shadow_depth.value())
+                updates["visualizer_shadow_blur"] = float(self.prop_visualizer_shadow_blur.value())
+                updates["visualizer_frame_rate_enabled"] = bool(self.prop_visualizer_frame_rate_enabled.isChecked())
+                updates["visualizer_frame_rate"] = int(self.prop_visualizer_frame_rate.value())
+            try:
+                updates.update(self._normal_widget_runtime_preview_fields_for_3d(cfg))
+            except Exception:
+                pass
+            try:
+                updates["rotation"] = float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0)))
+                updates["rotation_degrees"] = float(updates["rotation"])
+            except Exception:
+                pass
+            return updates
+        except Exception:
+            return None
+
+    def _iter_3d_preview_windows_for_live_preview(self):
+        try:
+            seen = set()
+            for attr in ("control_panel", "preview_3d_test_window"):
+                window = getattr(self, attr, None)
+                if window is None:
+                    continue
+                try:
+                    key = int(id(window))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                except Exception:
+                    pass
+                if hasattr(window, "preview") or hasattr(window, "set_preview_state"):
+                    yield window
+        except Exception:
+            return
+
+    def apply_selected_normal_widget_live_preview_to_3d(self):
+        try:
+            updates = self._normal_widget_preview_updates_from_properties()
+            if not updates:
+                return False
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            widget_type = str(getattr(cfg, "type", "")) if cfg is not None else ""
+            widget_index = self._selected_widget_index_for_3d_preview(widget)
+            changed = False
+            for window in list(self._iter_3d_preview_windows_for_live_preview() or []):
+                try:
+                    preview = getattr(window, "preview", None)
+                    if preview is None:
+                        continue
+                    if widget_type == "clock" and hasattr(preview, "apply_clock_widget_preview_update"):
+                        changed = bool(preview.apply_clock_widget_preview_update(updates, widget_index=widget_index)) or changed
+                    elif hasattr(preview, "apply_normal_widget_preview_update"):
+                        changed = bool(preview.apply_normal_widget_preview_update(updates, widget_index=widget_index)) or changed
+                except Exception:
+                    pass
+            return bool(changed)
+        except Exception:
+            return False
+
+    def _apply_normal_preview_color_picker_change(self):
+        try:
+            if not self._normal_widget_live_preview_active():
+                return False
+            self._capture_normal_widget_live_preview_snapshot_for_3d()
+            self.apply_properties(save=False)
+            self.apply_selected_normal_widget_live_preview_to_3d()
+            return True
+        except Exception:
+            return False
+
+    def _selected_widget_index_for_3d_preview(self, widget=None):
+        try:
+            if widget is None:
+                widget = getattr(self.canvas, "selected", None)
+            return int(list(getattr(self.canvas, "widgets", []) or []).index(widget))
+        except Exception:
+            return -1
+
+    def _clock_widget_preview_updates_from_properties(self):
+        try:
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            if cfg is None or str(getattr(cfg, "type", "")) != "clock":
+                return None
+            updates = {
+                "title": self.prop_title.text(),
+                "x": int(self.prop_x.value()),
+                "y": int(self.prop_y.value()),
+                "w": int(max(40, self.prop_w.value())),
+                "h": int(max(40, self.prop_h.value())),
+                "color": self.prop_color.text().strip() or "#FFCC66",
+                "bg": self.prop_bg.text().strip() or "#10141C",
+                "font_size": int(self.prop_font_size.value()),
+                "text": self.prop_text.toPlainText(),
+                "clock_show_digital": bool(self.prop_clock_show_digital.isChecked()),
+            }
+            try:
+                updates["rotation"] = float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0)))
+                updates["rotation_degrees"] = float(updates["rotation"])
+            except Exception:
+                pass
+            return updates
+        except Exception:
+            return None
+
+    def apply_clock_widget_live_preview_to_3d(self):
+        """Phase 24A-2: push selected clock property edits into the 3D preview pending state."""
+        try:
+            updates = self._clock_widget_preview_updates_from_properties()
+            if not updates:
+                return False
+            window = self._active_3d_preview_window_for_live_preview()
+            if window is None:
+                return False
+            preview = getattr(window, "preview", None)
+            if preview is None or not hasattr(preview, "apply_clock_widget_preview_update"):
+                try:
+                    window.set_preview_state(self.build_3d_preview_state())
+                except Exception:
+                    pass
+                return False
+            widget_index = self._selected_widget_index_for_3d_preview()
+            return bool(preview.apply_clock_widget_preview_update(updates, widget_index=widget_index))
+        except Exception:
+            return False
+
+    def _visualizer_live_preview_preset_values(self, preset_key):
+        """Phase 24A-7: map UI-only Visualizer preview presets to existing visualizer fields."""
+        presets = {
+            "balanced_classic": {
+                "visualizer_preset_key": "balanced_classic",
+                "visualizer_style": "classic",
+                "visualizer_orientation": "horizontal",
+                "visualizer_flip_vertical": False,
+                "visualizer_peak_bar_enabled": True,
+                "visualizer_glow_enabled": True,
+                "visualizer_bar_width_scale": 1.0,
+                "visualizer_shadow_enabled": True,
+                "visualizer_shadow_offset_x": 3.0,
+                "visualizer_shadow_offset_y": 4.0,
+                "visualizer_shadow_strength": 1.0,
+                "visualizer_shadow_opacity": 0.65,
+                "visualizer_shadow_depth": 1.0,
+                "visualizer_shadow_blur": 1.0,
+                "visualizer_frame_rate_enabled": True,
+                "visualizer_frame_rate": 60,
+            },
+            "neon_soundwave": {
+                "visualizer_preset_key": "neon_soundwave",
+                "visualizer_style": "neon_soundwave",
+                "visualizer_orientation": "horizontal",
+                "visualizer_flip_vertical": False,
+                "visualizer_peak_bar_enabled": True,
+                "visualizer_glow_enabled": True,
+                "visualizer_bar_width_scale": 0.82,
+                "visualizer_shadow_enabled": True,
+                "visualizer_shadow_offset_x": 4.0,
+                "visualizer_shadow_offset_y": 5.0,
+                "visualizer_shadow_strength": 1.45,
+                "visualizer_shadow_opacity": 0.80,
+                "visualizer_shadow_depth": 2.0,
+                "visualizer_shadow_blur": 1.8,
+                "visualizer_frame_rate_enabled": True,
+                "visualizer_frame_rate": 75,
+            },
+            "vertical_hud": {
+                "visualizer_preset_key": "vertical_hud",
+                "visualizer_style": "hud_equalizer",
+                "visualizer_orientation": "vertical",
+                "visualizer_flip_vertical": False,
+                "visualizer_peak_bar_enabled": True,
+                "visualizer_glow_enabled": True,
+                "visualizer_bar_width_scale": 1.35,
+                "visualizer_shadow_enabled": False,
+                "visualizer_shadow_offset_x": 0.0,
+                "visualizer_shadow_offset_y": 0.0,
+                "visualizer_shadow_strength": 0.45,
+                "visualizer_shadow_opacity": 0.35,
+                "visualizer_shadow_depth": 0.0,
+                "visualizer_shadow_blur": 0.2,
+                "visualizer_frame_rate_enabled": True,
+                "visualizer_frame_rate": 60,
+            },
+            "minimal_low": {
+                "visualizer_preset_key": "minimal_low",
+                "visualizer_style": "minimal",
+                "visualizer_orientation": "horizontal",
+                "visualizer_flip_vertical": False,
+                "visualizer_peak_bar_enabled": False,
+                "visualizer_glow_enabled": False,
+                "visualizer_bar_width_scale": 0.55,
+                "visualizer_shadow_enabled": False,
+                "visualizer_shadow_offset_x": 0.0,
+                "visualizer_shadow_offset_y": 0.0,
+                "visualizer_shadow_strength": 0.25,
+                "visualizer_shadow_opacity": 0.20,
+                "visualizer_shadow_depth": 0.0,
+                "visualizer_shadow_blur": 0.0,
+                "visualizer_frame_rate_enabled": True,
+                "visualizer_frame_rate": 40,
+            },
+            "cosmic_fusion": {
+                "visualizer_preset_key": "cosmic_fusion",
+                "visualizer_style": "cosmic_fusion",
+                "visualizer_orientation": "horizontal",
+                "visualizer_flip_vertical": False,
+                "visualizer_peak_bar_enabled": True,
+                "visualizer_glow_enabled": True,
+                "visualizer_bar_width_scale": 1.60,
+                "visualizer_shadow_enabled": True,
+                "visualizer_shadow_offset_x": 5.0,
+                "visualizer_shadow_offset_y": 7.0,
+                "visualizer_shadow_strength": 1.55,
+                "visualizer_shadow_opacity": 0.88,
+                "visualizer_shadow_depth": 3.5,
+                "visualizer_shadow_blur": 2.2,
+                "visualizer_frame_rate_enabled": True,
+                "visualizer_frame_rate": 90,
+            },
+            "lower_third": {
+                "visualizer_preset_key": "lower_third",
+                "visualizer_style": "music_lower_third_audio",
+                "visualizer_orientation": "horizontal",
+                "visualizer_flip_vertical": True,
+                "visualizer_peak_bar_enabled": True,
+                "visualizer_glow_enabled": True,
+                "visualizer_bar_width_scale": 0.90,
+                "visualizer_shadow_enabled": True,
+                "visualizer_shadow_offset_x": 3.0,
+                "visualizer_shadow_offset_y": 6.0,
+                "visualizer_shadow_strength": 1.20,
+                "visualizer_shadow_opacity": 0.70,
+                "visualizer_shadow_depth": 1.5,
+                "visualizer_shadow_blur": 1.4,
+                "visualizer_frame_rate_enabled": True,
+                "visualizer_frame_rate": 60,
+            },
+        }
+        try:
+            return dict(presets.get(str(preset_key or ""), {}) or {})
+        except Exception:
+            return {}
+
+    def _set_combo_current_data_safely(self, combo, value):
+        try:
+            index = combo.findData(value)
+            combo.setCurrentIndex(max(0, index))
+        except Exception:
+            pass
+
+    def _visualizer_current_live_preview_control_values(self):
+        """Phase 24A-8c: capture current visualizer control values.
+
+        3D preview presets should not turn optional features on by themselves.
+        These current values are used to preserve user-disabled toggles such as
+        shadow/glow/peak/FPS limiting while still applying the preset's style.
+        """
+        try:
+            return {
+                "visualizer_flip_vertical": bool(self.prop_visualizer_flip_vertical.isChecked()),
+                "visualizer_peak_bar_enabled": bool(self.prop_visualizer_peak_bar_enabled.isChecked()),
+                "visualizer_glow_enabled": bool(self.prop_visualizer_glow_enabled.isChecked()),
+                "visualizer_bar_width_scale": float(self.prop_visualizer_bar_width_scale.value()),
+                "visualizer_orientation": self.prop_visualizer_orientation.currentData() or "horizontal",
+                "visualizer_style": self.prop_visualizer_style.currentData() or "classic",
+                "visualizer_preset_key": self.prop_visualizer_live_preview_preset.currentData() or "manual",
+                "visualizer_shadow_enabled": bool(self.prop_visualizer_shadow_enabled.isChecked()),
+                "visualizer_shadow_offset_x": float(self.prop_visualizer_shadow_offset_x.value()),
+                "visualizer_shadow_offset_y": float(self.prop_visualizer_shadow_offset_y.value()),
+                "visualizer_shadow_strength": float(self.prop_visualizer_shadow_strength.value()),
+                "visualizer_shadow_opacity": float(self.prop_visualizer_shadow_opacity.value()),
+                "visualizer_shadow_depth": float(self.prop_visualizer_shadow_depth.value()),
+                "visualizer_shadow_blur": float(self.prop_visualizer_shadow_blur.value()),
+                "visualizer_frame_rate_enabled": bool(self.prop_visualizer_frame_rate_enabled.isChecked()),
+                "visualizer_frame_rate": int(self.prop_visualizer_frame_rate.value()),
+            }
+        except Exception:
+            return {}
+
+    def _visualizer_filtered_live_preview_preset_values(self, preset_key):
+        """Phase 24A-8c: apply a preset without enabling disabled features.
+
+        Presets are treated as style/layout suggestions.  They may change style,
+        orientation and bar-width, and they may tune numeric sub-settings only
+        when the related feature is already enabled.  They must not change feature
+        toggles from off to on.
+        """
+        try:
+            preset = self._visualizer_live_preview_preset_values(preset_key)
+            if not preset:
+                return {}
+            current = self._visualizer_current_live_preview_control_values()
+            values = dict(current or {})
+            for key in (
+                "visualizer_style",
+                "visualizer_orientation",
+                "visualizer_bar_width_scale",
+                "visualizer_preset_key",
+            ):
+                if key in preset:
+                    values[key] = preset[key]
+            # Preserve all feature toggles.  This prevents presets from enabling
+            # shadow/glow/peak/FPS/flip unexpectedly.
+            for key in (
+                "visualizer_flip_vertical",
+                "visualizer_peak_bar_enabled",
+                "visualizer_glow_enabled",
+                "visualizer_shadow_enabled",
+                "visualizer_frame_rate_enabled",
+            ):
+                if key in current:
+                    values[key] = current[key]
+            # Only tune shadow parameters if shadow is already enabled by the user.
+            if bool(current.get("visualizer_shadow_enabled", False)):
+                for key in (
+                    "visualizer_shadow_offset_x",
+                    "visualizer_shadow_offset_y",
+                    "visualizer_shadow_strength",
+                    "visualizer_shadow_opacity",
+                    "visualizer_shadow_depth",
+                    "visualizer_shadow_blur",
+                ):
+                    if key in preset:
+                        values[key] = preset[key]
+            # Only tune FPS value if FPS limiting is already enabled by the user.
+            if bool(current.get("visualizer_frame_rate_enabled", False)) and "visualizer_frame_rate" in preset:
+                values["visualizer_frame_rate"] = preset["visualizer_frame_rate"]
+            return values
+        except Exception:
+            return {}
+
+    def _apply_visualizer_live_preview_preset_to_controls(self, preset_key):
+        try:
+            values = self._visualizer_filtered_live_preview_preset_values(preset_key)
+            if not values:
+                return False
+            controls = [
+                self.prop_visualizer_flip_vertical,
+                self.prop_visualizer_peak_bar_enabled,
+                self.prop_visualizer_glow_enabled,
+                self.prop_visualizer_bar_width_scale,
+                self.prop_visualizer_orientation,
+                self.prop_visualizer_style,
+                self.prop_visualizer_shadow_enabled,
+                self.prop_visualizer_shadow_offset_x,
+                self.prop_visualizer_shadow_offset_y,
+                self.prop_visualizer_shadow_strength,
+                self.prop_visualizer_shadow_opacity,
+                self.prop_visualizer_shadow_depth,
+                self.prop_visualizer_shadow_blur,
+                self.prop_visualizer_frame_rate_enabled,
+                self.prop_visualizer_frame_rate,
+            ]
+            for control in controls:
+                try:
+                    control.blockSignals(True)
+                except Exception:
+                    pass
+            try:
+                self.prop_visualizer_flip_vertical.setChecked(bool(values.get("visualizer_flip_vertical", False)))
+                self.prop_visualizer_peak_bar_enabled.setChecked(bool(values.get("visualizer_peak_bar_enabled", True)))
+                self.prop_visualizer_glow_enabled.setChecked(bool(values.get("visualizer_glow_enabled", True)))
+                self.prop_visualizer_bar_width_scale.setValue(float(values.get("visualizer_bar_width_scale", 1.0)))
+                self._set_combo_current_data_safely(self.prop_visualizer_orientation, values.get("visualizer_orientation", "horizontal"))
+                self._set_combo_current_data_safely(self.prop_visualizer_style, values.get("visualizer_style", "classic"))
+                self.prop_visualizer_shadow_enabled.setChecked(bool(values.get("visualizer_shadow_enabled", False)))
+                self.prop_visualizer_shadow_offset_x.setValue(float(values.get("visualizer_shadow_offset_x", 0.0)))
+                self.prop_visualizer_shadow_offset_y.setValue(float(values.get("visualizer_shadow_offset_y", 0.0)))
+                self.prop_visualizer_shadow_strength.setValue(float(values.get("visualizer_shadow_strength", 0.5)))
+                self.prop_visualizer_shadow_opacity.setValue(float(values.get("visualizer_shadow_opacity", 0.35)))
+                self.prop_visualizer_shadow_depth.setValue(float(values.get("visualizer_shadow_depth", 0.0)))
+                self.prop_visualizer_shadow_blur.setValue(float(values.get("visualizer_shadow_blur", 0.0)))
+                self.prop_visualizer_frame_rate_enabled.setChecked(bool(values.get("visualizer_frame_rate_enabled", True)))
+                self.prop_visualizer_frame_rate.setValue(int(values.get("visualizer_frame_rate", 60)))
+            finally:
+                for control in controls:
+                    try:
+                        control.blockSignals(False)
+                    except Exception:
+                        pass
+            try:
+                # Phase 24A-8c: write filtered preset values directly to the
+                # selected WidgetConfig.  The filtered values intentionally keep
+                # disabled feature toggles disabled.
+                widget = getattr(self.canvas, "selected", None)
+                cfg = getattr(widget, "cfg", None) if widget is not None else None
+                if cfg is not None and str(getattr(cfg, "type", "")) == "visualizer":
+                    for key, value in dict(values or {}).items():
+                        try:
+                            if key in ("visualizer_orientation", "visualizer_style", "visualizer_preset_key", "weather_location", "jshtml_mode", "jshtml_entry", "jshtml_package_name", "jshtml_package_version", "jshtml_permissions_json", "jshtml_instance_id"):
+                                setattr(cfg, key, str(value if value is not None else ""))
+                            elif key in ("visualizer_flip_vertical", "visualizer_peak_bar_enabled", "visualizer_glow_enabled", "visualizer_shadow_enabled", "visualizer_frame_rate_enabled"):
+                                setattr(cfg, key, bool(value))
+                            elif key == "visualizer_frame_rate":
+                                setattr(cfg, key, max(1, min(240, int(round(float(value))))))
+                            elif key.startswith("visualizer_"):
+                                setattr(cfg, key, float(value))
+                        except Exception:
+                            pass
+                    try:
+                        if hasattr(widget, "_visualizer_frame_cache"):
+                            widget._visualizer_frame_cache = None
+                            widget._visualizer_frame_cache_key = None
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                self._capture_normal_widget_live_preview_snapshot_for_3d()
+            except Exception:
+                pass
+            self.apply_properties(save=False)
+            try:
+                self.apply_selected_normal_widget_live_preview_to_3d()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def on_visualizer_live_preview_preset_changed(self, *args):
+        try:
+            if getattr(self, "updating_ui", False):
+                return
+            widget = getattr(self.canvas, "selected", None)
+            cfg = getattr(widget, "cfg", None) if widget is not None else None
+            if cfg is None or str(getattr(cfg, "type", "")) != "visualizer":
+                return
+            preset_key = self.prop_visualizer_live_preview_preset.currentData()
+            if not preset_key or str(preset_key) == "manual":
+                return
+            self._apply_visualizer_live_preview_preset_to_controls(preset_key)
+        except Exception:
+            pass
+
     def apply_properties_live(self, *args):
         if self.updating_ui:
             return
@@ -9212,7 +11861,15 @@ class LiteDeskStudio(QMainWindow):
         if not hasattr(self, "prop_color"):
             return
 
+        try:
+            self._capture_normal_widget_live_preview_snapshot_for_3d()
+        except Exception:
+            pass
         self.apply_properties(save=False)
+        try:
+            self.apply_selected_normal_widget_live_preview_to_3d()
+        except Exception:
+            pass
 
     def apply_properties(self, *args, save=True):
         if getattr(self, "updating_ui", False):
@@ -9250,8 +11907,18 @@ class LiteDeskStudio(QMainWindow):
             "prop_visualizer_glow_enabled",
             "prop_visualizer_bar_width_scale",
             "prop_visualizer_orientation",
+            "prop_visualizer_style",
+            "prop_visualizer_live_preview_preset",
+            "prop_visualizer_shadow_enabled",
+            "prop_visualizer_shadow_offset_x",
+            "prop_visualizer_shadow_offset_y",
+            "prop_visualizer_shadow_strength",
+            "prop_visualizer_shadow_opacity",
+            "prop_visualizer_shadow_depth",
+            "prop_visualizer_shadow_blur",
             "prop_visualizer_frame_rate_enabled",
             "prop_visualizer_frame_rate",
+            "prop_weather_location",
             "prop_network_down_color",
             "prop_network_up_color",
 
@@ -9314,6 +11981,10 @@ class LiteDeskStudio(QMainWindow):
                 cfg.visualizer_bar_width_scale = self.prop_visualizer_bar_width_scale.value()
                 cfg.visualizer_orientation = self.prop_visualizer_orientation.currentData() or "horizontal"
                 cfg.visualizer_style = self.prop_visualizer_style.currentData() or "classic"
+                try:
+                    cfg.visualizer_preset_key = self.prop_visualizer_live_preview_preset.currentData() or "manual"
+                except Exception:
+                    cfg.visualizer_preset_key = "manual"
                 cfg.visualizer_shadow_enabled = self.prop_visualizer_shadow_enabled.isChecked()
                 cfg.visualizer_shadow_offset_x = self.prop_visualizer_shadow_offset_x.value()
                 cfg.visualizer_shadow_offset_y = self.prop_visualizer_shadow_offset_y.value()
@@ -9360,7 +12031,8 @@ class LiteDeskStudio(QMainWindow):
             self.prop_cpu_color.blockSignals(True)
             self.prop_cpu_color.setText(color.name())
             self.prop_cpu_color.blockSignals(False)
-            self.apply_properties(save=True)
+            if not self._apply_normal_preview_color_picker_change():
+                self.apply_properties(save=True)
 
     def pick_memory_color(self):
         current = QColor(self.prop_memory_color.text() or "#B388FF")
@@ -9370,7 +12042,8 @@ class LiteDeskStudio(QMainWindow):
             self.prop_memory_color.blockSignals(True)
             self.prop_memory_color.setText(color.name())
             self.prop_memory_color.blockSignals(False)
-            self.apply_properties(save=True)
+            if not self._apply_normal_preview_color_picker_change():
+                self.apply_properties(save=True)
 
     def pick_disk_color(self):
         current = QColor(self.prop_disk_color.text() or "#80FF9F")
@@ -9380,7 +12053,8 @@ class LiteDeskStudio(QMainWindow):
             self.prop_disk_color.blockSignals(True)
             self.prop_disk_color.setText(color.name())
             self.prop_disk_color.blockSignals(False)
-            self.apply_properties(save=True)
+            if not self._apply_normal_preview_color_picker_change():
+                self.apply_properties(save=True)
 
     def pick_color(self):
         current = QColor(self.prop_color.text() or "#5BE7FF")
@@ -9390,7 +12064,8 @@ class LiteDeskStudio(QMainWindow):
             self.prop_color.blockSignals(True)
             self.prop_color.setText(color.name())
             self.prop_color.blockSignals(False)
-            self.apply_properties(save=True)
+            if not self._apply_normal_preview_color_picker_change():
+                self.apply_properties(save=True)
 
     def pick_bg(self):
         current = QColor(self.prop_bg.text() or "#10141C")
@@ -9400,7 +12075,8 @@ class LiteDeskStudio(QMainWindow):
             self.prop_bg.blockSignals(True)
             self.prop_bg.setText(color.name())
             self.prop_bg.blockSignals(False)
-            self.apply_properties(save=True)
+            if not self._apply_normal_preview_color_picker_change():
+                self.apply_properties(save=True)
 
     def duplicate(self):
         self.canvas.duplicate_selected_widget()
@@ -9548,6 +12224,8 @@ class LiteDeskStudio(QMainWindow):
         self.load_selected_to_editor()
 
     def refresh_runtime_status(self):
+        if not self._preview_3d_has_pending_or_active_edit():
+            self.sync_3d_preview_test_window()
         audio_name = getattr(self.canvas.audio, "backend_name", "unknown")
         audio_mode = "fallback" if self.canvas.audio.use_fake else audio_name
 
@@ -9658,7 +12336,8 @@ class LiteDeskStudio(QMainWindow):
 
         try:
             if hasattr(self, "canvas") and self.canvas is not None:
-                self.canvas.show_canvas_after_studio_if_needed()
+                if getattr(self, "preview_3d_test_window", None) is None:
+                    self.canvas.show_canvas_after_studio_if_needed()
         except:
             pass
 
@@ -12511,6 +15190,8 @@ class DesktopPriorityHotkeyFilter(QAbstractNativeEventFilter):
                 pass
         return False, 0
 
+
+
 class DesktopCanvas(QWidget):
     def __init__(self):
         super().__init__()
@@ -12521,6 +15202,10 @@ class DesktopCanvas(QWidget):
         self.setProperty("effectGpuStatus", effect_gpu_status_text())
         self.setProperty("effectFrameIntervalMs", self._effective_effect_frame_interval_ms() if hasattr(self, "_effective_effect_frame_interval_ms") else 16)
         self.setMouseTracking(True)
+        try:
+            self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        except Exception:
+            pass
         self.js_html_views = JSHtmlViewManager(self)
         choose_canvas_window_flags(self)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -12543,6 +15228,10 @@ class DesktopCanvas(QWidget):
         self._lds_icon_proxy_drag_moved = False
         self._lds_icon_proxy_drag_hit = None
         self.selected: Optional[BaseWidget] = None
+        self._undo_stack = []
+        self._redo_stack = []
+        self._undo_stack_limit = 60
+        self._restoring_undo_redo = False
         self.dragging = False
         self.drag_offset = QPoint(0, 0)
         self.dragging_effect_moon = False
@@ -12557,6 +15246,10 @@ class DesktopCanvas(QWidget):
         self.last_right_click_time = 0.0
         self.last_right_click_widget = None
         self.right_double_click_interval = QApplication.doubleClickInterval() / 1000.0
+        self._right_double_click_catcher = None
+        self._right_double_click_catcher_active = False
+        self._first_right_double_click_catcher_used = False
+        self._preserve_canvas_during_3d_preview = True
         self.render_timer = QTimer(self)
         self.render_timer.timeout.connect(self.on_frame)
         self.render_timer.start(self._effective_effect_frame_interval_ms())
@@ -12582,6 +15275,12 @@ class DesktopCanvas(QWidget):
         except:
             pass
         self.update_platform_hit_mask()
+        try:
+            # Warm up the full-screen canvas and dismiss any first-start Explorer
+            # desktop context menu that may appear before the proxy/cache is ready.
+            QTimer.singleShot(0, self.update_platform_hit_mask)
+        except Exception:
+            pass
 
     def apply_safe_desktop_geometry(self):
         try:
@@ -12829,6 +15528,11 @@ class DesktopCanvas(QWidget):
         return False
 
     def hide_canvas_for_studio_if_needed(self):
+        # Integrated 3D preview is a separate control window.  Do not hide or
+        # reload the live desktop canvas when it opens; otherwise there can be a
+        # one-frame gap where widgets vanish and input falls through to Explorer.
+        if bool(getattr(self, "_preserve_canvas_during_3d_preview", True)):
+            return
         if is_windows():
             return
         try:
@@ -12842,7 +15546,12 @@ class DesktopCanvas(QWidget):
         except:
             pass
 
+
     def show_canvas_after_studio_if_needed(self):
+        # The canvas was not hidden for integrated 3D preview, so do not re-show,
+        # raise, or refresh it on preview/detail close either.
+        if bool(getattr(self, "_preserve_canvas_during_3d_preview", True)):
+            return
         if is_windows():
             return
         try:
@@ -12857,6 +15566,7 @@ class DesktopCanvas(QWidget):
                 self.js_html_views.set_visible(True)
         except:
             pass
+
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -12886,23 +15596,84 @@ class DesktopCanvas(QWidget):
     def on_studio_destroyed(self):
         self.control_panel = None
 
+    def _initialize_3d_preview_after_show(self):
+        try:
+            panel = getattr(self, "control_panel", None)
+            if panel is None:
+                return
+            try:
+                panel.isVisible()
+            except RuntimeError:
+                return
+            controller = panel._ensure_detail_studio()
+            if controller is not None:
+                controller.preview_3d_test_window = panel
+                panel.set_preview_state(controller.build_3d_preview_state())
+        except Exception as exc:
+            try:
+                print("[LiteDesktopStudio] deferred 3D preview initialization failed:", repr(exc))
+            except Exception:
+                pass
+
     def open_studio(self):
+        # If Explorer's desktop context menu leaked from the first right-click,
+        # close it immediately before the 3D preview startup/activation sequence.
+        # Keep this as ESC-only cleanup; do not use native popup enumeration.
+        try:
+            _lds_dismiss_windows_context_menu()
+        except Exception:
+            pass
+        try:
+            self.activateWindow()
+        except Exception:
+            pass
         if hasattr(self, "control_panel") and self.control_panel is not None:
             try:
                 if self.control_panel.isVisible():
+                    try:
+                        _lds_dismiss_windows_context_menu()
+                    except Exception:
+                        pass
                     self.control_panel.raise_()
-                    self.control_panel.activateWindow()
+                    try:
+                        self.control_panel.activateWindow()
+                    except Exception:
+                        pass
                     return
             except RuntimeError:
                 self.control_panel = None
 
-        self.hide_canvas_for_studio_if_needed()
+        # Keep the live desktop canvas continuously visible and interactive while
+        # the integrated 3D preview is created.
+        try:
+            self._preserve_canvas_during_3d_preview = True
+        except Exception:
+            pass
 
-        self.control_panel = LiteDeskStudio(self)
+        self.control_panel = LDSPreview3DWindow(self)
+        try:
+            if hasattr(self.control_panel, "set_detail_studio_factory"):
+                self.control_panel.set_detail_studio_factory(LiteDeskStudio)
+            else:
+                self.control_panel._detail_studio_factory = LiteDeskStudio
+        except Exception:
+            pass
         self.control_panel.destroyed.connect(self.on_studio_destroyed)
+        try:
+            _lds_dismiss_windows_context_menu()
+        except Exception:
+            pass
         self.control_panel.show()
         self.control_panel.raise_()
-        self.control_panel.activateWindow()
+        try:
+            self.control_panel.activateWindow()
+        except Exception:
+            pass
+        try:
+            QTimer.singleShot(1500, self._initialize_3d_preview_after_show)
+        except Exception:
+            self._initialize_3d_preview_after_show()
+
 
     def show_menu(self):
         self.open_studio()
@@ -12937,16 +15708,178 @@ class DesktopCanvas(QWidget):
 
     def delete_selected_widget(self):
         if self.selected and self.selected in self.widgets:
+            self.push_undo_snapshot("delete widget")
             self.widgets.remove(self.selected)
             self.selected = None
             self.save_config()
             self.update_platform_hit_mask()
             self.update()
 
+    def _patch_effects_json_for_disabled_effect(self, cfg, kind):
+        """Directly force target effect flags off in cfg.effects_json as a safety net."""
+        try:
+            data = json.loads(getattr(cfg, "effects_json", "") or "{}")
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
+            data = {}
+        kind = str(kind or "").strip().lower()
+        keys = []
+        if kind in ("water_surface", "water", "surface"):
+            keys = ["water_surface_enabled"]
+        elif kind == "ice":
+            keys = ["ice_enabled"]
+        elif kind == "puddle":
+            keys = ["puddle_enabled"]
+        elif kind in ("bamboo_grove", "bamboo", "bamboo_grove_marker"):
+            keys = ["bamboo_grove_enabled"]
+        elif kind in ("cloud", "cloud_layer", "cloud_marker"):
+            keys = ["cloud_enabled"]
+        elif kind in ("fireball", "fireball_layer", "fireball_marker"):
+            keys = ["fireball_enabled"]
+        elif kind == "sun":
+            keys = ["sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled"]
+        elif kind == "moon":
+            keys = ["moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled"]
+        if not keys:
+            return False
+        changed = False
+        for key in keys:
+            if data.get(key) is not False:
+                data[key] = False
+                changed = True
+        try:
+            cfg.effects_json = json.dumps(data, ensure_ascii=False)
+            return True
+        except Exception:
+            return changed
+
+    def _force_effect_settings_disabled(self, settings, kind):
+        """Set known EffectOverlaySettings flags off and return True if kind is handled."""
+        handled = False
+        kind = str(kind or "").strip().lower()
+        if kind in ("water_surface", "water", "surface"):
+            try: settings.water_surface_enabled = False
+            except Exception: pass
+            handled = True
+        elif kind == "ice":
+            try: settings.ice_enabled = False
+            except Exception: pass
+            handled = True
+        elif kind == "puddle":
+            try: settings.puddle_enabled = False
+            except Exception: pass
+            handled = True
+        elif kind in ("bamboo_grove", "bamboo", "bamboo_grove_marker"):
+            try: settings.bamboo_grove_enabled = False
+            except Exception: pass
+            handled = True
+        elif kind in ("cloud", "cloud_layer", "cloud_marker"):
+            try: settings.cloud_enabled = False
+            except Exception: pass
+            handled = True
+        elif kind in ("fireball", "fireball_layer", "fireball_marker"):
+            try: settings.fireball_enabled = False
+            except Exception: pass
+            handled = True
+        elif kind == "sun":
+            for attr in ("sunrise_enabled", "sun_enabled", "sunlight_enabled", "lens_flare_enabled"):
+                try: setattr(settings, attr, False)
+                except Exception: pass
+            handled = True
+        elif kind == "moon":
+            for attr in ("moon_body_enabled", "moonlight_enabled", "moon_shadow_enabled"):
+                try: setattr(settings, attr, False)
+                except Exception: pass
+            handled = True
+        return handled
+
+    def disable_selected_effect_overlay_effect(self, effect_kind, effect_index=None):
+        """Disable one effect inside the selected Effects Overlay without deleting the overlay widget."""
+        if not self.selected or self.selected not in self.widgets:
+            return False
+        cfg = getattr(self.selected, "cfg", None)
+        if cfg is None or str(getattr(cfg, "type", "")) != "effects_overlay":
+            return False
+        kind = str(effect_kind or "").strip().lower()
+        if not kind:
+            return False
+        try:
+            settings = get_effect_overlay_settings(cfg)
+        except Exception:
+            settings = None
+        try:
+            self.push_undo_snapshot(f"disable effects overlay {kind}")
+        except Exception:
+            pass
+        handled = False
+        if settings is not None:
+            try:
+                handled = bool(self._force_effect_settings_disabled(settings, kind))
+            except Exception:
+                handled = False
+        json_patched = False
+        try:
+            json_patched = bool(self._patch_effects_json_for_disabled_effect(cfg, kind))
+        except Exception:
+            json_patched = False
+        if not handled and not json_patched:
+            return False
+        try:
+            if settings is not None:
+                set_effect_overlay_settings(cfg, settings)
+                self._patch_effects_json_for_disabled_effect(cfg, kind)
+        except Exception:
+            pass
+        try:
+            self.selected.cfg = cfg
+        except Exception:
+            pass
+        try:
+            if hasattr(self.selected, "clear_vector_image_cache"):
+                self.selected.clear_vector_image_cache()
+        except Exception:
+            pass
+        try:
+            for attr in (
+                "_water_reflection_cache_signature",
+                "_water_reflection_cache_image",
+                "_ice_reflection_cache_signature",
+                "_ice_reflection_cache_image",
+                "_sun_effect_render_cache",
+                "_sun_effect_render_cache_order",
+            ):
+                if hasattr(self.selected, attr):
+                    value = getattr(self.selected, attr, None)
+                    if hasattr(value, "clear"):
+                        value.clear()
+                    else:
+                        setattr(self.selected, attr, None)
+        except Exception:
+            pass
+        try:
+            self.update_platform_hit_mask()
+        except Exception:
+            pass
+        try:
+            self.selected.update()
+        except Exception:
+            pass
+        try:
+            self.save_config()
+        except Exception:
+            pass
+        try:
+            self.update()
+        except Exception:
+            pass
+        return True
+
     def duplicate_selected_widget(self):
         if not self.selected:
             return
 
+        self.push_undo_snapshot("duplicate widget")
         old = self.selected.cfg
 
         cfg = WidgetConfig(
@@ -13090,6 +16023,53 @@ class DesktopCanvas(QWidget):
             pass
         self.update()
 
+    def widget_rotation_degrees(self, widget) -> float:
+        try:
+            cfg = getattr(widget, "cfg", None)
+            return float(getattr(cfg, "rotation_degrees", getattr(cfg, "rotation", 0.0)))
+        except Exception:
+            return 0.0
+
+    def paint_widget_transformed(self, painter: QPainter, widget, ctx: Dict):
+        """Paint normal widgets with cfg.rotation_degrees applied around their rect center."""
+        saved = False
+        try:
+            angle = self.widget_rotation_degrees(widget)
+            # EffectsOverlayWidget has its own internal coordinate model and edit handles;
+            # keep it unrotated for now so Sun/Moon/Puddle editing remains stable.
+            if abs(angle) < 0.001 or isinstance(widget, EffectsOverlayWidget):
+                widget.paint(painter, ctx)
+                return
+            rect = widget.rect
+            center = rect.center()
+            painter.save()
+            saved = True
+            painter.translate(center)
+            painter.rotate(angle)
+            painter.translate(-center)
+            widget.paint(painter, ctx)
+        except Exception as exc:
+            try:
+                print("[LiteDesktopStudio] rotated widget paint failed:", repr(exc))
+            except Exception:
+                pass
+            # Fallback to unrotated painting only after restoring below.
+        finally:
+            if saved:
+                try:
+                    painter.restore()
+                except Exception:
+                    pass
+        try:
+            if saved:
+                # We already attempted the transformed paint.  Do not double-paint on success.
+                # On failure this fallback is still preferable to leaving a blank widget.
+                pass
+            elif abs(self.widget_rotation_degrees(widget)) >= 0.001 and not isinstance(widget, EffectsOverlayWidget):
+                widget.paint(painter, ctx)
+        except Exception:
+            pass
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -13131,7 +16111,7 @@ class DesktopCanvas(QWidget):
                 source_ctx["reflection_source_image"] = None
                 for src_w in self.widgets:
                     if self.should_widget_reflect_in_mirrors(src_w):
-                        src_w.paint(rp, source_ctx)
+                        self.paint_widget_transformed(rp, src_w, source_ctx)
                 rp.end()
         except:
             reflection_source_image = None
@@ -13179,7 +16159,7 @@ class DesktopCanvas(QWidget):
                         pass
                     w.paint(p, ctx)
                     continue
-            w.paint(p, ctx)
+            self.paint_widget_transformed(p, w, ctx)
 
         skip_overlay_for_edit = False
         try:
@@ -13250,18 +16230,35 @@ class DesktopCanvas(QWidget):
             except Exception as e:
                 try: print("[LiteDesktopStudio] icon proxy press failed:", repr(e))
                 except: pass
-        if not self.edit_mode and event.button() == Qt.MouseButton.RightButton:
+        if event.button() == Qt.MouseButton.RightButton:
             try:
                 pos = event.position().toPoint()
-                should_handle, hit, items = _lds_icon_proxy_should_handle(self, pos, require_icon=False)
-                if should_handle:
-                    _lds_icon_proxy_post_mouse_from_canvas(self, 0x0204, pos, 0x0002)  # WM_RBUTTONDOWN/MK_RBUTTON
+                if self._arm_first_right_double_click_catcher(pos):
+                    self.update()
+                    event.accept()
+                    return
+                # Consume blank desktop right-clicks unconditionally.  On first launch,
+                # _lds_icon_proxy_should_handle() may still be warming its desktop icon
+                # cache and can return False; if we wait for that, Windows can show its
+                # standard desktop context menu on the first repeated right-click.
+                if not _lds_point_hits_litedesktop_widget(self, pos):
+                    self._lds_suppress_desktop_context_menu = True
+                    try:
+                        _lds_dismiss_windows_context_menu()
+                    except Exception:
+                        pass
                     event.accept()
                     self.update()
                     return
             except Exception as e:
-                try: print("[LiteDesktopStudio] icon proxy right press failed:", repr(e))
+                try: print("[LiteDesktopStudio] blank desktop right press consume failed:", repr(e))
                 except: pass
+                try:
+                    self._lds_suppress_desktop_context_menu = True
+                    event.accept()
+                    return
+                except Exception:
+                    pass
 
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
@@ -13494,12 +16491,17 @@ class DesktopCanvas(QWidget):
         if not self.edit_mode and event.button() == Qt.MouseButton.RightButton:
             try:
                 pos = event.position().toPoint()
-                if not _lds_point_hits_litedesktop_widget(self, pos):
-                    _lds_icon_proxy_post_mouse_from_canvas(self, 0x0205, pos, 0)  # WM_RBUTTONUP
+                if getattr(self, "_right_double_click_catcher_active", False):
+                    event.accept()
+                    self.update()
+                    return
+                if getattr(self, "_lds_suppress_desktop_context_menu", False) or not _lds_point_hits_litedesktop_widget(self, pos):
+                    self._lds_suppress_desktop_context_menu = False
                     event.accept()
                     self.update()
                     return
             except Exception as e:
+                self._lds_suppress_desktop_context_menu = False
                 try: print("[LiteDesktopStudio] icon proxy right release failed:", repr(e))
                 except: pass
 
@@ -13549,6 +16551,15 @@ class DesktopCanvas(QWidget):
             return False
 
     def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            pos = event.position().toPoint()
+            self.open_studio_for_point(pos)
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+
         if not self.edit_mode and event.button() == Qt.MouseButton.LeftButton:
             try:
                 pos = event.position().toPoint()
@@ -13563,10 +16574,7 @@ class DesktopCanvas(QWidget):
             except Exception as e:
                 try: print("[LiteDesktopStudio] icon proxy double click failed:", repr(e))
                 except: pass
-        if event.button() == Qt.MouseButton.RightButton:
-            pos = event.position().toPoint()
-            self.open_studio_for_point(pos)
-
+        
     def wheelEvent(self, event):
         if bool(getattr(self, "desktop_priority_mode", False)):
             try:
@@ -13779,6 +16787,135 @@ class DesktopCanvas(QWidget):
         self.save_config()
         self.update_platform_hit_mask()
         self.update()
+
+    def _config_dict_from_widget(self, widget):
+        try:
+            return dict(asdict(widget.to_config()))
+        except Exception:
+            try:
+                cfg = getattr(widget, "cfg", None)
+                return dict(asdict(cfg)) if cfg is not None else {}
+            except Exception:
+                return {}
+
+    def _make_canvas_snapshot(self, label=""):
+        try:
+            selected_index = self.get_selected_index() if hasattr(self, "get_selected_index") else -1
+        except Exception:
+            selected_index = -1
+        try:
+            widgets_data = [self._config_dict_from_widget(w) for w in list(getattr(self, "widgets", []) or [])]
+        except Exception:
+            widgets_data = []
+        return {
+            "label": str(label or ""),
+            "selected_index": int(selected_index),
+            "widgets": widgets_data,
+        }
+
+    def _snapshot_signature(self, snapshot):
+        try:
+            return json.dumps({
+                "selected_index": int(snapshot.get("selected_index", -1)),
+                "widgets": snapshot.get("widgets", []),
+            }, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            return repr(snapshot)
+
+    def push_undo_snapshot(self, label=""):
+        if bool(getattr(self, "_restoring_undo_redo", False)):
+            return
+        try:
+            snap = self._make_canvas_snapshot(label)
+            sig = self._snapshot_signature(snap)
+            if self._undo_stack and self._snapshot_signature(self._undo_stack[-1]) == sig:
+                return
+            self._undo_stack.append(snap)
+            limit = max(1, int(getattr(self, "_undo_stack_limit", 60)))
+            if len(self._undo_stack) > limit:
+                self._undo_stack = self._undo_stack[-limit:]
+            self._redo_stack = []
+        except Exception:
+            pass
+
+    def can_undo(self):
+        try:
+            return bool(getattr(self, "_undo_stack", []))
+        except Exception:
+            return False
+
+    def can_redo(self):
+        try:
+            return bool(getattr(self, "_redo_stack", []))
+        except Exception:
+            return False
+
+    def _restore_canvas_snapshot(self, snapshot):
+        self._restoring_undo_redo = True
+        try:
+            widgets_data = list(dict(snapshot or {}).get("widgets", []) or [])
+            restored = []
+            for item in widgets_data:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    restored.append(create_widget(WidgetConfig(**item)))
+                except Exception:
+                    try:
+                        allowed = set(getattr(WidgetConfig, "__dataclass_fields__", {}).keys())
+                        filtered = {k: v for k, v in item.items() if k in allowed}
+                        restored.append(create_widget(WidgetConfig(**filtered)))
+                    except Exception:
+                        pass
+            self.widgets = restored
+            for widget in self.widgets:
+                try:
+                    widget.selected = False
+                except Exception:
+                    pass
+            selected_index = int(dict(snapshot or {}).get("selected_index", -1))
+            self.selected = None
+            if 0 <= selected_index < len(self.widgets):
+                self.selected = self.widgets[selected_index]
+                try:
+                    self.selected.selected = True
+                except Exception:
+                    pass
+            self.save_config()
+            try:
+                self.update_platform_hit_mask()
+            except Exception:
+                pass
+            try:
+                self.update()
+            except Exception:
+                pass
+        finally:
+            self._restoring_undo_redo = False
+
+    def undo_last_change(self):
+        try:
+            if not self.can_undo():
+                return False
+            current = self._make_canvas_snapshot("redo")
+            snap = self._undo_stack.pop()
+            self._redo_stack.append(current)
+            self._restore_canvas_snapshot(snap)
+            return True
+        except Exception:
+            return False
+
+    def redo_last_change(self):
+        try:
+            if not self.can_redo():
+                return False
+            current = self._make_canvas_snapshot("undo")
+            snap = self._redo_stack.pop()
+            self._undo_stack.append(current)
+            self._restore_canvas_snapshot(snap)
+            return True
+        except Exception:
+            return False
 
     def save_config(self):
         
@@ -14047,6 +17184,382 @@ DesktopCanvas.refresh_control_panel_after_layout_change = _lds_alt_r_refresh_con
 DesktopCanvas.restore_default_layout = _lds_alt_r_restore_default_layout
 DesktopCanvas.keyPressEvent = _lds_alt_r_keyPressEvent
 
+# BEGIN GENERATED LDS_3D_EFFECT_TEMPLATE_RUNTIME
+LDS_3D_EFFECT_TEMPLATE_RUNTIME = {'effects': {'antelope_canyon': {'default_x': 0.5,
+                                 'default_y': 0.5,
+                                 'display_name': 'Antelope Canyon',
+                                 'effect_key': 'antelope_canyon',
+                                 'enabled_key': 'antelope_canyon_engine_enabled',
+                                 'mode': 'global_display',
+                                 'notes': '',
+                                 'supports_move': False,
+                                 'supports_preview_display': True,
+                                 'supports_resize': False,
+                                 'x_key': '',
+                                 'y_key': ''},
+             'balloon': {'default_x': 0.5,
+                         'default_y': 0.45,
+                         'display_name': 'Balloon',
+                         'effect_key': 'balloon',
+                         'enabled_key': 'balloon_enabled',
+                         'mode': 'anchor_point',
+                         'notes': '',
+                         'supports_move': True,
+                         'supports_preview_display': True,
+                         'supports_resize': False,
+                         'x_key': 'balloon_x',
+                         'y_key': 'balloon_y'},
+             'blooming_roses': {'default_x': 0.5,
+                                'default_y': 0.62,
+                                'display_name': 'Blooming Roses',
+                                'effect_key': 'blooming_roses',
+                                'enabled_key': 'blooming_roses_enabled',
+                                'mode': 'anchor_point',
+                                'notes': '',
+                                'supports_move': True,
+                                'supports_preview_display': True,
+                                'supports_resize': False,
+                                'x_key': 'blooming_roses_x',
+                                'y_key': 'blooming_roses_y'},
+             'blue_hole_deep_lake': {'default_x': 0.5,
+                                     'default_y': 0.5,
+                                     'display_name': 'Blue Hole Deep Lake',
+                                     'effect_key': 'blue_hole_deep_lake',
+                                     'enabled_key': 'blue_hole_deep_lake_engine_enabled',
+                                     'mode': 'global_display',
+                                     'notes': '',
+                                     'supports_move': False,
+                                     'supports_preview_display': True,
+                                     'supports_resize': False,
+                                     'x_key': '',
+                                     'y_key': ''},
+             'bubble': {'default_x': 0.5,
+                        'default_y': 0.62,
+                        'display_name': 'Bubble',
+                        'effect_key': 'bubble',
+                        'enabled_key': 'bubble_enabled',
+                        'mode': 'anchor_point',
+                        'notes': '',
+                        'supports_move': True,
+                        'supports_preview_display': True,
+                        'supports_resize': False,
+                        'x_key': 'bubble_x',
+                        'y_key': 'bubble_y'},
+             'chichibugahama_mirror': {'default_x': 0.5,
+                                       'default_y': 0.5,
+                                       'display_name': 'Chichibugahama Mirror',
+                                       'effect_key': 'chichibugahama_mirror',
+                                       'enabled_key': 'chichibugahama_mirror_engine_enabled',
+                                       'mode': 'global_display',
+                                       'notes': '',
+                                       'supports_move': False,
+                                       'supports_preview_display': True,
+                                       'supports_resize': False,
+                                       'x_key': '',
+                                       'y_key': ''},
+             'flame': {'default_x': 0.5,
+                       'default_y': 0.78,
+                       'display_name': 'Flame',
+                       'effect_key': 'flame',
+                       'enabled_key': 'flame_enabled',
+                       'mode': 'anchor_point',
+                       'notes': '',
+                       'supports_move': True,
+                       'supports_preview_display': True,
+                       'supports_resize': False,
+                       'x_key': 'flame_x',
+                       'y_key': 'flame_y'},
+             'glow': {'default_x': 0.5,
+                      'default_y': 0.5,
+                      'display_name': 'Glow Orbs',
+                      'effect_key': 'glow',
+                      'enabled_key': 'glow_enabled',
+                      'mode': 'display_toggle_only',
+                      'notes': '',
+                      'supports_move': False,
+                      'supports_preview_display': True,
+                      'supports_resize': False,
+                      'x_key': 'glow_x',
+                      'y_key': 'glow_y'},
+             'meteor_shower': {'default_x': 0.35,
+                               'default_y': 0.22,
+                               'display_name': 'Meteor Shower',
+                               'effect_key': 'meteor_shower',
+                               'enabled_key': 'meteor_shower_enabled',
+                               'mode': 'anchor_point',
+                               'notes': '',
+                               'supports_move': True,
+                               'supports_preview_display': True,
+                               'supports_resize': False,
+                               'x_key': 'meteor_shower_x',
+                               'y_key': 'meteor_shower_y'},
+             'milky_way': {'default_x': 0.5,
+                           'default_y': 0.2,
+                           'display_name': 'Milky Way',
+                           'effect_key': 'milky_way',
+                           'enabled_key': 'milky_way_enabled',
+                           'mode': 'anchor_point',
+                           'notes': '',
+                           'supports_move': True,
+                           'supports_preview_display': True,
+                           'supports_resize': False,
+                           'x_key': 'milky_way_x',
+                           'y_key': 'milky_way_y'},
+             'mouse_glow': {'default_x': 0.5,
+                            'default_y': 0.5,
+                            'display_name': 'Mouse Glow',
+                            'effect_key': 'mouse_glow',
+                            'enabled_key': 'mouse_glow_enabled',
+                            'mode': 'preview_skip',
+                            'notes': '',
+                            'supports_move': False,
+                            'supports_preview_display': False,
+                            'supports_resize': False,
+                            'x_key': 'mouse_glow_x',
+                            'y_key': 'mouse_glow_y'},
+             'mouse_ripple': {'default_x': 0.5,
+                              'default_y': 0.5,
+                              'display_name': 'Mouse Ripple',
+                              'effect_key': 'mouse_ripple',
+                              'enabled_key': 'mouse_ripple_enabled',
+                              'mode': 'preview_skip',
+                              'notes': '',
+                              'supports_move': False,
+                              'supports_preview_display': False,
+                              'supports_resize': False,
+                              'x_key': 'mouse_ripple_x',
+                              'y_key': 'mouse_ripple_y'},
+             'noise': {'default_x': 0.5,
+                       'default_y': 0.5,
+                       'display_name': 'Noise',
+                       'effect_key': 'noise',
+                       'enabled_key': 'noise_enabled',
+                       'mode': 'display_toggle_only',
+                       'notes': '',
+                       'supports_move': False,
+                       'supports_preview_display': True,
+                       'supports_resize': False,
+                       'x_key': 'noise_x',
+                       'y_key': 'noise_y'},
+             'pamukkale_terrace_lake': {'default_x': 0.5,
+                                        'default_y': 0.5,
+                                        'display_name': 'Pamukkale Terrace Lake',
+                                        'effect_key': 'pamukkale_terrace_lake',
+                                        'enabled_key': 'pamukkale_terrace_lake_engine_enabled',
+                                        'mode': 'global_display',
+                                        'notes': '',
+                                        'supports_move': False,
+                                        'supports_preview_display': True,
+                                        'supports_resize': False,
+                                        'x_key': '',
+                                        'y_key': ''},
+             'particles': {'default_x': 0.5,
+                           'default_y': 0.5,
+                           'display_name': 'Particles',
+                           'effect_key': 'particles',
+                           'enabled_key': 'particles_enabled',
+                           'mode': 'display_toggle_only',
+                           'notes': '',
+                           'supports_move': False,
+                           'supports_preview_display': True,
+                           'supports_resize': False,
+                           'x_key': 'particles_x',
+                           'y_key': 'particles_y'},
+             'rain': {'default_x': 0.5,
+                      'default_y': 0.24,
+                      'display_name': 'Rain',
+                      'effect_key': 'rain',
+                      'enabled_key': 'rain_enabled',
+                      'mode': 'anchor_point',
+                      'notes': '',
+                      'supports_move': True,
+                      'supports_preview_display': True,
+                      'supports_resize': False,
+                      'x_key': 'rain_x',
+                      'y_key': 'rain_y'},
+             'ripple': {'default_x': 0.5,
+                        'default_y': 0.5,
+                        'display_name': 'Ripples',
+                        'effect_key': 'ripple',
+                        'enabled_key': 'ripple_enabled',
+                        'mode': 'display_toggle_only',
+                        'notes': '',
+                        'supports_move': False,
+                        'supports_preview_display': True,
+                        'supports_resize': False,
+                        'x_key': 'ripple_x',
+                        'y_key': 'ripple_y'},
+             'rose_flowers': {'default_x': 0.5,
+                              'default_y': 0.38,
+                              'display_name': 'Rose Flowers',
+                              'effect_key': 'rose_flowers',
+                              'enabled_key': 'rose_flowers_enabled',
+                              'mode': 'anchor_point',
+                              'notes': '',
+                              'supports_move': True,
+                              'supports_preview_display': True,
+                              'supports_resize': False,
+                              'x_key': 'rose_flowers_x',
+                              'y_key': 'rose_flowers_y'},
+             'rose_petals': {'default_x': 0.5,
+                             'default_y': 0.32,
+                             'display_name': 'Rose Petals',
+                             'effect_key': 'rose_petals',
+                             'enabled_key': 'rose_petals_enabled',
+                             'mode': 'anchor_point',
+                             'notes': '',
+                             'supports_move': True,
+                             'supports_preview_display': True,
+                             'supports_resize': False,
+                             'x_key': 'rose_petals_x',
+                             'y_key': 'rose_petals_y'},
+             'sahara_desert': {'default_x': 0.5,
+                               'default_y': 0.5,
+                               'display_name': 'Sahara Desert',
+                               'effect_key': 'sahara_desert',
+                               'enabled_key': 'sahara_desert_engine_enabled',
+                               'mode': 'global_display',
+                               'notes': '',
+                               'supports_move': False,
+                               'supports_preview_display': True,
+                               'supports_resize': False,
+                               'x_key': '',
+                               'y_key': ''},
+             'sakura_petals': {'default_x': 0.5,
+                               'default_y': 0.32,
+                               'display_name': 'Sakura Petals',
+                               'effect_key': 'sakura_petals',
+                               'enabled_key': 'sakura_petals_enabled',
+                               'mode': 'anchor_point',
+                               'notes': '',
+                               'supports_move': True,
+                               'supports_preview_display': True,
+                               'supports_resize': False,
+                               'x_key': 'sakura_petals_x',
+                               'y_key': 'sakura_petals_y'},
+             'shooting_star': {'default_x': 0.35,
+                               'default_y': 0.22,
+                               'display_name': 'Shooting Star',
+                               'effect_key': 'shooting_star',
+                               'enabled_key': 'shooting_star_enabled',
+                               'mode': 'anchor_point',
+                               'notes': '',
+                               'supports_move': True,
+                               'supports_preview_display': True,
+                               'supports_resize': False,
+                               'x_key': 'shooting_star_x',
+                               'y_key': 'shooting_star_y'},
+             'snow': {'default_x': 0.5,
+                      'default_y': 0.28,
+                      'display_name': 'Snow',
+                      'effect_key': 'snow',
+                      'enabled_key': 'snow_enabled',
+                      'mode': 'anchor_point',
+                      'notes': '',
+                      'supports_move': True,
+                      'supports_preview_display': True,
+                      'supports_resize': False,
+                      'x_key': 'snow_x',
+                      'y_key': 'snow_y'},
+             'snow_accumulation': {'default_x': 0.5,
+                                   'default_y': 0.5,
+                                   'display_name': 'Snow Accumulation',
+                                   'effect_key': 'snow_accumulation',
+                                   'enabled_key': 'snow_accumulation_enabled',
+                                   'mode': 'display_toggle_only',
+                                   'notes': '',
+                                   'supports_move': False,
+                                   'supports_preview_display': True,
+                                   'supports_resize': False,
+                                   'x_key': 'snow_accumulation_x',
+                                   'y_key': 'snow_accumulation_y'},
+             'snow_crystal': {'default_x': 0.5,
+                              'default_y': 0.28,
+                              'display_name': 'Snow Crystal',
+                              'effect_key': 'snow_crystal',
+                              'enabled_key': 'snow_crystal_enabled',
+                              'mode': 'anchor_point',
+                              'notes': '',
+                              'supports_move': True,
+                              'supports_preview_display': True,
+                              'supports_resize': False,
+                              'x_key': 'snow_crystal_x',
+                              'y_key': 'snow_crystal_y'},
+             'star_sky': {'default_x': 0.5,
+                          'default_y': 0.22,
+                          'display_name': 'Star Sky',
+                          'effect_key': 'star_sky',
+                          'enabled_key': 'star_sky_enabled',
+                          'mode': 'anchor_point',
+                          'notes': '',
+                          'supports_move': True,
+                          'supports_preview_display': True,
+                          'supports_resize': False,
+                          'x_key': 'star_sky_x',
+                          'y_key': 'star_sky_y'},
+             'uyuni_salt_flat': {'default_x': 0.5,
+                                 'default_y': 0.5,
+                                 'display_name': 'Uyuni Salt Flat',
+                                 'effect_key': 'uyuni_salt_flat',
+                                 'enabled_key': 'uyuni_salt_flat_engine_enabled',
+                                 'mode': 'global_display',
+                                 'notes': '',
+                                 'supports_move': False,
+                                 'supports_preview_display': True,
+                                 'supports_resize': False,
+                                 'x_key': '',
+                                 'y_key': ''},
+             'water_drop': {'default_x': 0.5,
+                            'default_y': 0.35,
+                            'display_name': 'Water Drop',
+                            'effect_key': 'water_drop',
+                            'enabled_key': 'water_drop_enabled',
+                            'mode': 'anchor_point',
+                            'notes': '',
+                            'supports_move': True,
+                            'supports_preview_display': True,
+                            'supports_resize': False,
+                            'x_key': 'water_drop_x',
+                            'y_key': 'water_drop_y'},
+             'water_fish': {'default_x': 0.5,
+                            'default_y': 0.5,
+                            'display_name': 'Water Fish',
+                            'effect_key': 'water_fish',
+                            'enabled_key': 'water_fish_enabled',
+                            'mode': 'display_toggle_only',
+                            'notes': '',
+                            'supports_move': False,
+                            'supports_preview_display': True,
+                            'supports_resize': False,
+                            'x_key': 'water_fish_x',
+                            'y_key': 'water_fish_y'},
+             'water_morning_fog': {'default_x': 0.5,
+                                   'default_y': 0.5,
+                                   'display_name': 'Water Morning Fog',
+                                   'effect_key': 'water_morning_fog',
+                                   'enabled_key': 'water_morning_fog_enabled',
+                                   'mode': 'display_toggle_only',
+                                   'notes': '',
+                                   'supports_move': False,
+                                   'supports_preview_display': True,
+                                   'supports_resize': False,
+                                   'x_key': 'water_morning_fog_x',
+                                   'y_key': 'water_morning_fog_y'},
+             'water_spray': {'default_x': 0.5,
+                             'default_y': 0.72,
+                             'display_name': 'Water Spray',
+                             'effect_key': 'water_spray',
+                             'enabled_key': 'water_spray_enabled',
+                             'mode': 'anchor_point',
+                             'notes': '',
+                             'supports_move': True,
+                             'supports_preview_display': True,
+                             'supports_resize': False,
+                             'x_key': 'water_spray_x',
+                             'y_key': 'water_spray_y'}},
+ 'version': 'Phase23E-template-v1'}
+# END GENERATED LDS_3D_EFFECT_TEMPLATE_RUNTIME
+
 if __name__ == "__main__":
     main()
 
@@ -14055,3 +17568,446 @@ def _lds_safe_clamp(val, mn, mx):
         return max(mn, min(mx, val))
     except Exception:
         return mn
+
+# BEGIN GENERATED LDS_3D_EFFECT_TEMPLATE_SPECS
+# {
+#   "effects": {
+#     "antelope_canyon": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Antelope Canyon",
+#       "effect_key": "antelope_canyon",
+#       "enabled_key": "antelope_canyon_engine_enabled",
+#       "mode": "global_display",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "",
+#       "y_key": ""
+#     },
+#     "balloon": {
+#       "default_x": 0.5,
+#       "default_y": 0.45,
+#       "display_name": "Balloon",
+#       "effect_key": "balloon",
+#       "enabled_key": "balloon_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "balloon_x",
+#       "y_key": "balloon_y"
+#     },
+#     "blooming_roses": {
+#       "default_x": 0.5,
+#       "default_y": 0.62,
+#       "display_name": "Blooming Roses",
+#       "effect_key": "blooming_roses",
+#       "enabled_key": "blooming_roses_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "blooming_roses_x",
+#       "y_key": "blooming_roses_y"
+#     },
+#     "blue_hole_deep_lake": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Blue Hole Deep Lake",
+#       "effect_key": "blue_hole_deep_lake",
+#       "enabled_key": "blue_hole_deep_lake_engine_enabled",
+#       "mode": "global_display",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "",
+#       "y_key": ""
+#     },
+#     "bubble": {
+#       "default_x": 0.5,
+#       "default_y": 0.62,
+#       "display_name": "Bubble",
+#       "effect_key": "bubble",
+#       "enabled_key": "bubble_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "bubble_x",
+#       "y_key": "bubble_y"
+#     },
+#     "chichibugahama_mirror": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Chichibugahama Mirror",
+#       "effect_key": "chichibugahama_mirror",
+#       "enabled_key": "chichibugahama_mirror_engine_enabled",
+#       "mode": "global_display",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "",
+#       "y_key": ""
+#     },
+#     "flame": {
+#       "default_x": 0.5,
+#       "default_y": 0.78,
+#       "display_name": "Flame",
+#       "effect_key": "flame",
+#       "enabled_key": "flame_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "flame_x",
+#       "y_key": "flame_y"
+#     },
+#     "glow": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Glow Orbs",
+#       "effect_key": "glow",
+#       "enabled_key": "glow_enabled",
+#       "mode": "display_toggle_only",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "glow_x",
+#       "y_key": "glow_y"
+#     },
+#     "meteor_shower": {
+#       "default_x": 0.35,
+#       "default_y": 0.22,
+#       "display_name": "Meteor Shower",
+#       "effect_key": "meteor_shower",
+#       "enabled_key": "meteor_shower_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "meteor_shower_x",
+#       "y_key": "meteor_shower_y"
+#     },
+#     "milky_way": {
+#       "default_x": 0.5,
+#       "default_y": 0.2,
+#       "display_name": "Milky Way",
+#       "effect_key": "milky_way",
+#       "enabled_key": "milky_way_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "milky_way_x",
+#       "y_key": "milky_way_y"
+#     },
+#     "mouse_glow": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Mouse Glow",
+#       "effect_key": "mouse_glow",
+#       "enabled_key": "mouse_glow_enabled",
+#       "mode": "preview_skip",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": false,
+#       "supports_resize": false,
+#       "x_key": "mouse_glow_x",
+#       "y_key": "mouse_glow_y"
+#     },
+#     "mouse_ripple": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Mouse Ripple",
+#       "effect_key": "mouse_ripple",
+#       "enabled_key": "mouse_ripple_enabled",
+#       "mode": "preview_skip",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": false,
+#       "supports_resize": false,
+#       "x_key": "mouse_ripple_x",
+#       "y_key": "mouse_ripple_y"
+#     },
+#     "noise": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Noise",
+#       "effect_key": "noise",
+#       "enabled_key": "noise_enabled",
+#       "mode": "display_toggle_only",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "noise_x",
+#       "y_key": "noise_y"
+#     },
+#     "pamukkale_terrace_lake": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Pamukkale Terrace Lake",
+#       "effect_key": "pamukkale_terrace_lake",
+#       "enabled_key": "pamukkale_terrace_lake_engine_enabled",
+#       "mode": "global_display",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "",
+#       "y_key": ""
+#     },
+#     "particles": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Particles",
+#       "effect_key": "particles",
+#       "enabled_key": "particles_enabled",
+#       "mode": "display_toggle_only",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "particles_x",
+#       "y_key": "particles_y"
+#     },
+#     "rain": {
+#       "default_x": 0.5,
+#       "default_y": 0.24,
+#       "display_name": "Rain",
+#       "effect_key": "rain",
+#       "enabled_key": "rain_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "rain_x",
+#       "y_key": "rain_y"
+#     },
+#     "ripple": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Ripples",
+#       "effect_key": "ripple",
+#       "enabled_key": "ripple_enabled",
+#       "mode": "display_toggle_only",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "ripple_x",
+#       "y_key": "ripple_y"
+#     },
+#     "rose_flowers": {
+#       "default_x": 0.5,
+#       "default_y": 0.38,
+#       "display_name": "Rose Flowers",
+#       "effect_key": "rose_flowers",
+#       "enabled_key": "rose_flowers_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "rose_flowers_x",
+#       "y_key": "rose_flowers_y"
+#     },
+#     "rose_petals": {
+#       "default_x": 0.5,
+#       "default_y": 0.32,
+#       "display_name": "Rose Petals",
+#       "effect_key": "rose_petals",
+#       "enabled_key": "rose_petals_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "rose_petals_x",
+#       "y_key": "rose_petals_y"
+#     },
+#     "sahara_desert": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Sahara Desert",
+#       "effect_key": "sahara_desert",
+#       "enabled_key": "sahara_desert_engine_enabled",
+#       "mode": "global_display",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "",
+#       "y_key": ""
+#     },
+#     "sakura_petals": {
+#       "default_x": 0.5,
+#       "default_y": 0.32,
+#       "display_name": "Sakura Petals",
+#       "effect_key": "sakura_petals",
+#       "enabled_key": "sakura_petals_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "sakura_petals_x",
+#       "y_key": "sakura_petals_y"
+#     },
+#     "shooting_star": {
+#       "default_x": 0.35,
+#       "default_y": 0.22,
+#       "display_name": "Shooting Star",
+#       "effect_key": "shooting_star",
+#       "enabled_key": "shooting_star_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "shooting_star_x",
+#       "y_key": "shooting_star_y"
+#     },
+#     "snow": {
+#       "default_x": 0.5,
+#       "default_y": 0.28,
+#       "display_name": "Snow",
+#       "effect_key": "snow",
+#       "enabled_key": "snow_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "snow_x",
+#       "y_key": "snow_y"
+#     },
+#     "snow_accumulation": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Snow Accumulation",
+#       "effect_key": "snow_accumulation",
+#       "enabled_key": "snow_accumulation_enabled",
+#       "mode": "display_toggle_only",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "snow_accumulation_x",
+#       "y_key": "snow_accumulation_y"
+#     },
+#     "snow_crystal": {
+#       "default_x": 0.5,
+#       "default_y": 0.28,
+#       "display_name": "Snow Crystal",
+#       "effect_key": "snow_crystal",
+#       "enabled_key": "snow_crystal_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "snow_crystal_x",
+#       "y_key": "snow_crystal_y"
+#     },
+#     "star_sky": {
+#       "default_x": 0.5,
+#       "default_y": 0.22,
+#       "display_name": "Star Sky",
+#       "effect_key": "star_sky",
+#       "enabled_key": "star_sky_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "star_sky_x",
+#       "y_key": "star_sky_y"
+#     },
+#     "uyuni_salt_flat": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Uyuni Salt Flat",
+#       "effect_key": "uyuni_salt_flat",
+#       "enabled_key": "uyuni_salt_flat_engine_enabled",
+#       "mode": "global_display",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "",
+#       "y_key": ""
+#     },
+#     "water_drop": {
+#       "default_x": 0.5,
+#       "default_y": 0.35,
+#       "display_name": "Water Drop",
+#       "effect_key": "water_drop",
+#       "enabled_key": "water_drop_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "water_drop_x",
+#       "y_key": "water_drop_y"
+#     },
+#     "water_fish": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Water Fish",
+#       "effect_key": "water_fish",
+#       "enabled_key": "water_fish_enabled",
+#       "mode": "display_toggle_only",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "water_fish_x",
+#       "y_key": "water_fish_y"
+#     },
+#     "water_morning_fog": {
+#       "default_x": 0.5,
+#       "default_y": 0.5,
+#       "display_name": "Water Morning Fog",
+#       "effect_key": "water_morning_fog",
+#       "enabled_key": "water_morning_fog_enabled",
+#       "mode": "display_toggle_only",
+#       "notes": "",
+#       "supports_move": false,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "water_morning_fog_x",
+#       "y_key": "water_morning_fog_y"
+#     },
+#     "water_spray": {
+#       "default_x": 0.5,
+#       "default_y": 0.72,
+#       "display_name": "Water Spray",
+#       "effect_key": "water_spray",
+#       "enabled_key": "water_spray_enabled",
+#       "mode": "anchor_point",
+#       "notes": "",
+#       "supports_move": true,
+#       "supports_preview_display": true,
+#       "supports_resize": false,
+#       "x_key": "water_spray_x",
+#       "y_key": "water_spray_y"
+#     }
+#   },
+#   "version": "Phase23E-template-v1"
+# }
+# END GENERATED LDS_3D_EFFECT_TEMPLATE_SPECS
+

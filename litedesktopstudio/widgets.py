@@ -76,6 +76,11 @@ class WidgetConfig:
     y: int = 100
     w: int = 300
     h: int = 120
+    # Rotation in degrees.  rotation_degrees is the canonical field used by the
+    # desktop canvas; rotation is kept as a compatibility alias for older/experimental
+    # preview code that already wrote cfg.rotation.
+    rotation_degrees: float = 0.0
+    rotation: float = 0.0
     title: str = "Widget"
     color: str = "#5BE7FF"
     bg: str = "#141820"
@@ -107,6 +112,10 @@ class WidgetConfig:
     visualizer_bar_width_scale: float = 1.0
     visualizer_orientation: str = "horizontal"
     visualizer_style: str = "classic"
+    # Phase 24A-8: stores which UI preset was last applied to the visualizer.
+    # The actual visualizer appearance continues to be stored in the existing
+    # concrete visualizer_* fields, so older configs remain compatible.
+    visualizer_preset_key: str = "manual"
     visualizer_shadow_enabled: bool = True
     visualizer_shadow_offset_x: float = 3.0
     visualizer_shadow_offset_y: float = 4.0
@@ -128,6 +137,13 @@ def widget_config_from_dict(item):
         item = {}
     valid_keys = set(WidgetConfig.__dataclass_fields__.keys())
     filtered = {k: v for k, v in item.items() if k in valid_keys}
+    try:
+        if "rotation_degrees" not in filtered and "rotation" in filtered:
+            filtered["rotation_degrees"] = float(filtered.get("rotation", 0.0))
+        if "rotation" not in filtered and "rotation_degrees" in filtered:
+            filtered["rotation"] = float(filtered.get("rotation_degrees", 0.0))
+    except Exception:
+        pass
     return WidgetConfig(**filtered)
 
 class BaseWidget:
@@ -143,8 +159,30 @@ class BaseWidget:
         """Mouse hit / selection area used by the canvas."""
         return self.rect
 
+    def rotation_degrees(self) -> float:
+        try:
+            return float(getattr(self.cfg, "rotation_degrees", getattr(self.cfg, "rotation", 0.0)))
+        except Exception:
+            return 0.0
+
+    def _map_canvas_point_to_unrotated_local(self, pos: QPoint) -> QPointF:
+        """Map a canvas point into this widget's unrotated coordinate space."""
+        try:
+            r = self.interaction_rect()
+            angle = math.radians(-self.rotation_degrees())
+            if abs(angle) < 1e-9:
+                return QPointF(pos)
+            center = r.center()
+            dx = float(pos.x()) - float(center.x())
+            dy = float(pos.y()) - float(center.y())
+            ca = math.cos(angle)
+            sa = math.sin(angle)
+            return QPointF(center.x() + dx * ca - dy * sa, center.y() + dx * sa + dy * ca)
+        except Exception:
+            return QPointF(pos)
+
     def contains(self, pos: QPoint) -> bool:
-        return self.interaction_rect().contains(QPointF(pos))
+        return self.interaction_rect().contains(self._map_canvas_point_to_unrotated_local(pos))
 
     def paint(self, p: QPainter, ctx: Dict):
         raise NotImplementedError
@@ -600,6 +638,295 @@ class VisualizerWidget(BaseWidget):
             fallback = QImage(8, 8, QImage.Format.Format_ARGB32_Premultiplied)
             fallback.fill(Qt.GlobalColor.transparent)
             return fallback
+
+
+
+
+
+
+
+
+    def _paint_electro_dubstep_mesh_ring(self, p: QPainter, values, area: QRectF, ctx: Dict,
+                                         base_color: QColor, now: float, avg: float, bass: float,
+                                         max_effect_radius: float, width_scale: float):
+        """Paint Electro Dubstep as a punch-reactive diagonal mesh with cover shockwave.
+
+        Center remains cover-only, but strong low/mid hits temporarily scale the cover
+        itself and emit a short outward shockwave.  The outer mesh keeps 3/6/9/12
+        o'clock pinned to the circle, while diagonal spans are cinched outward by
+        mid-band hits.
+        """
+        count = max(1, len(values))
+        aw = max(1.0, float(area.width()))
+        ah = max(1.0, float(area.height()))
+        short_side = min(aw, ah)
+        cx = area.center().x()
+        cy = area.center().y()
+        source_count = max(1, len(values))
+
+        # Mid-band focus for the mesh pull.
+        mid_start = min(source_count - 1, max(0, int(source_count * 0.20)))
+        mid_end = min(source_count - 1, max(mid_start + 1, int(source_count * 0.66)))
+        mid_span = max(1, mid_end - mid_start)
+
+        sample_count = max(144, min(240, count if count > 0 else 176))
+        raw = []
+        for s in range(sample_count):
+            pos = s / max(1, sample_count - 1)
+            src = mid_start + int(pos * mid_span)
+            src = max(0, min(source_count - 1, src))
+            center_weight = 1.0 - min(1.0, abs(pos - 0.50) / 0.50)
+            band_weight = 0.62 + center_weight * 0.38
+            raw.append(max(0.0, min(1.0, float(values[src]) * band_weight)))
+
+        # Heavy angular smoothing removes thorn-like randomness and makes the lobe pull fluid.
+        for _ in range(5):
+            raw = [
+                raw[(i - 3) % sample_count] * 0.04 +
+                raw[(i - 2) % sample_count] * 0.09 +
+                raw[(i - 1) % sample_count] * 0.22 +
+                raw[i] * 0.30 +
+                raw[(i + 1) % sample_count] * 0.22 +
+                raw[(i + 2) % sample_count] * 0.09 +
+                raw[(i + 3) % sample_count] * 0.04
+                for i in range(sample_count)
+            ]
+
+        previous_spectrum = getattr(self, "_electro_dubstep_outer_mesh_spectrum", None)
+        if not isinstance(previous_spectrum, list) or len(previous_spectrum) != sample_count:
+            previous_spectrum = raw[:]
+        spectrum = []
+        for cur, old in zip(raw, previous_spectrum):
+            rate = 0.60 if cur >= old else 0.40
+            spectrum.append(old * (1.0 - rate) + cur * rate)
+        self._electro_dubstep_outer_mesh_spectrum = spectrum
+
+        mid_peak = max(spectrum) if spectrum else 0.0
+        mid_mean = sum(spectrum) / max(1, len(spectrum))
+        mid_energy = max(0.0, min(1.0, mid_peak * 0.64 + mid_mean * 0.56))
+        previous_mid_energy = float(getattr(self, "_electro_dubstep_outer_mesh_mid_energy", mid_energy))
+        mid_onset = max(0.0, min(1.0, (mid_energy - previous_mid_energy) / 0.13))
+        energy_gate = max(0.0, min(1.0, (mid_energy - 0.07) / 0.55))
+
+        # Low + mid punch detector for the visible "ドンッ" shockwave.
+        low_end = min(source_count, max(1, int(source_count * 0.18)))
+        low_values = [max(0.0, min(1.0, float(values[i]))) for i in range(low_end)]
+        low_peak = max(low_values) if low_values else 0.0
+        low_mean = sum(low_values) / max(1, len(low_values))
+        punch_energy = max(0.0, min(1.0, low_peak * 0.42 + low_mean * 0.24 + mid_peak * 0.30 + mid_mean * 0.22))
+        previous_punch_energy = float(getattr(self, "_electro_dubstep_cover_punch_energy", punch_energy))
+        punch_onset = max(0.0, min(1.0, (punch_energy - previous_punch_energy) / 0.16))
+        punch_gate = max(0.0, min(1.0, (punch_energy - 0.12) / 0.58))
+        punch_target = max(0.0, min(1.0, punch_onset * 1.70 + punch_gate * 0.30))
+        if punch_onset < 0.065:
+            punch_target *= 0.35
+        if punch_target < 0.030:
+            punch_target = 0.0
+
+        impact = float(getattr(self, "_electro_dubstep_cover_impact", 0.0))
+        impact_velocity = float(getattr(self, "_electro_dubstep_cover_impact_velocity", 0.0))
+        impact_velocity += (punch_target - impact) * 0.860
+        impact_velocity *= 0.500
+        impact += impact_velocity
+        if punch_target <= 0.02:
+            impact *= 0.700
+            impact_velocity *= 0.610
+        if impact < 0.015 and punch_target <= 0.0:
+            impact = 0.0
+            impact_velocity = 0.0
+        impact = max(0.0, min(1.0, impact))
+        self._electro_dubstep_cover_punch_energy = punch_energy
+        self._electro_dubstep_cover_impact = impact
+        self._electro_dubstep_cover_impact_velocity = impact_velocity
+
+        # Mesh pulse target: onset drives the big pull.  Sustained mid energy only
+        # leaves a small amount of tension, so the mesh does not stay stretched.
+        target = max(0.0, min(1.0, mid_onset * 1.82 + energy_gate * 0.18 + impact * 0.28))
+        if mid_onset < 0.08 and impact < 0.12:
+            target *= 0.28
+        if target < 0.035:
+            target = 0.0
+
+        burst = float(getattr(self, "_electro_dubstep_outer_mesh_burst", 0.0))
+        velocity = float(getattr(self, "_electro_dubstep_outer_mesh_burst_velocity", 0.0))
+        velocity += (target - burst) * 0.800
+        velocity *= 0.455
+        burst += velocity
+        if target <= 0.02:
+            burst *= 0.735
+            velocity *= 0.620
+        if burst < 0.018 and target <= 0.0:
+            burst = 0.0
+            velocity = 0.0
+        burst = max(0.0, min(1.0, burst))
+        self._electro_dubstep_outer_mesh_mid_energy = mid_energy
+        self._electro_dubstep_outer_mesh_burst = burst
+        self._electro_dubstep_outer_mesh_burst_velocity = velocity
+
+        # Cover image expands with low/mid punch, then immediately contracts.
+        base_cover_radius = max(1.0, max_effect_radius * 0.46)
+        cover_scale = 1.0 + impact * 0.115
+        cover_radius = min(max_effect_radius * 0.58, base_cover_radius * cover_scale)
+        cover_rect = QRectF(cx - cover_radius, cy - cover_radius, cover_radius * 2.0, cover_radius * 2.0)
+
+        # Draw a visible outer shockwave before the cover and mesh.  This gives a
+        # screen-obvious pulse while keeping the inside cover area clean.
+        if impact > 0.010:
+            wave_alpha = max(0, min(170, int(impact * 150)))
+            wave_color = QColor(base_color)
+            wave_color.setAlpha(wave_alpha)
+            p.save()
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(wave_color, max(1.0, (1.2 + impact * 3.0) * width_scale)))
+            wave_radius = 0.0
+            p.drawEllipse(QPointF(cx, cy), wave_radius, wave_radius)
+            wave_color_2 = QColor(255, 255, 255, max(0, min(120, int(impact * 92))))
+            p.setPen(QPen(wave_color_2, max(0.8, (0.8 + impact * 1.6) * width_scale)))
+            p.drawEllipse(QPointF(cx, cy), wave_radius + max_effect_radius * 0.040, wave_radius + max_effect_radius * 0.040)
+            p.restore()
+
+        self._draw_visualizer_media_thumbnail_cover(
+            p,
+            cover_rect,
+            ctx,
+            clip_radius=cover_radius,
+            fallback_accent=base_color,
+        )
+
+        anchor_gap = max(2.5, short_side * 0.009)
+        anchor_radius = cover_radius + anchor_gap
+        outer_limit = max(anchor_radius + 8.0, max_effect_radius * 0.995)
+        max_push = max(7.0, outer_limit - anchor_radius)
+        idle_band = 0.0
+        pulled_band = max_push * (0.10 + burst * 1.42 + impact * 0.34)
+        # No rotation: the mesh should only stretch and contract with the music.
+        rotation = 0.0
+        lobe_sigma = 0.430
+
+        def _angle_distance(a, b):
+            return abs((a - b + math.pi) % math.tau - math.pi)
+
+        lobe_weights = []
+        display_angles = []
+        outer_radii = []
+        for s, v in enumerate(spectrum):
+            base_angle = (s / sample_count) * math.tau - math.pi / 2.0
+            display_angle = base_angle + rotation
+            upper_right_dist = _angle_distance(base_angle, -math.pi / 4.0)
+            upper_left_dist = _angle_distance(base_angle, -math.pi * 3.0 / 4.0)
+            lower_right_dist = _angle_distance(base_angle, math.pi / 4.0)
+            lower_left_dist = _angle_distance(base_angle, math.pi * 3.0 / 4.0)
+            upper_right_lobe = math.exp(-(upper_right_dist * upper_right_dist) / (2.0 * lobe_sigma * lobe_sigma))
+            upper_left_lobe = math.exp(-(upper_left_dist * upper_left_dist) / (2.0 * lobe_sigma * lobe_sigma))
+            lower_right_lobe = math.exp(-(lower_right_dist * lower_right_dist) / (2.0 * lobe_sigma * lobe_sigma))
+            lower_left_lobe = math.exp(-(lower_left_dist * lower_left_dist) / (2.0 * lobe_sigma * lobe_sigma))
+            upper_lobe = max(upper_right_lobe, upper_left_lobe)
+            lower_lobe = max(lower_right_lobe, lower_left_lobe) * 0.50
+            # Cardinal lock: 3, 6, 9, and 12 o'clock remain glued to the anchor circle.
+            # sin(2a) is exactly zero at those four cardinal points and strongest on diagonals.
+            cardinal_lock = abs(math.sin(base_angle * 2.0)) ** 1.55
+            lobe_weight = (max(upper_lobe, lower_lobe) ** 0.92) * cardinal_lock
+            soft_lobe = 0.5 + 0.5 * math.sin(now * 1.05 + s * 0.065)
+            local = max(0.0, min(1.0, v * 0.82 + mid_energy * 0.18 + impact * 0.18 + soft_lobe * 0.018))
+            pull = idle_band + pulled_band * lobe_weight * (0.12 + local * 0.88)
+            outer_radii.append(min(outer_limit, anchor_radius + pull))
+            lobe_weights.append(lobe_weight)
+            display_angles.append(display_angle)
+
+        rings = 7
+        ring_points = []
+        for ring in range(rings):
+            t = ring / max(1, rings - 1)
+            eased = t * t * (3.0 - 2.0 * t)
+            pts = []
+            for s, outer_r in enumerate(outer_radii):
+                lobe_weight = lobe_weights[s]
+                membrane_wobble = math.sin(now * (0.70 + eased * 0.18) + s * 0.080 + ring * 0.50)
+                rr = anchor_radius + (outer_r - anchor_radius) * eased
+                rr += membrane_wobble * short_side * 0.00048 * eased * lobe_weight * (0.08 + burst + impact * 0.45)
+                rr = max(anchor_radius, min(outer_limit, rr))
+                angle = display_angles[s]
+                pts.append(QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle) * rr))
+            ring_points.append(pts)
+
+        # Outside anchor only; this is the contracted attachment line of the mesh.
+        attach_color = QColor(base_color)
+        attach_color.setAlpha(34 + int(max(burst, impact) * 54))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(attach_color, max(0.55, (0.65 + max(burst, impact) * 0.34) * width_scale)))
+        p.drawEllipse(QPointF(cx, cy), anchor_radius, anchor_radius)
+
+        # Smooth circular strands.  3/6/9/12 stay pinned while diagonal spans are cinched outward.
+        pulse_strength = max(burst, impact)
+        for ring, pts in enumerate(ring_points):
+            t = ring / max(1, rings - 1)
+            alpha = max(16, min(225, int(26 + t * 54 + pulse_strength * 142)))
+            col = QColor(base_color)
+            col.setAlpha(alpha)
+            self._draw_visualizer_polyline(
+                p,
+                pts + [pts[0]],
+                col,
+                max(0.48, (0.50 + t * 0.56 + pulse_strength * 0.62) * width_scale),
+                alpha,
+            )
+
+        radial_step = max(3, sample_count // 46)
+        diagonal_step = max(4, sample_count // 40)
+        strand_alpha = max(14, min(198, int(20 + pulse_strength * 162)))
+        strand = QColor(base_color)
+        strand.setAlpha(strand_alpha)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(strand, max(0.34, (0.36 + pulse_strength * 0.64) * width_scale)))
+        for s in range(0, sample_count, radial_step):
+            for ring in range(rings - 1):
+                p.drawLine(ring_points[ring][s], ring_points[ring + 1][s])
+
+        diagonal = QColor(base_color)
+        diagonal.setAlpha(max(12, int(strand_alpha * 0.58)))
+        p.setPen(QPen(diagonal, max(0.30, (0.32 + pulse_strength * 0.40) * width_scale)))
+        for s in range(0, sample_count, diagonal_step):
+            offset = 1 + ((s // diagonal_step) % 2)
+            for ring in range(rings - 1):
+                p.drawLine(ring_points[ring][s], ring_points[ring + 1][(s + offset) % sample_count])
+                if pulse_strength > 0.20:
+                    p.drawLine(ring_points[ring][s], ring_points[ring + 1][(s - offset) % sample_count])
+
+        # Dot lattice.  Dots are denser and larger in the pulled diagonal lobes.
+        node_step = max(4, sample_count // 42)
+        dot_alpha = max(28, min(220, int(38 + pulse_strength * 166)))
+        p.setPen(Qt.PenStyle.NoPen)
+        base_node_radius = max(0.60, (0.66 + pulse_strength * 1.36) * width_scale)
+        for ring in range(rings):
+            phase = (ring * 2) % node_step
+            for s in range(phase, sample_count, node_step):
+                lobe_weight = lobe_weights[s]
+                pt = ring_points[ring][s]
+                pulse = 0.86 + 0.14 * math.sin(now * 1.85 + s * 0.16 + ring * 0.55)
+                alpha = max(18, min(230, int(dot_alpha * (0.45 + lobe_weight * 0.55))))
+                node_color = QColor(255, 255, 255, alpha)
+                p.setBrush(QBrush(node_color))
+                r = base_node_radius * (0.56 + lobe_weight * 0.44 + ring / max(1, rings - 1) * 0.34) * pulse
+                p.drawEllipse(pt, r, r)
+
+        mid_step = max(5, sample_count // 36)
+        mid_radius = max(0.44, base_node_radius * 0.52)
+        for ring in range(rings - 1):
+            for s in range((ring * 3) % mid_step, sample_count, mid_step):
+                a = ring_points[ring][s]
+                b = ring_points[ring + 1][(s + 1) % sample_count]
+                mid = QPointF((a.x() + b.x()) * 0.5, (a.y() + b.y()) * 0.5)
+                dx = mid.x() - cx
+                dy = mid.y() - cy
+                dist = math.hypot(dx, dy)
+                if dist < anchor_radius and dist > 0.001:
+                    mid = QPointF(cx + dx / dist * anchor_radius, cy + dy / dist * anchor_radius)
+                lobe_weight = lobe_weights[s]
+                alpha = max(16, min(190, int(dot_alpha * (0.32 + lobe_weight * 0.42))))
+                mid_color = QColor(base_color)
+                mid_color.setAlpha(alpha)
+                p.setBrush(QBrush(mid_color))
+                p.drawEllipse(mid, mid_radius * (0.74 + lobe_weight * 0.38), mid_radius * (0.74 + lobe_weight * 0.38))
 
     def _draw_visualizer_polyline(self, p: QPainter, points, color: QColor, width: float = 2.0, alpha: int = 220):
         if len(points) < 2:
@@ -1099,142 +1426,7 @@ class VisualizerWidget(BaseWidget):
         """Draw classic-like colored glow behind styled visualizers."""
         if not bool(getattr(self.cfg, "visualizer_glow_enabled", True)):
             return
-        try:
-            count = max(1, len(values))
-            aw = max(1.0, float(area.width()))
-            ah = max(1.0, float(area.height()))
-            cx = area.center().x()
-            cy = area.center().y()
-            short_side = min(aw, ah)
-            glow_base = QColor(base_color)
-            base_alpha = max(20, min(150, int(34 + avg * 80 + bass * 45)))
-            p.save()
-            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            p.setPen(Qt.PenStyle.NoPen)
-
-            circular = style in ("circle", "turntable", "spotlight_beat", "euphoria_motion", "luminance", "space", "energy_shield", "audio_ripple", "radar_scan", "circle_waveform", "rainbow_ring_dj", "round_base_audio")
-            elliptic = style in ("ellipse", "parallax_waves")
-            tunnel = style in ("audio_tunnel", "neon_tunnel_wire", "futuristic_tunnel")
-            wave = style in ("aurora", "neon_soundwave", "enigmatic_echo_sound", "lofi_vibes", "electric_pulse", "liquid_audio_spectrum")
-            cloud = style in ("nebula", "cosmic_fusion", "meteor_shower", "reactive_lights", "particle_audio_visualizer")
-            wall = style in ("music_beat_wall", "led_audio_wave", "hud_equalizer", "flat_spectrum", "cyber", "retro_future", "minimal", "alternative", "bass_drop", "audio_react", "dynamic_glitch", "urban_timelapse", "melodic_vibe", "hologram", "matrix", "electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music", "music_logo_reveal", "music_lower_third_audio", "digital_base_audio")
-
-            if style == "rainbow":
-                # Rainbow glow is intentionally compact; avoid the generic wall glow that over-expands the effect.
-                p.setClipRect(area)
-                aura_h = ah * (0.28 + avg * 0.08 + bass * 0.06)
-                aura = QLinearGradient(QPointF(area.left(), cy), QPointF(area.right(), cy))
-                aura.setColorAt(0.00, QColor(255, 70, 90, max(8, int(base_alpha * 0.16))))
-                aura.setColorAt(0.35, QColor(120, 220, 255, max(10, int(base_alpha * 0.20))))
-                aura.setColorAt(0.50, QColor(255, 255, 170, max(12, int(base_alpha * 0.24))))
-                aura.setColorAt(0.74, QColor(190, 120, 255, max(10, int(base_alpha * 0.18))))
-                aura.setColorAt(1.00, QColor(255, 80, 170, max(8, int(base_alpha * 0.15))))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(aura))
-                p.drawRoundedRect(QRectF(area.left(), cy - aura_h * 0.5, aw, aura_h), 8, 8)
-                p.restore(); return
-
-            if circular or elliptic:
-                rx_scale = 1.34 if elliptic else 1.0
-                ry_scale = 0.58 if elliptic else 1.0
-                core = min(radius, max_effect_radius * 0.62)
-                # broad center aura
-                aura = QRadialGradient(QPointF(cx, cy), max(2.0, max_effect_radius * 1.04))
-                c0 = QColor(glow_base); c0.setAlpha(max(18, int(base_alpha * 0.45)))
-                c1 = QColor(glow_base); c1.setAlpha(0)
-                aura.setColorAt(0.0, c0)
-                aura.setColorAt(1.0, c1)
-                p.setBrush(QBrush(aura))
-                p.drawEllipse(QPointF(cx, cy), max_effect_radius * rx_scale, max_effect_radius * ry_scale)
-                # line halos around active radial bars
-                step = max(1, count // 36)
-                pen_color = QColor(glow_base); pen_color.setAlpha(base_alpha)
-                pen = QPen(pen_color, max(2.0, (short_side * 0.018 + bass * 3.0) * width_scale))
-                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                p.setPen(pen)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                for i in range(0, count, step):
-                    v = max(0.0, min(1.0, float(values[i])))
-                    if v <= 0.025:
-                        continue
-                    ang = i / count * math.tau - math.pi / 2.0
-                    inner = core * 0.82
-                    outer = min(max_effect_radius * 0.98, inner + short_side * (0.07 + v * 0.16))
-                    col = self._rainbow_color(i / count + now * 0.06, base_alpha) if style in ("euphoria_motion", "rainbow", "circle_waveform") else pen_color
-                    p.setPen(QPen(col, max(2.0, (short_side * 0.018 + v * 4.0) * width_scale)))
-                    p.drawLine(
-                        QPointF(cx + math.cos(ang) * inner * rx_scale, cy + math.sin(ang) * inner * ry_scale),
-                        QPointF(cx + math.cos(ang) * outer * rx_scale, cy + math.sin(ang) * outer * ry_scale),
-                    )
-                p.restore(); return
-
-            if tunnel:
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                for k in range(7):
-                    t = k / 6.0
-                    scale = 1.0 - t * 0.78
-                    rect = QRectF(cx - aw * scale * 0.41, cy - ah * scale * 0.34, aw * scale * 0.82, ah * scale * 0.68)
-                    col = self._rainbow_color(0.52 + t * 0.34 + now * 0.04, max(18, int(base_alpha * (1.0 - t * 0.45))))
-                    pen = QPen(col, max(2.0, (2.0 + (1.0 - t) * 3.4 + bass * 2.0) * width_scale))
-                    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-                    p.setPen(pen)
-                    p.drawRoundedRect(rect, 8, 8)
-                p.restore(); return
-
-            if wave:
-                colors = [QColor(glow_base), self._rainbow_color(0.78 + now * 0.03, base_alpha), self._rainbow_color(0.52 + now * 0.04, base_alpha)]
-                for layer in range(2):
-                    pts = []
-                    for i, v in enumerate(values):
-                        x = area.left() + aw * i / max(1, count - 1)
-                        y = cy + math.sin(i * (0.16 + layer * 0.06) + now * (1.3 + layer * 0.25)) * ah * (0.07 + layer * 0.035) - (float(v) - avg) * ah * (0.22 + layer * 0.07)
-                        pts.append(QPointF(x, y))
-                    col = colors[layer % len(colors)]
-                    self._draw_visualizer_polyline(p, pts, col, (5.0 + layer * 2.0 + bass * 3.0) * width_scale, max(35, int(base_alpha * 0.80)))
-                p.restore(); return
-
-            if cloud:
-                step = max(1, count // 26)
-                for i in range(0, count, step):
-                    v = max(0.0, min(1.0, float(values[i])))
-                    if v <= 0.02:
-                        continue
-                    angle = i / count * math.tau + now * 0.10
-                    rr = min(max_effect_radius * 0.80, radius * (0.36 + (i % 6) * 0.055 + v * 0.38))
-                    col = self._rainbow_color(0.62 + i / count * 0.42 + now * 0.03, max(28, int(base_alpha * (0.55 + v * 0.35)))) if style in ("nebula", "cosmic_fusion") else QColor(glow_base)
-                    self._draw_visualizer_soft_orb(
-                        p,
-                        QPointF(cx + math.cos(angle) * rr, cy + math.sin(angle * 1.25) * rr * 0.62),
-                        (7.0 + v * short_side * 0.060) * width_scale,
-                        col,
-                        max(28, int(base_alpha * 0.85)),
-                    )
-                p.restore(); return
-
-            if wall:
-                slot = aw / count
-                p.setPen(Qt.PenStyle.NoPen)
-                step = 1 if count <= 96 else max(1, count // 96)
-                for i in range(0, count, step):
-                    v = max(0.0, min(1.0, float(values[i])))
-                    if v <= 0.02:
-                        continue
-                    x = area.left() + i * slot + slot * 0.08
-                    h = ah * (0.08 + v * 0.88)
-                    y = area.bottom() - h
-                    bw = max(1.0, slot * min(1.18, 0.86 * width_scale))
-                    col = self._rainbow_color(i / max(1, count) + now * 0.06, max(24, int(base_alpha * 0.85))) if style in ("rainbow", "beat_fluorescent_app", "retro_future") else QColor(glow_base)
-                    col.setAlpha(max(20, min(170, int(base_alpha * (0.48 + v * 0.45)))))
-                    p.setBrush(QBrush(col))
-                    p.drawRoundedRect(QRectF(x - bw * 0.18, y - 4.0, bw * 1.36, h + 8.0), 6, 6)
-                p.restore(); return
-            p.restore()
-        except Exception:
-            try:
-                p.restore()
-            except Exception:
-                pass
-
+        pass
 
 
     def _hud_clamp01(self, value: float) -> float:
@@ -2596,17 +2788,8 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "electro_dubstep":
-            core=max_effect_radius*0.36; inner_col=QColor(max(0,base_color.red()-50),max(0,base_color.green()-50),max(0,base_color.blue()-50),90); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QBrush(inner_col)); p.drawEllipse(QPointF(cx,cy),core*(1+avg*0.10),core*(1+avg*0.10))
-
-            # Electro Dubstep cover layer:
-            #   bottom: existing accent-color center circle
-            #   middle: current media cover image pasted on the center accent circle
-            #   top: assertive dubstep bars
-            electro_cover_radius=max(1.0,core*(1+avg*0.10))
-            electro_cover_rect=QRectF(cx-electro_cover_radius,cy-electro_cover_radius,electro_cover_radius*2.0,electro_cover_radius*2.0)
-            self._draw_visualizer_media_thumbnail_cover(p,electro_cover_rect,ctx,clip_radius=electro_cover_radius,fallback_accent=base_color)
-
-            for i in range(0,count,max(1,count//90)): v=values[i]; a=i/count*math.tau-math.pi/2; col=QColor(base_color); col.setAlpha(110+int(v*95)); _cap(cx,cy,a,core+2,short_side*(0.05+v*0.26),max(1.8,(2.5+v*5)*width_scale),col)
+            # Circular audio-reactive mesh ring around the current media cover. No equalizer bars.
+            self._paint_electro_dubstep_mesh_ring(p, values, area, ctx, base_color, now, avg, bass, max_effect_radius, width_scale)
             p.restore(); return
 
         if style == "minimal_beat":
@@ -3170,14 +3353,11 @@ class VisualizerWidget(BaseWidget):
                 self._draw_visualizer_soft_orb(p, QPointF(area.left() + aw * (i + 0.5) / lamps, cy), ah * (0.06 + v * 0.26), self._rainbow_color(i / lamps + now * 0.08, 70 + int(v * 170)), 40 + int(v * 120))
             p.restore(); return
 
-        if style in ("electro_dubstep", "minimal_beat", "beat_fluorescent_app", "glow_beat_music"):
+        if style in ("minimal_beat", "beat_fluorescent_app", "glow_beat_music"):
             slot = aw / count
             for i, v in enumerate(values):
                 x = area.left() + i * slot; h = ah * (0.08 + v * 0.88)
-                if style == "electro_dubstep":
-                    col = QColor(120 + int(120 * v), 40, 255, 215)
-                    if i % 4 == 0: h *= 1.18 + bass * 0.35
-                elif style == "minimal_beat":
+                if style == "minimal_beat":
                     col = QColor(base_color); col.setAlpha(150 + int(v * 80))
                 elif style == "glow_beat_music":
                     col = QColor(255, 230, 120, 180 + int(v * 70)); self._draw_visualizer_soft_orb(p, QPointF(x + slot * 0.5, area.bottom() - h), 5 + v * 18, col, 50 + int(v * 80))
@@ -4971,14 +5151,8 @@ class VisualizerWidget(BaseWidget):
             p.restore(); return
 
         if style == "electro_dubstep":
-            # Assertive circular bars with 2px gap, center cover, and mochi-like dark accent backing.
-            core=max_effect_radius*0.36; p.setPen(Qt.PenStyle.NoPen); inner_col=QColor(max(0,base_color.red()-50),max(0,base_color.green()-50),max(0,base_color.blue()-50),90); p.setBrush(QBrush(inner_col)); p.drawEllipse(QPointF(cx,cy),core*(1+avg*0.10),core*(1+avg*0.10))
-            electro_cover_radius=max(1.0,core*(1+avg*0.10))
-            electro_cover_rect=QRectF(cx-electro_cover_radius,cy-electro_cover_radius,electro_cover_radius*2.0,electro_cover_radius*2.0)
-            self._draw_visualizer_media_thumbnail_cover(p,electro_cover_rect,ctx,clip_radius=electro_cover_radius,fallback_accent=base_color)
-            step=max(1,count//90)
-            for i in range(0,count,step):
-                v=values[i]; a=i/count*math.tau-math.pi/2.0; inner=core+2.0; outer=min(max_effect_radius*0.98,inner+short_side*(0.05+v*0.26)); col=QColor(base_color); col.setAlpha(110+int(v*95)); p.setPen(QPen(col,max(1.0,(1.6+v*4.4)*width_scale))); p.drawLine(QPointF(cx+math.cos(a)*inner,cy+math.sin(a)*inner),QPointF(cx+math.cos(a)*outer,cy+math.sin(a)*outer))
+            # Circular audio-reactive mesh ring around the current media cover. No equalizer bars.
+            self._paint_electro_dubstep_mesh_ring(p, values, area, ctx, base_color, now, avg, bass, max_effect_radius, width_scale)
             p.restore(); return
 
         if style == "minimal_beat":
